@@ -1,0 +1,63 @@
+:root {
+  color-scheme: dark;
+  --bg: #0e141b;
+  --ink: #e8eef5;
+  --amber: #f2a43a;
+  --cyan: #3ad1e0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#build-tag {
+  position: fixed;
+  left: 12px;
+  bottom: 10px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: rgb(232 238 245 / 55%);
+  pointer-events: none;
+  user-select: none;
+}
+
+#fatal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  font-size: 18px;
+  background: rgb(14 20 27 / 92%);
+}
+
+#fatal[hidden] {
+  display: none;
+}
