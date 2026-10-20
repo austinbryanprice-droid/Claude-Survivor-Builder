@@ -1,0 +1,496 @@
+/*
+ * HUD styling, after the Enshrouded screenshots in the art direction: dark translucent panels
+ * with thin light borders, soft amber accents, cream text and rounded key caps.
+ */
+
+#hud {
+  --panel: linear-gradient(180deg, rgb(27 33 42 / 88%), rgb(14 19 26 / 84%));
+  --line: rgb(244 232 208 / 22%);
+  --line-strong: rgb(244 232 208 / 42%);
+  --ink: #f4ead2;
+  --ink-dim: rgb(244 234 210 / 66%);
+  --amber: #f2a43a;
+  --cyan: #3ad1e0;
+  --bad: #e8603c;
+
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.45;
+  pointer-events: none;
+  user-select: none;
+}
+
+#hud [hidden] {
+  display: none !important;
+}
+
+:where(#hud h1, #hud p) {
+  margin: 0;
+}
+
+.hud-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow:
+    0 10px 36px rgb(0 0 0 / 38%),
+    inset 0 1px 0 rgb(255 255 255 / 6%);
+  backdrop-filter: blur(8px);
+}
+
+.kicker {
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* Crosshair: a ring with a dot, readable on both bright and dark ground. */
+
+.crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border: 1px solid rgb(244 234 210 / 60%);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 35%),
+    inset 0 0 0 1px rgb(0 0 0 / 25%);
+}
+
+.crosshair::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 45%);
+}
+
+/* Buttons and key caps. */
+
+.key {
+  display: inline-grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 3px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 7%);
+  color: var(--ink);
+  font:
+    650 12px/1 ui-monospace,
+    'SF Mono',
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.play-button,
+.quiet-button {
+  padding: 11px 22px;
+  border-radius: 999px;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.play-button {
+  border: 1px solid rgb(242 164 58 / 75%);
+  background: linear-gradient(180deg, rgb(242 164 58 / 34%), rgb(242 164 58 / 12%));
+}
+
+.play-button:hover {
+  background: linear-gradient(180deg, rgb(242 164 58 / 48%), rgb(242 164 58 / 20%));
+}
+
+.quiet-button {
+  border: 1px solid var(--line-strong);
+  background: rgb(255 255 255 / 6%);
+}
+
+.quiet-button:hover {
+  background: rgb(255 255 255 / 12%);
+}
+
+.play-button:focus-visible,
+.quiet-button:focus-visible,
+.setting input:focus-visible,
+.report-text:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+/* Pause screen, shown whenever the mouse is free. */
+
+.pause,
+.bench-results {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: radial-gradient(ellipse at center, rgb(8 12 18 / 30%), rgb(6 9 14 / 72%));
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.pause-card,
+.results-card {
+  width: min(600px, 100%);
+  max-height: 100%;
+  padding: 26px 30px 22px;
+  overflow: auto;
+  cursor: default;
+  user-select: text;
+}
+
+.pause-card h1,
+.results-card h1 {
+  margin: 4px 0 6px;
+  font-size: 34px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.results-card h1.good {
+  color: var(--cyan);
+}
+
+.results-card h1.warn {
+  color: var(--amber);
+}
+
+.lede {
+  color: var(--ink-dim);
+}
+
+.pause-card .play-button {
+  margin-top: 18px;
+  padding: 13px 34px;
+  font-size: 16px;
+}
+
+.hint {
+  min-height: 1.45em;
+  margin-top: 10px;
+  color: var(--ink-dim);
+  font-size: 13px;
+}
+
+.hint.warn {
+  color: var(--amber);
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 26px;
+  margin: 18px 0 0;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.controls li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.caps {
+  display: inline-flex;
+  gap: 4px;
+  flex: none;
+}
+
+.control-label {
+  color: var(--ink-dim);
+  font-size: 13px;
+}
+
+.settings {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.setting {
+  display: grid;
+  grid-template-columns: 150px 1fr 56px;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink-dim);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.setting input[type='range'] {
+  width: 100%;
+  accent-color: var(--amber);
+}
+
+.setting output {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.setting.toggle {
+  grid-template-columns: auto 1fr;
+}
+
+.setting.toggle input {
+  accent-color: var(--amber);
+}
+
+.footnote {
+  margin-top: 18px;
+  color: rgb(244 234 210 / 38%);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+/* Status panel, bottom right: the area's name and key hints. */
+
+.status-panel {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  min-width: 190px;
+  padding: 12px 16px 13px;
+}
+
+.status-area {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.status-hints {
+  display: grid;
+  gap: 7px;
+  margin: 9px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status-hints li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-hints .key {
+  min-width: 40px;
+}
+
+/* Frame-time overlay (F3, or on by default with ?bench or ?debug). */
+
+.frame-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 320px;
+  padding: 10px 12px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgb(10 14 19 / 76%);
+  font:
+    12px/1.5 ui-monospace,
+    'SF Mono',
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.fo-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.fo-fps {
+  color: var(--amber);
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.fo-unit {
+  color: var(--ink-dim);
+}
+
+.fo-ms {
+  margin-left: auto;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.fo-graph {
+  display: block;
+  margin: 6px 0 7px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 4%);
+}
+
+.fo-rows {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+}
+
+.fo-rows > div {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+}
+
+.fo-rows dt {
+  color: rgb(244 234 210 / 45%);
+}
+
+.fo-rows dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.fo-gpu {
+  color: var(--ink-dim);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+/* Benchmark banner and results. */
+
+.bench-banner {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.bench-track {
+  width: 140px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 12%);
+  overflow: hidden;
+}
+
+.bench-fill {
+  width: 0;
+  height: 100%;
+  background: var(--amber);
+}
+
+.bench-hint {
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.stat {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 4%);
+}
+
+.stat strong {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat span {
+  color: var(--ink-dim);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.gpu-line {
+  margin-top: 12px;
+  color: var(--ink-dim);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.report-text {
+  max-height: 170px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgb(0 0 0 / 28%);
+  color: var(--ink-dim);
+  font:
+    11.5px/1.5 ui-monospace,
+    'SF Mono',
+    Menlo,
+    Consolas,
+    monospace;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.copy-status {
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .controls {
+    grid-template-columns: 1fr;
+  }
+
+  .stats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .setting {
+    grid-template-columns: 110px 1fr 48px;
+  }
+}

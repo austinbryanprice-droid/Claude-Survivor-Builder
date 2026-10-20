@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+import type { Game } from './engine/game';
 import type { Stage } from './engine/stage';
 
 declare global {
@@ -8,6 +9,6 @@ declare global {
 
   interface Window {
     /** Present only with the `?debug` URL switch. */
-    __ashbound?: { stage: Stage };
+    __ashbound?: { stage: Stage; game: Game };
   }
 }

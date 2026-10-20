@@ -1,5 +1,7 @@
 import { readFlags } from './shared/flags';
-import { createStage } from './engine/stage';
+import { createGame } from './engine/game';
+import { createHud } from './ui/hud';
+import { loadSettings } from './ui/settings-store';
 import './ui/styles.css';
 
 function showFatal(message: string): void {
@@ -22,9 +24,10 @@ canvas.addEventListener('webglcontextlost', (event) => {
 
 try {
   const flags = readFlags(window.location.search);
-  const stage = createStage(canvas);
-  if (flags.debug) window.__ashbound = { stage };
-  stage.start();
+  const game = createGame({ canvas, settings: loadSettings(), flags, buildId: __BUILD_ID__ });
+  createHud(game, flags, __BUILD_ID__);
+  if (flags.debug) window.__ashbound = { stage: game.stage, game };
+  game.start();
 } catch (error) {
   console.error(error);
   showFatal('Ashbound Outpost needs WebGL 2, which this browser could not start.');
