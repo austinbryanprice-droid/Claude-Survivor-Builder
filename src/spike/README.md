@@ -36,7 +36,9 @@ The look spike: a throwaway scene that proves the visual target. Open `look.html
 
 `?bench=1` is the game page's benchmark flown through the valley. Each preset (Low, Balanced, Ultra) gets one run of the shared state machine in `src/engine/bench.ts`: two unmeasured warm-up seconds, then a fixed route (30 seconds by default, `?benchSeconds=` changes it) counted in simulation ticks so every machine sees the same views, with the adaptive governor off. The pass mark is the game page's, at least 57 FPS on average and a 95th percentile frame time of at most 18.5 ms. The card shows one row per preset, and Copy report gives Markdown with the graphics adapter, browser, canvas, route, valley build times, and for each preset the internal size, average FPS, 95th percentile, slowest 1 percent, CPU time, GPU time (when the browser offers timer queries), draw calls and triangles. A browser window larger than 1080p still reports honestly: the internal size column says what was drawn.
 
-Frame cost cannot be measured in the cloud sandbox (software rendering only), so the numbers in the docs for the sandbox are static budgets and relative software costs; the real ones come from this report on real hardware.
+A display that refreshes faster than 60 Hz caps the average at its refresh rate, so on a fast machine every preset can read the same (the report says the display rate); the GPU time column is the only one that tells them apart, and it is noisy at the cap. On a laptop with two GPUs, check the report's graphics adapter line: the numbers mean something only if the browser ran on the dedicated GPU (Windows Settings, System, Display, Graphics, High performance for the browser).
+
+Frame cost cannot be measured in the cloud sandbox (software rendering only), so the numbers in the docs for the sandbox are static budgets and relative software costs; the real ones come from this report on real hardware. The first real report is recorded in [art-direction](../../docs/art-direction.md#first-real-measurement).
 
 ## Files
 
