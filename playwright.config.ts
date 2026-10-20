@@ -5,6 +5,9 @@ const port = 4173;
 export default defineConfig({
   testDir: 'tests/e2e',
   fullyParallel: true,
+  // Every test runs a software-rendered 3D loop that already uses several cores, so more workers
+  // slow the frame rate until waits time out.
+  workers: process.env.CI ? 1 : 2,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',

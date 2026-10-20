@@ -2,11 +2,28 @@
 
 A browser co-op survivor-builder for two to four players. By day you scavenge the wreckage of a crashed orbital station and build a shared outpost from refined, beveled blocks and modular machines. By night rogue machines attack in waves that grow every night.
 
-> **Status: early development.** The project setup (Phase 0) is in place and the game itself is not playable yet. The [roadmap](docs/roadmap.md) lists what comes next.
+> **Status: early development.** You can run, jump and look around a walled test deck (Phase 1). The real world, building and enemies are not in yet. The [roadmap](docs/roadmap.md) lists what comes next.
 
 ## Play
 
 Once the first deploy finishes, the game is served by GitHub Pages at <https://austinbryanprice-droid.github.io/Claude-Survivor-Builder/>. The repository owner has to set Settings, Pages, Source to **GitHub Actions** once for that to work.
+
+## Controls
+
+Click the page to take the mouse. Esc gives it back.
+
+| Key     | Action                                                              |
+| ------- | ------------------------------------------------------------------- |
+| W A S D | Move                                                                |
+| Space   | Jump (hold it to keep hopping)                                      |
+| Shift   | Sprint                                                              |
+| V or F5 | Switch between first and third person (F5 will not reload mid-game) |
+| F3      | Show or hide the frame-time overlay                                 |
+| Esc     | Free the mouse (and stop a running benchmark)                       |
+
+Mouse sensitivity, field of view and inverted look are on the pause panel and are remembered in the browser.
+
+To check the frame rate, open the game with `?bench=1`. It flies a fixed 30-second route (walking, sprinting, jumping, third person), then shows the average frame rate, the 95th percentile frame time and the graphics adapter, with a button that copies the report. `?bench=1&benchSeconds=60` changes the length.
 
 ## Develop
 
@@ -16,12 +33,12 @@ You need Node 22.12 or newer.
 npm ci            # install exactly what package-lock.json says
 npm run dev       # dev server on http://localhost:5173
 npm run check     # typecheck, lint, format check, unit tests and a production build
-npm run test:e2e  # builds, then runs the Playwright smoke test
+npm run test:e2e  # builds, then runs the Playwright browser tests
 ```
 
-The smoke test needs a Chromium that Playwright can find. On a fresh machine run `npx playwright install chromium` first. Headless runs use software WebGL (SwiftShader), so they prove correctness but say nothing about frame rate.
+The browser tests need a Chromium that Playwright can find. On a fresh machine run `npx playwright install chromium` first. Headless runs use software WebGL (SwiftShader), so they prove correctness but say nothing about frame rate.
 
-URL switches for development: `?debug` exposes `window.__ashbound`. More arrive with the features that use them (`?night=5`, `?bench=1`, `?quality=`).
+URL switches: `?bench=1` runs the benchmark, and `?debug` exposes `window.__ashbound` and shows the frame overlay from the start. More arrive with the features that use them (`?night=5`, `?quality=`).
 
 ## How multiplayer will work
 
@@ -30,7 +47,7 @@ A room has one host and up to three guests. The host creates a room and shares a
 ## Project layout
 
 ```
-src/shared    pure TypeScript shared by every layer (hashing, seeded random numbers, URL flags)
+src/shared    pure TypeScript shared by every layer (hashing, seeded random numbers, URL flags, movement and collision)
 src/engine    renderer, camera, input and the game loop
 src/world     voxel data, seeded terrain, chunks, meshing, materials
 src/systems   survival, waves, economy and upgrades (the host simulation)
