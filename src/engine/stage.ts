@@ -7,15 +7,14 @@ export interface Stage {
   readonly renderer: WebGLRenderer;
   readonly scene: Scene;
   readonly camera: PerspectiveCamera;
-  start(): void;
+  /** Renders the scene once. The first call sets `data-ready` on <html> so tests can wait for it. */
+  render(): void;
+  /** Calls `onFrame` with the display timestamp (ms) once per frame; without it, just renders. */
+  start(onFrame?: (timeMs: number) => void): void;
   dispose(): void;
 }
 
-/**
- * Owns the renderer, scene and camera for one canvas. Phase 0 only clears to the background
- * color; it sets `data-ready` on <html> once the first frame has been rendered so tests can
- * wait for it.
- */
+/** Owns the renderer, scene and camera for one canvas. */
 export function createStage(canvas: HTMLCanvasElement): Stage {
   const renderer = new WebGLRenderer({
     canvas,
@@ -39,7 +38,7 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
   resize();
 
   let announced = false;
-  const frame = (): void => {
+  const render = (): void => {
     renderer.render(scene, camera);
     if (!announced) {
       announced = true;
@@ -51,7 +50,8 @@ export function createStage(canvas: HTMLCanvasElement): Stage {
     renderer,
     scene,
     camera,
-    start: () => renderer.setAnimationLoop(frame),
+    render,
+    start: (onFrame) => renderer.setAnimationLoop(onFrame ?? render),
     dispose: () => {
       renderer.setAnimationLoop(null);
       observer.disconnect();
