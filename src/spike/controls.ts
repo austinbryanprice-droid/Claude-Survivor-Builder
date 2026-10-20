@@ -152,7 +152,8 @@ export class CameraPath {
 
   constructor(
     grid: SdfGrid,
-    private readonly seconds: number,
+    /** Seconds the route takes to fly once. */
+    readonly seconds: number,
   ) {
     this.points = FLY_PATH.map(([x, z, h]) => new Vector3(x, grid.groundAt(x, z) + h, z));
     this.looks = FLY_PATH.map(([, , , bearing, pitch]) => [bearing, pitch]);

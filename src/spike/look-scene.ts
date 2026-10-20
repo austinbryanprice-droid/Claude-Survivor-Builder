@@ -89,7 +89,6 @@ export class LookScene {
   private fixedMoment: { elevation: number; bearing: number } | null;
   private clockTime = 0;
   private path: CameraPath | null = null;
-  private pathTime = 0;
   private canvasWidth = 2;
   private canvasHeight = 2;
 
@@ -216,18 +215,24 @@ export class LookScene {
     this.water?.setMode(q.water, q.reflectionScale);
     this.vegetation.setQuality(q);
     this.pipeline.setQuality(q);
-    this.governor =
-      q.adaptiveScale && this.forcedScale === null && this.governorOn
-        ? new AdaptiveScale(q.renderScale, q.minRenderScale, q.renderScale)
-        : null;
+    this.governor = this.makeGovernor();
     this.fitRenderScale();
     this.dirty = true;
+  }
+
+  private makeGovernor(): AdaptiveScale | null {
+    const q = this.quality;
+    return q.adaptiveScale && this.forcedScale === null && this.governorOn
+      ? new AdaptiveScale(q.renderScale, q.minRenderScale, q.renderScale)
+      : null;
   }
 
   /** Turns the adaptive resolution governor on or off (the benchmark measures without it). */
   setGovernor(on: boolean): void {
     this.governorOn = on;
-    this.applyQuality(this.quality.name);
+    this.governor = this.makeGovernor();
+    this.fitRenderScale();
+    this.dirty = true;
   }
 
   /** The render scale the governor has settled on, or the preset's own when it is off. */
@@ -254,11 +259,19 @@ export class LookScene {
     this.dirty = true;
   }
 
-  /** Starts (or stops) the looping benchmark path. */
-  followPath(seconds: number | null): void {
-    this.path = seconds === null ? null : new CameraPath(this.grid, seconds);
-    this.pathTime = 0;
+  /** Puts the camera `seconds` along the benchmark route, which takes `routeSeconds` to fly. */
+  placeOnRoute(seconds: number, routeSeconds: number): void {
+    if (!this.path || this.path.seconds !== routeSeconds) {
+      this.path = new CameraPath(this.grid, routeSeconds);
+    }
+    this.path.apply(this.camera, seconds);
     this.dirty = true;
+  }
+
+  /** Takes the camera off the benchmark route and back to the shot it started from. */
+  endRoute(): void {
+    this.path = null;
+    this.setShot(this.shot ?? DEFAULT_SHOT);
   }
 
   get moving(): boolean {
@@ -309,10 +322,8 @@ export class LookScene {
     }
     if (this.fixedMoment === null || this.dirty) this.sky = this.computeSky();
 
-    if (this.path) {
-      this.pathTime += dt;
-      this.path.apply(this.camera, this.pathTime);
-    } else {
+    // On the benchmark route the camera is already where `placeOnRoute` put it.
+    if (!this.path) {
       this.controller.update(dt);
       this.controller.apply(this.camera);
     }

@@ -1,10 +1,10 @@
 import '../ui/styles.css';
 import './look.css';
 import { QUALITY_PRESETS, type QualityName } from '../shared/quality';
-import { Benchmark } from './bench';
+import { PresetSweep } from './bench';
 import { HudDemo } from './hud-demo';
 import { LookScene } from './look-scene';
-import { BenchPanel, StatsOverlay, Toast } from './panels';
+import { BenchPanel, StatsOverlay, Toast, describeMachine } from './panels';
 import { readLookParams } from './params';
 import { SHOTS } from './shots';
 
@@ -12,7 +12,7 @@ import { SHOTS } from './shots';
 export interface LookHandle {
   readonly scene: LookScene;
   readonly hud: HudDemo;
-  readonly bench: Benchmark;
+  readonly sweep: PresetSweep;
   /** Draws a frame right now, regardless of freeze. */
   renderNow(): void;
   frames: number;
@@ -73,20 +73,20 @@ async function main(): Promise<void> {
   const overlay = new StatsOverlay(overlayParent, look, () => momentName);
   overlay.element.hidden = !params.stats;
   let panel: BenchPanel | null = null;
-  const bench = new Benchmark(
+  const sweep = new PresetSweep(
     look,
     params.benchSeconds,
     params.benchPresets,
+    () => describeMachine(look),
     () => panel?.refresh(),
-    params.benchWarmup,
   );
-  panel = new BenchPanel(bench, look);
+  panel = new BenchPanel(sweep, look);
   document.body.append(toast.element, panel.banner, panel.results);
 
   const handle: LookHandle = {
     scene: look,
     hud,
-    bench,
+    sweep,
     frames: 0,
     renderNow: () => {
       look.frame(0, 0);
@@ -101,10 +101,10 @@ async function main(): Promise<void> {
   window.addEventListener('keydown', (event) => {
     if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.code === 'Escape') {
-      bench.stop();
+      sweep.cancel('Stopped with Esc.');
       return;
     }
-    if (bench.state === 'running') return;
+    if (sweep.active) return;
     switch (event.code) {
       case 'KeyP': {
         const next = cycle(QUALITY_CYCLE, look.quality.name);
@@ -132,7 +132,7 @@ async function main(): Promise<void> {
         overlay.element.hidden = !overlay.element.hidden;
         break;
       case 'KeyB':
-        bench.start();
+        sweep.start();
         break;
       default:
     }
@@ -143,8 +143,12 @@ async function main(): Promise<void> {
     const frameMs = now - last;
     const dt = Math.min(0.1, frameMs / 1000);
     last = now;
-    if (bench.state === 'running') {
-      bench.tick(frameMs);
+    if (sweep.active) {
+      const started = performance.now();
+      sweep.beforeFrame(frameMs);
+      look.frame(dt, 0);
+      handle.frames++;
+      sweep.afterFrame(frameMs, performance.now() - started);
       panel?.refresh();
     } else if (!params.freeze || look.dirty || look.moving) {
       look.frame(dt, frameMs);
@@ -158,7 +162,7 @@ async function main(): Promise<void> {
 
   document.querySelector('#look-loading')?.remove();
   document.documentElement.dataset.ready = 'true';
-  if (params.bench) bench.start();
+  if (params.bench) sweep.start();
 }
 
 void main();

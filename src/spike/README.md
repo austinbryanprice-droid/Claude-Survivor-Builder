@@ -17,26 +17,26 @@ The look spike: a throwaway scene that proves the visual target. Open `look.html
 
 ## URL switches
 
-| Switch                                        | Does                                                                |
-| --------------------------------------------- | ------------------------------------------------------------------- |
-| `quality=low\|balanced\|ultra`                | Starting preset                                                     |
-| `shot=<name>`                                 | Start at a named camera shot (see `shots.ts`)                       |
-| `time=<moment>`                               | Fix the time of day (`clock` runs the day-night cycle instead)      |
-| `seed=<n>`                                    | Build another valley                                                |
-| `terrain=heightfield`                         | Mesh the terrain as a smoothed heightfield instead of surface nets  |
-| `scale=<0..1>`                                | Force the internal resolution and switch the governor off           |
-| `hud=0`                                       | Hide the HUD and the stats                                          |
-| `stats=0`                                     | Hide only the stats and the key list, for clean HUD screenshots     |
-| `freeze=1`                                    | Freeze clouds, wind and water, and draw only when something changes |
-| `bench=1`                                     | Run the benchmark at load                                           |
-| `benchSeconds`, `benchWarmup`, `benchPresets` | Length of the route, warm-up frames, presets to run                 |
-| `debug`                                       | Expose `window.__look` for tests and screenshot scripts             |
+| Switch                         | Does                                                                |
+| ------------------------------ | ------------------------------------------------------------------- |
+| `quality=low\|balanced\|ultra` | Starting preset                                                     |
+| `shot=<name>`                  | Start at a named camera shot (see `shots.ts`)                       |
+| `time=<moment>`                | Fix the time of day (`clock` runs the day-night cycle instead)      |
+| `seed=<n>`                     | Build another valley                                                |
+| `terrain=heightfield`          | Mesh the terrain as a smoothed heightfield instead of surface nets  |
+| `scale=<0..1>`                 | Force the internal resolution and switch the governor off           |
+| `hud=0`                        | Hide the HUD and the stats                                          |
+| `stats=0`                      | Hide only the stats and the key list, for clean HUD screenshots     |
+| `freeze=1`                     | Freeze clouds, wind and water, and draw only when something changes |
+| `bench=1`                      | Run the benchmark at load                                           |
+| `benchSeconds`, `benchPresets` | Length of the route per preset (default 30), presets to run         |
+| `debug`                        | Expose `window.__look` for tests and screenshot scripts             |
 
 ## Benchmark
 
-`?bench=1` flies one fixed route per preset (12 seconds by default, counted in frames so every machine sees the same views) with the adaptive governor off, then shows a table and a Copy report button. The report has the graphics adapter, internal size, FPS, average and 95th percentile frame time, CPU time, GPU time (when the browser offers timer queries), draw calls and triangles per preset, and whether the preset holds 60 FPS. A browser run in a window larger than 1080p still reports honestly: the internal size column says what was drawn.
+`?bench=1` is the game page's benchmark flown through the valley. Each preset (Low, Balanced, Ultra) gets one run of the shared state machine in `src/engine/bench.ts`: two unmeasured warm-up seconds, then a fixed route (30 seconds by default, `?benchSeconds=` changes it) counted in simulation ticks so every machine sees the same views, with the adaptive governor off. The pass mark is the game page's, at least 57 FPS on average and a 95th percentile frame time of at most 18.5 ms. The card shows one row per preset, and Copy report gives Markdown with the graphics adapter, browser, canvas, route, valley build times, and for each preset the internal size, average FPS, 95th percentile, slowest 1 percent, CPU time, GPU time (when the browser offers timer queries), draw calls and triangles. A browser window larger than 1080p still reports honestly: the internal size column says what was drawn.
 
-Frame cost cannot be measured in the cloud sandbox (software rendering only), so the numbers in the docs for the sandbox are static budgets and the real ones come from this report on real hardware.
+Frame cost cannot be measured in the cloud sandbox (software rendering only), so the numbers in the docs for the sandbox are static budgets and relative software costs; the real ones come from this report on real hardware.
 
 ## Files
 
@@ -44,5 +44,5 @@ Frame cost cannot be measured in the cloud sandbox (software rendering only), so
 - `look-scene.ts` builds the valley from the engine and world modules.
 - `controls.ts` is a spike-local first-person controller and the benchmark camera path.
 - `shots.ts` holds the named camera poses.
-- `bench.ts`, `bench-report.ts` and `panels.ts` are the benchmark driver, its report and its UI.
+- `bench.ts`, `bench-report.ts` and `panels.ts` run the shared benchmark once per preset, format its report and draw its card.
 - `hud-demo.ts` drives the player HUD with made-up numbers.

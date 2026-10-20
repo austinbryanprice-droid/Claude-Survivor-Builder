@@ -3,51 +3,9 @@ import {
   AdaptiveScale,
   DEFAULT_GOVERNOR,
   FRAME_BUDGET_MS,
-  FrameStats,
   MAX_INTERNAL_PIXELS,
   scaleForPixelBudget,
-  summarizeFrames,
 } from '../../src/engine/perf';
-
-describe('summarizeFrames', () => {
-  it('returns zeros for no samples', () => {
-    expect(summarizeFrames([])).toEqual({
-      frames: 0,
-      avgMs: 0,
-      p50Ms: 0,
-      p95Ms: 0,
-      p99Ms: 0,
-      worstMs: 0,
-      fps: 0,
-      overBudget: 0,
-    });
-  });
-
-  it('computes the average, percentiles, frame rate and the share over budget', () => {
-    const s = summarizeFrames([10, 10, 10, 20, 30]);
-    expect(s.frames).toBe(5);
-    expect(s.avgMs).toBe(16);
-    expect(s.p50Ms).toBe(10);
-    expect(s.p95Ms).toBe(30);
-    expect(s.worstMs).toBe(30);
-    expect(s.fps).toBeCloseTo(62.5, 9);
-    expect(s.overBudget).toBeCloseTo(0.4, 9);
-  });
-
-  it('does not depend on the order of the samples', () => {
-    expect(summarizeFrames([30, 10, 20, 10, 10])).toEqual(summarizeFrames([10, 10, 10, 20, 30]));
-  });
-
-  it('keeps a ring of the most recent frames', () => {
-    const stats = new FrameStats(4);
-    for (const ms of [100, 1, 2, 3, 4]) stats.push(ms);
-    const s = stats.summary();
-    expect(s.frames).toBe(4);
-    expect(s.worstMs).toBe(4);
-    stats.reset();
-    expect(stats.summary().frames).toBe(0);
-  });
-});
 
 describe('scaleForPixelBudget', () => {
   it('leaves a canvas inside its budget alone', () => {

@@ -1,6 +1,7 @@
+import { TARGET_FPS, holdsTarget, type BenchEnvironment } from '../shared/bench-report';
 import { el } from '../ui/dom';
-import { formatReport, holdsSixty, type BenchEnvironment, type BenchRow } from './bench-report';
-import type { Benchmark } from './bench';
+import type { PresetSweep } from './bench';
+import { formatSweepReport, type PresetRun, type SweepExtras } from './bench-report';
 import type { LookScene } from './look-scene';
 
 /** A short message that fades out, for key presses that change something. */
@@ -76,16 +77,28 @@ function adapterName(scene: LookScene): string {
   return String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL));
 }
 
-export function benchEnvironment(scene: LookScene, seconds: number): BenchEnvironment {
-  const t = scene.timings;
+/** The machine and canvas as the game page's report describes them. */
+export function describeMachine(scene: LookScene): BenchEnvironment {
   const size = scene.drawSize;
+  const frame = scene.stats.value;
   return {
-    adapter: adapterName(scene),
+    buildId: __BUILD_ID__,
+    gpu: adapterName(scene),
     userAgent: navigator.userAgent,
-    canvas: `${size.width}x${size.height} (device pixel ratio ${(window.devicePixelRatio || 1).toFixed(2)})`,
+    canvasWidth: size.width,
+    canvasHeight: size.height,
+    devicePixelRatio: window.devicePixelRatio || 1,
+    drawCalls: frame?.drawCalls ?? 0,
+    triangles: frame?.triangles ?? 0,
+  };
+}
+
+/** What this page adds to the report: the timers available and how long the valley took to build. */
+export function sweepExtras(scene: LookScene): SweepExtras {
+  const t = scene.timings;
+  return {
     timerQueries: scene.gpuTimer.supported,
     terrain: scene.params.terrain,
-    seconds,
     build: {
       field: t.fieldMs,
       grid: t.gridMs,
@@ -96,14 +109,17 @@ export function benchEnvironment(scene: LookScene, seconds: number): BenchEnviro
   };
 }
 
+const presetName = (preset: string): string => preset.charAt(0).toUpperCase() + preset.slice(1);
+
 /** The progress banner while the benchmark runs and the results card when it is done. */
 export class BenchPanel {
   readonly banner = el('div', 'look-bench-banner');
   readonly results = el('div', 'look-bench-results');
   private bannerText = '';
+  private drawnFor = '';
 
   constructor(
-    private readonly bench: Benchmark,
+    private readonly sweep: PresetSweep,
     private readonly scene: LookScene,
   ) {
     this.banner.hidden = true;
@@ -111,35 +127,50 @@ export class BenchPanel {
   }
 
   refresh(): void {
-    const running = this.bench.state === 'running';
-    this.banner.hidden = !running;
-    if (running) {
-      const preset = this.bench.preset;
-      const percent = Math.round(this.bench.progress * 100);
-      const text = `Benchmark · ${preset?.toUpperCase() ?? ''} · ${
-        this.bench.progress === 0 ? 'warming up' : `${percent}%`
+    const sweep = this.sweep;
+    this.banner.hidden = !sweep.active;
+    if (sweep.active) {
+      const where = `${presetName(sweep.preset ?? '')} (${sweep.presetNumber + 1} of ${sweep.presetCount})`;
+      const percent = Math.round(sweep.progress * 100);
+      const text = `Benchmark · ${where} · ${
+        sweep.warmingUp ? 'warming up' : `${percent}%`
       } · press Esc to stop`;
       if (text !== this.bannerText) {
         this.bannerText = text;
         this.banner.textContent = text;
       }
     }
-    if (this.bench.state === 'done' && this.bench.rows.length > 0) this.showResults();
-    else this.results.hidden = true;
+    const finished = sweep.state === 'done' || sweep.state === 'cancelled';
+    if (!finished) {
+      this.drawnFor = '';
+      this.results.hidden = true;
+      return;
+    }
+    // Draw the card once per finished sweep; closing it keeps it closed until the next one.
+    const key = `${sweep.state}:${sweep.runs.length}:${sweep.runs.at(-1)?.report.finishedAt ?? ''}`;
+    if (key !== this.drawnFor) {
+      this.drawnFor = key;
+      this.showResults();
+    }
   }
 
   private showResults(): void {
-    const rows = this.bench.rows;
-    const env = benchEnvironment(this.scene, this.bench.seconds);
-    const report = formatReport(rows, env);
+    const sweep = this.sweep;
+    const runs = sweep.runs;
+    const extras = sweepExtras(this.scene);
+    const report = formatSweepReport(runs, extras);
     this.results.replaceChildren();
     this.results.append(el('h2', undefined, 'Benchmark results'));
-    this.results.append(el('p', 'look-bench-adapter', env.adapter));
-    this.results.append(this.table(rows));
+    const adapter = runs[0]?.report.environment.gpu ?? adapterName(this.scene);
+    this.results.append(el('p', 'look-bench-adapter', adapter));
+    if (sweep.state === 'cancelled') {
+      this.results.append(el('p', 'look-bench-note', `Run stopped. ${sweep.note}`.trim()));
+    }
+    if (runs.length > 0) this.results.append(this.table(runs));
     const hint = el(
       'p',
       'look-bench-hint',
-      'Balanced must hold 60 FPS at 1080p on a mid-range laptop. Copy the report and paste it into the thread.',
+      `Balanced must hold ${TARGET_FPS} FPS at 1080p on a mid-range laptop. Copy the report and paste it into the thread.`,
     );
     const buttons = el('div', 'look-bench-buttons');
     const copy = el('button', 'look-button', 'Copy report');
@@ -151,7 +182,10 @@ export class BenchPanel {
     });
     const again = el('button', 'look-button', 'Run again');
     again.type = 'button';
-    again.addEventListener('click', () => this.bench.start());
+    again.addEventListener('click', () => {
+      this.results.hidden = true;
+      sweep.start();
+    });
     const close = el('button', 'look-button', 'Close');
     close.type = 'button';
     close.addEventListener('click', () => {
@@ -162,25 +196,27 @@ export class BenchPanel {
     this.results.hidden = false;
   }
 
-  private table(rows: readonly BenchRow[]): HTMLElement {
+  private table(runs: readonly PresetRun[]): HTMLElement {
     const table = el('table', 'look-bench-table');
     const head = el('tr');
     for (const name of ['Preset', 'Size', 'FPS', 'avg ms', 'p95 ms', 'GPU ms', 'Holds 60']) {
       head.append(el('th', undefined, name));
     }
     table.append(head);
-    for (const r of rows) {
+    for (const r of runs) {
+      const frames = r.report.frames;
+      const holds = holdsTarget(frames);
       const tr = el('tr');
-      tr.dataset.holds = holdsSixty(r) ? 'yes' : 'no';
-      const gpu = r.gpuAvgMs === null ? '-' : r.gpuAvgMs.toFixed(1);
+      tr.dataset.holds = holds ? 'yes' : 'no';
+      tr.dataset.preset = r.preset;
       for (const text of [
-        r.preset,
+        presetName(r.preset),
         `${r.width}x${r.height}`,
-        r.fps.toFixed(1),
-        r.avgMs.toFixed(1),
-        r.p95Ms.toFixed(1),
-        gpu,
-        holdsSixty(r) ? 'yes' : 'no',
+        frames.fps.toFixed(1),
+        frames.avgMs.toFixed(1),
+        frames.p95Ms.toFixed(1),
+        r.gpu ? r.gpu.avgMs.toFixed(1) : '-',
+        holds ? 'yes' : 'no',
       ]) {
         tr.append(el('td', undefined, text));
       }

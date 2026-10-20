@@ -40,6 +40,11 @@ export interface Benchmark {
   onChange(listener: () => void): () => void;
   /** Called once per simulation tick: plays the next step of the route into `input` and `look`. */
   driveTick(input: PlayerInput, look: LookState, rig: CameraRig): void;
+  /**
+   * Called once per simulation tick by a page that flies a camera instead of a player (the look
+   * spike): counts the tick and ends the run on the last one. Read `progress` for where the route is.
+   */
+  advance(): void;
   /** Called once per rendered frame with the frame interval and the CPU time spent on it. */
   recordFrame(frameMs: number, cpuMs: number): void;
   dispose(): void;
@@ -81,6 +86,11 @@ export function createBenchmark(scriptSeconds: number, hooks: BenchmarkHooks): B
     // eslint-disable-next-line no-console
     console.info(formatBenchReport(report));
     setState('done');
+  };
+
+  const nextTick = (): void => {
+    tick++;
+    if (tick >= totalTicks) finish();
   };
 
   const cancel = (reason = 'Cancelled.'): void => {
@@ -130,8 +140,10 @@ export function createBenchmark(scriptSeconds: number, hooks: BenchmarkHooks): B
     driveTick(input, look, rig) {
       if (state !== 'running') return;
       rig.setMode(driveBenchTick(tick, totalTicks, input, look));
-      tick++;
-      if (tick >= totalTicks) finish();
+      nextTick();
+    },
+    advance() {
+      if (state === 'running') nextTick();
     },
     recordFrame(frameDurationMs, cpuDurationMs) {
       if (state === 'warmup') {

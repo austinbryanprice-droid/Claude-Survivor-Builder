@@ -1,4 +1,5 @@
 import { TIME_PRESETS } from '../shared/daycycle';
+import { DEFAULT_BENCH_SECONDS, readFlags } from '../shared/flags';
 import { isQualityName, readQuality, type QualityName } from '../shared/quality';
 import type { TerrainMode } from '../world/render/terrain-render';
 
@@ -21,12 +22,10 @@ export interface LookParams {
   readonly stats: boolean;
   /** Freeze animation (clouds, wind, water) so screenshots are repeatable. */
   readonly freeze: boolean;
-  /** Start the benchmark at load (cycles all presets along a fixed camera path). */
+  /** Start the benchmark at load: the game's `?bench=1`, flown through the valley once per preset. */
   readonly bench: boolean;
-  /** Length of the benchmark route per preset, in seconds. */
+  /** Length of the benchmark route per preset, in seconds (the game's `?benchSeconds=`). */
   readonly benchSeconds: number;
-  /** Frames drawn before each benchmark measurement starts. */
-  readonly benchWarmup: number;
   /** Presets the benchmark runs, in order; all three by default. */
   readonly benchPresets: readonly QualityName[];
   /** Forced internal render scale (disables the adaptive governor), or null. */
@@ -35,6 +34,9 @@ export interface LookParams {
 }
 
 const ALL_PRESETS: readonly QualityName[] = ['low', 'balanced', 'ultra'];
+/** Shortest and longest route; the game page stops at 1 s, tests here use a fraction of a second. */
+const MIN_BENCH_SECONDS = 0.1;
+const MAX_BENCH_SECONDS = 300;
 
 /** `?benchPresets=balanced,ultra` picks which presets the benchmark runs. */
 function readBenchPresets(value: string | null): readonly QualityName[] {
@@ -47,11 +49,12 @@ function readBenchPresets(value: string | null): readonly QualityName[] {
 
 export function readLookParams(search: string): LookParams {
   const p = new URLSearchParams(search);
+  // The benchmark and debug switches are the game's own, so both pages read them the same way.
+  const flags = readFlags(search);
   const time = p.get('time');
   const seed = Number(p.get('seed'));
   const scale = Number(p.get('scale'));
   const benchSeconds = Number(p.get('benchSeconds'));
-  const benchWarmup = Number(p.get('benchWarmup'));
   return {
     quality: readQuality(search),
     seed: Number.isFinite(seed) && p.has('seed') ? seed | 0 : 20261020,
@@ -62,17 +65,13 @@ export function readLookParams(search: string): LookParams {
     hud: p.get('hud') !== '0',
     stats: p.get('stats') !== '0',
     freeze: p.has('freeze') && p.get('freeze') !== '0',
-    bench: p.has('bench') && p.get('bench') !== '0',
+    bench: flags.bench,
     benchSeconds:
       p.has('benchSeconds') && Number.isFinite(benchSeconds)
-        ? Math.min(120, Math.max(0.1, benchSeconds))
-        : 12,
+        ? Math.min(MAX_BENCH_SECONDS, Math.max(MIN_BENCH_SECONDS, benchSeconds))
+        : DEFAULT_BENCH_SECONDS,
     benchPresets: readBenchPresets(p.get('benchPresets')),
-    benchWarmup:
-      p.has('benchWarmup') && Number.isFinite(benchWarmup)
-        ? Math.min(600, Math.max(0, Math.round(benchWarmup)))
-        : 90,
     scale: p.has('scale') && Number.isFinite(scale) && scale > 0 ? Math.min(1, scale) : null,
-    debug: p.has('debug'),
+    debug: flags.debug,
   };
 }

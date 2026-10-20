@@ -1,76 +1,110 @@
 import { describe, expect, it } from 'vitest';
 import {
-  HOLD_FPS,
-  HOLD_P95_MS,
-  formatReport,
-  holdsSixty,
-  type BenchEnvironment,
-  type BenchRow,
-} from '../../src/spike/bench-report';
+  AVG_FPS_FLOOR,
+  P95_LIMIT_MS,
+  estimateRefreshHz,
+  holdsTarget,
+  type BenchReport,
+} from '../../src/shared/bench-report';
+import { summarizeFrames } from '../../src/shared/frame-stats';
+import type { QualityName } from '../../src/shared/quality';
+import { formatSweepReport, type PresetRun, type SweepExtras } from '../../src/spike/bench-report';
 
-function row(partial: Partial<BenchRow>): BenchRow {
+function reportFor(samples: readonly number[]): BenchReport {
+  const frames = summarizeFrames(samples);
   return {
-    preset: 'balanced',
-    width: 1920,
-    height: 1080,
-    frames: 720,
-    fps: 60,
-    avgMs: 16.7,
-    p95Ms: 17.5,
-    p99Ms: 19,
-    worstMs: 25,
-    cpuMs: 4.2,
-    gpuAvgMs: 9.1,
-    gpuP95Ms: 11.4,
-    drawCalls: 96.4,
-    triangles: 812_345,
-    ...partial,
+    scriptSeconds: 30,
+    wallSeconds: 30.2,
+    frames,
+    cpu: summarizeFrames(samples.map(() => 4.2)),
+    refreshHz: estimateRefreshHz(frames),
+    environment: {
+      buildId: 'abc1234',
+      gpu: 'ANGLE (Test GPU)',
+      userAgent: 'TestBrowser/1.0',
+      canvasWidth: 1920,
+      canvasHeight: 1080,
+      devicePixelRatio: 1,
+      drawCalls: 90,
+      triangles: 800_000,
+    },
+    finishedAt: '2026-10-20T12:00:00.000Z',
   };
 }
 
-const ENV: BenchEnvironment = {
-  adapter: 'ANGLE (Test GPU)',
-  userAgent: 'TestBrowser/1.0',
-  canvas: '1920x1080 (device pixel ratio 1.00)',
+function run(preset: QualityName, frameMs: number, withGpu = true): PresetRun {
+  const samples = new Array<number>(600).fill(frameMs);
+  return {
+    preset,
+    width: 1920,
+    height: 1080,
+    report: reportFor(samples),
+    gpu: withGpu ? summarizeFrames(samples.map(() => 9.1)) : null,
+    drawCalls: 96.4,
+    triangles: 812_345,
+  };
+}
+
+const EXTRAS: SweepExtras = {
   timerQueries: true,
   terrain: 'surface-nets',
-  seconds: 12,
   build: { field: 3, grid: 160, mesh: 150, scatter: 70, total: 520 },
 };
 
-describe('holdsSixty', () => {
-  it('needs both the average rate and the slow tail', () => {
-    expect(holdsSixty({ fps: 60, p95Ms: 17 })).toBe(true);
-    expect(holdsSixty({ fps: HOLD_FPS, p95Ms: HOLD_P95_MS })).toBe(true);
-    expect(holdsSixty({ fps: HOLD_FPS - 0.1, p95Ms: 17 })).toBe(false);
-    expect(holdsSixty({ fps: 60, p95Ms: HOLD_P95_MS + 0.1 })).toBe(false);
-    expect(holdsSixty({ fps: 144, p95Ms: 8 })).toBe(true);
-  });
-});
+describe('formatSweepReport', () => {
+  const text = formatSweepReport(
+    [run('low', 1000 / 144), run('balanced', 1000 / 60), run('ultra', 1000 / 40)],
+    EXTRAS,
+  );
 
-describe('formatReport', () => {
-  it('writes the environment and one table row per preset', () => {
-    const report = formatReport(
-      [
-        row({ preset: 'low', fps: 60, width: 1440, height: 810 }),
-        row({ preset: 'balanced' }),
-        row({ preset: 'ultra', fps: 38.2, p95Ms: 31.4, gpuAvgMs: null, gpuP95Ms: null }),
-      ],
-      ENV,
+  it('leads with a verdict for each preset, using the game page pass mark', () => {
+    expect(text).toContain('look benchmark, build abc1234');
+    expect(text).toContain(
+      'Result: Low holds 60 FPS, Balanced holds 60 FPS, Ultra is below 60 FPS',
     );
-    expect(report).toContain('Graphics adapter: ANGLE (Test GPU)');
-    expect(report).toContain('terrain surface-nets');
-    expect(report).toContain('12 s per preset');
-    expect(report).toContain('| low | 1440x810 |');
-    expect(report).toContain(
-      '| balanced | 1920x1080 | 60.0 | 16.7 | 17.5 | 19.0 | 25.0 | 4.2 | 9.1 / 11.4 | 96 | 812k | yes |',
-    );
-    expect(report).toMatch(/\| ultra \| 1920x1080 \| 38\.2 \|.*\| - \| .* \| no \|/);
-    expect(report.split('\n').filter((line) => line.startsWith('| '))).toHaveLength(2 + 3);
+    expect(text).toContain(`at least ${AVG_FPS_FLOOR} FPS`);
+    expect(text).toContain(`at most ${P95_LIMIT_MS} ms`);
   });
 
-  it('says so when the browser has no GPU timer', () => {
-    const report = formatReport([row({})], { ...ENV, timerQueries: false });
-    expect(report).toContain('not available');
+  it('names the machine, the route and the valley build once', () => {
+    expect(text).toContain('Graphics adapter: ANGLE (Test GPU)');
+    expect(text).toContain('Browser: TestBrowser/1.0');
+    expect(text).toContain('Canvas: 1920x1080 px at device pixel ratio 1.00');
+    expect(text).toContain('Route: 30 s through the valley per preset');
+    expect(text).toContain('terrain surface-nets');
+    expect(text).toContain('GPU timer queries: available');
+    expect(text).toContain('total 520 ms');
+  });
+
+  it('has one table row per preset with the same numbers as the game page report', () => {
+    const rows = text.split('\n').filter((line) => /^\| (Low|Balanced|Ultra) /.test(line));
+    expect(rows).toHaveLength(3);
+    const balanced = rows[1] ?? '';
+    expect(balanced).toContain('| Balanced | 1920x1080 | 60.0 | 16.7 |');
+    expect(balanced).toContain('| 4.2 | 9.1 / 9.1 | 96 | 812k | yes |');
+    expect(rows[2]).toContain('| no |');
+  });
+
+  it('shows a dash when the browser has no GPU timer', () => {
+    const none = formatSweepReport([run('balanced', 16.7, false)], {
+      ...EXTRAS,
+      timerQueries: false,
+    });
+    expect(none).toContain('not available (frame intervals only)');
+    expect(none).toMatch(/\| 4\.2 \| - \| 96 \|/);
+  });
+
+  it('agrees with the shared verdict on a slow tail', () => {
+    // The average is 57.1 FPS, enough on its own, but one frame in ten is slow.
+    const tail = reportFor([...new Array<number>(540).fill(15), ...new Array<number>(60).fill(40)]);
+    const slowTail: PresetRun = { ...run('balanced', 15), report: tail };
+    expect(holdsTarget(tail.frames)).toBe(false);
+    expect(formatSweepReport([slowTail], EXTRAS)).toContain('Balanced is below 60 FPS');
+  });
+
+  it('copes with a sweep that stopped before any preset finished', () => {
+    const empty = formatSweepReport([], EXTRAS);
+    expect(empty).toContain('look benchmark');
+    expect(empty).not.toContain('Result:');
   });
 });

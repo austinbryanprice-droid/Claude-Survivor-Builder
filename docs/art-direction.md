@@ -108,15 +108,43 @@ Headless Chromium on software GL at 1280 by 720, with `freeze=1` so every run dr
 
 ![The valley in the morning with the player HUD, Balanced](look/hud-valley.jpg)
 
-| Image                                                                                                  | Preset      | Compare with                                                             |
-| ------------------------------------------------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------ |
-| [bal-lake](look/bal-lake.jpg)                                                                          | Balanced    | 01 and 02: a low warm sun, glitter and mist on the water, backlit pines  |
-| [bal-valley](look/bal-valley.jpg)                                                                      | Balanced    | 07: pines and rock, cyan mist pools, snow peaks far away                 |
-| [bal-canopy](look/bal-canopy.jpg)                                                                      | Balanced    | 03: layered forest, orange haze, a sun glow                              |
-| [bal-sunset](look/bal-sunset.jpg)                                                                      | Balanced    | 08: a violet sky, orange haze, a strong grade                            |
-| [bal-trail](look/bal-trail.jpg)                                                                        | Balanced    | 01 and 07: backlit grass and flowers up close                            |
-| [bal-crash](look/bal-crash.jpg), [bal-noon](look/bal-noon.jpg)                                         | Balanced    | The crash clearing and high sun (no wreck until Phase 2)                 |
-| [bal-outcrop](look/bal-outcrop.jpg), [terr-heightfield](look/terr-heightfield.jpg)                     | Balanced    | 06: a rock outcrop from surface nets, and the same view as a heightfield |
-| [bal-dusk](look/bal-dusk.jpg), [bal-night](look/bal-night.jpg)                                         | Balanced    | Moon, stars, cool blue                                                   |
-| [hud-valley](look/hud-valley.jpg), [hud-lake](look/hud-lake.jpg)                                       | Balanced    | 04 and 07: the player HUD at 1280 by 720                                 |
-| [low-lake](look/low-lake.jpg), [ultra-lake](look/ultra-lake.jpg), [ultra-valley](look/ultra-valley.jpg) | Low, Ultra  | The presets beside Balanced                                              |
+| Image                                                                                                   | Preset     | Compare with                                                             |
+| ------------------------------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------ |
+| [bal-lake](look/bal-lake.jpg)                                                                           | Balanced   | 01 and 02: a low warm sun, glitter and mist on the water, backlit pines  |
+| [bal-valley](look/bal-valley.jpg)                                                                       | Balanced   | 07: pines and rock, cyan mist pools, snow peaks far away                 |
+| [bal-canopy](look/bal-canopy.jpg)                                                                       | Balanced   | 03: layered forest, orange haze, a sun glow                              |
+| [bal-sunset](look/bal-sunset.jpg)                                                                       | Balanced   | 08: a violet sky, orange haze, a strong grade                            |
+| [bal-trail](look/bal-trail.jpg)                                                                         | Balanced   | 01 and 07: backlit grass and flowers up close                            |
+| [bal-crash](look/bal-crash.jpg), [bal-noon](look/bal-noon.jpg)                                          | Balanced   | The crash clearing and high sun (no wreck until Phase 2)                 |
+| [bal-outcrop](look/bal-outcrop.jpg), [terr-heightfield](look/terr-heightfield.jpg)                      | Balanced   | 06: a rock outcrop from surface nets, and the same view as a heightfield |
+| [bal-dusk](look/bal-dusk.jpg), [bal-night](look/bal-night.jpg)                                          | Balanced   | Moon, stars, cool blue                                                   |
+| [hud-valley](look/hud-valley.jpg), [hud-lake](look/hud-lake.jpg)                                        | Balanced   | 04 and 07: the player HUD at 1280 by 720                                 |
+| [low-lake](look/low-lake.jpg), [ultra-lake](look/ultra-lake.jpg), [ultra-valley](look/ultra-valley.jpg) | Low, Ultra | The presets beside Balanced                                              |
+
+### Frame budgets
+
+Draw calls and triangles per frame at 1280 by 720, every pass counted (shadows, reflection, main view, post). The sandbox has no GPU, so these are the static budget; the milliseconds come from the benchmark below.
+
+| View   | Low                 | Balanced             | Ultra                 |
+| ------ | ------------------- | -------------------- | --------------------- |
+| Lake   | 25 draws, 151k tris | 86 draws, 722k tris  | 91 draws, 1.52M tris  |
+| Valley | 37 draws, 200k tris | 111 draws, 855k tris | 149 draws, 1.85M tris |
+| Canopy | 35 draws, 218k tris | 103 draws, 892k tris | 131 draws, 1.91M tris |
+
+Low draws at 0.75 scale. The terrain alone is 123k triangles per pass with surface nets. Ultra roughly doubles the triangle count because two shadow cascades redraw the scene.
+
+Software rendering (SwiftShader, a 640 by 360 canvas) puts Balanced at about 12 times the cost of Low and Ultra at about 18 times. Only the ratios mean anything there, and a real GPU will not scale the same way, so they say which preset is heavier and nothing about frame rate.
+
+Building the valley in headless Chromium takes about half a second: textures 20 to 30 ms, density field 3 to 6 ms, ground grid 150 to 380 ms, terrain mesh 150 to 180 ms (60 to 85 ms for the heightfield), scatter 60 to 80 ms.
+
+**The frame rate itself needs a real machine.** Open `look.html?bench=1` on the target laptop at 1080p, plugged in, and leave the tab in front. It runs the game page's benchmark through the valley once each for Low, Balanced and Ultra (about 100 seconds), then shows a table with the verdict, and Copy report gives Markdown with GPU time where the browser has timer queries. Balanced has to show "holds 60" there. See [the spike README](../src/spike/README.md#benchmark).
+
+### Known gaps
+
+- The crash site is an empty ash clearing. The wreck, the Outpost Core and lantern glow need structures, which arrive in Phase 2, and references 01, 04 and 05 are mostly about buildings.
+- Textures are detailed and smooth. References 01, 02, 03 and 08 use pixel cubes; whether to match that is still Austin's call (see [decisions](decisions.md#look-spike-2026-10-20)).
+- Low has no shadows yet; blob shadows under trees are the planned stand-in.
+- Balanced reflects the far shore faintly (0.3 scale); the near-mirror water of references 01 and 02 needs Ultra.
+- The broadleaf canopies are brighter and simpler than the pines and oaks in reference 07. A second leaf texture and more colour variation are the next pass.
+- Clouds are soft and procedural, not the sculpted volumes of references 01 and 03.
+- Shaded grass at golden hour is dark, as it is in reference 01; reference 07's brighter mid-greens belong to a high-key daylight look that the morning and noon views already show.

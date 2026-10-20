@@ -102,26 +102,63 @@ test('look spike runs the benchmark on every preset and offers a report', async 
   test.setTimeout(360_000);
   const problems = watchProblems(page);
   await page.setViewportSize({ width: 320, height: 180 });
-  await page.goto(
-    './look.html?debug&bench=1&benchSeconds=0.2&benchWarmup=1&benchPresets=low,balanced,ultra',
-  );
+  await page.goto('./look.html?debug&bench=1&benchSeconds=0.2&benchPresets=low,balanced,ultra');
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'true', { timeout: 90_000 });
   await expect(page.locator('.look-bench-banner')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.look-bench-results')).toBeVisible({ timeout: 300_000 });
   await expect(page.locator('.look-bench-table tr')).toHaveCount(4);
-  for (const name of ['low', 'balanced', 'ultra']) {
+  for (const name of ['Low', 'Balanced', 'Ultra']) {
     await expect(page.locator('.look-bench-table')).toContainText(name);
   }
+  await expect(page.locator('.look-bench-table')).toContainText('Holds 60');
+  await expect(page.locator('.look-bench-buttons')).toContainText('Copy report');
 
-  const rows = await page.evaluate(() => window.__look?.bench.rows ?? []);
-  expect(rows.map((row) => row.preset)).toEqual(['low', 'balanced', 'ultra']);
-  for (const row of rows) {
-    expect(row.frames).toBe(12);
-    expect(row.avgMs).toBeGreaterThan(0);
-    expect(row.drawCalls).toBeGreaterThan(10);
-    expect(row.width).toBeGreaterThan(100);
+  const runs = await page.evaluate(
+    () =>
+      window.__look?.sweep.runs.map((run) => ({
+        preset: run.preset,
+        frames: run.report.frames.frames,
+        avgMs: run.report.frames.avgMs,
+        seconds: run.report.scriptSeconds,
+        gpu: run.report.environment.gpu,
+        drawCalls: run.drawCalls,
+        triangles: run.triangles,
+        width: run.width,
+      })) ?? [],
+  );
+  expect(runs.map((run) => run.preset)).toEqual(['low', 'balanced', 'ultra']);
+  for (const run of runs) {
+    // A 0.2 s route is 12 simulation ticks; a slow machine plays them in a few frames.
+    expect(run.frames).toBeGreaterThan(0);
+    expect(run.avgMs).toBeGreaterThan(0);
+    expect(run.seconds).toBe(0.2);
+    expect(run.gpu).not.toBe('');
+    expect(run.drawCalls).toBeGreaterThan(10);
+    expect(run.width).toBeGreaterThan(100);
   }
   // Ultra draws more than Low on the same route.
-  expect((rows[2]?.triangles ?? 0) > (rows[0]?.triangles ?? 0)).toBe(true);
+  expect((runs[2]?.triangles ?? 0) > (runs[0]?.triangles ?? 0)).toBe(true);
+  // The sweep puts the view and the preset back where it found them.
+  const after = await page.evaluate(() => ({
+    quality: window.__look?.scene.quality.name,
+    state: window.__look?.sweep.state,
+  }));
+  expect(after).toEqual({ quality: 'balanced', state: 'done' });
+  expect(problems).toEqual([]);
+});
+
+test('look spike stops the benchmark with Esc and keeps what it measured', async ({ page }) => {
+  test.setTimeout(240_000);
+  const problems = watchProblems(page);
+  await page.setViewportSize({ width: 320, height: 180 });
+  await page.goto('./look.html?debug&bench=1&benchSeconds=120&benchPresets=low');
+  await expect(page.locator('html')).toHaveAttribute('data-ready', 'true', { timeout: 90_000 });
+  await expect(page.locator('.look-bench-banner')).toBeVisible({ timeout: 30_000 });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.look-bench-banner')).toBeHidden();
+  await expect(page.locator('.look-bench-results')).toBeVisible();
+  await expect(page.locator('.look-bench-results')).toContainText('Run stopped');
+  const state = await page.evaluate(() => window.__look?.sweep.state);
+  expect(state).toBe('cancelled');
   expect(problems).toEqual([]);
 });
