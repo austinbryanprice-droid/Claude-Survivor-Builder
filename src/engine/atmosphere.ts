@@ -104,7 +104,7 @@ export class Atmosphere {
       },
       uMistLakeColor: { value: new Color() },
       uMistCrashColor: { value: new Color() },
-      uMistParams: { value: new Vector4(0.026, 0.034, 0, 0) },
+      uMistParams: { value: new Vector4(0.016, 0.014, 0, 0) },
       uNoise: { value: noise },
     };
   }
@@ -147,11 +147,12 @@ export class Atmosphere {
       0,
     );
 
-    // Mist is lit by the sky: dimmer at night, tinted warm at golden hour.
+    // Mist is lit by the sky: dimmer at night, tinted warm and thinner at golden hour.
     const mistLight = (0.35 + 0.65 * (1 - sky.night)) * this.mistStrength;
+    const lowSun = 1 - smoothstep(8, 30, sky.sunElevation);
     u.uMistLakeColor.value.setRGB(0.28, 0.82, 0.8, SRGBColorSpace).multiplyScalar(mistLight);
-    u.uMistLakeColor.value.lerp(u.uFogSunColor.value, 0.12);
-    u.uMistCrashColor.value.setRGB(0.78, 0.3, 0.2, SRGBColorSpace).multiplyScalar(mistLight);
-    u.uMistParams.value.set(0.026, 0.034, 0, 0);
+    u.uMistLakeColor.value.lerp(u.uFogSunColor.value, 0.12 + 0.4 * lowSun);
+    u.uMistCrashColor.value.setRGB(0.62, 0.34, 0.3, SRGBColorSpace).multiplyScalar(mistLight);
+    u.uMistParams.value.set(0.016 * sky.mist, 0.014 * sky.mist, 0, 0);
   }
 }

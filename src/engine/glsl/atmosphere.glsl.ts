@@ -48,7 +48,7 @@ float skyNoise(vec2 p) {
 
 float cloudDensity(vec2 p, float cover) {
   float t0 = 0.78 - cover * 0.62;
-  return smoothstep(t0, t0 + 0.3, skyNoise(p));
+  return smoothstep(t0, t0 + 0.24, skyNoise(p));
 }
 
 vec3 skyGradient(vec3 d) {
@@ -56,14 +56,17 @@ vec3 skyGradient(vec3 d) {
   float sunDot = dot(d, uSunDir);
   float sunSide = pow(clamp(sunDot * 0.5 + 0.5, 0.0, 1.0), 3.0);
   vec3 hz = mix(uSkyHorizon, uSkyHorizonSun, sunSide);
-  vec3 col = mix(hz, uSkyMid, smoothstep(0.0, 0.32, h));
-  col = mix(col, uSkyZenith, smoothstep(0.18, 0.85, h));
+  vec3 col = mix(hz, uSkyMid, smoothstep(0.0, 0.26, h));
+  col = mix(col, uSkyZenith, smoothstep(0.1, 0.62, h));
   float s = max(sunDot, 0.0);
-  float glowWide = s * s * s * s * s * s;
-  float glowTight = pow(s, 90.0);
+  float s2 = s * s;
+  float s4 = s2 * s2;
+  float s8 = s4 * s4;
+  float glowWide = s8 * s2 * s2;       // broad warm halo, reaching about 30 degrees
+  float glowNear = pow(s, 56.0);       // bright core around the sun, about 10 degrees
   float lowSun = 1.0 - smoothstep(0.0, 0.7, h);
-  col += uSkyHorizonSun * glowWide * (0.35 + 0.5 * lowSun);
-  col += uSunColor * glowTight * 0.25;
+  col += uSkyHorizonSun * glowWide * (0.22 + 0.4 * lowSun);
+  col += uSunColor * glowNear * 0.3;
   col = mix(col, hz, smoothstep(0.0, -0.18, d.y));
   return col;
 }
@@ -82,7 +85,7 @@ vec4 cloudLayer(vec3 d) {
     float dens2 = cloudDensity(p + sdir * reach, cover);
     float lit = 1.0 - clamp((dens2 - dens * 0.3) * 2.4, 0.0, 1.0);
     vec3 col = mix(uCloudShade, uCloudLit, lit);
-    col *= mix(1.0, 0.72, dens * dens);
+    col *= mix(1.0, 0.86, dens * dens);
     float edge = clamp(1.0 - dens, 0.0, 1.0);
     col += uCloudLit * pow(sunDot, 5.0) * (0.35 + edge) * 0.9;
   #else
@@ -103,8 +106,9 @@ vec3 skyRadiance(vec3 d) {
   vec4 cl = cloudLayer(d);
   float sunDot = dot(d, uSunDir);
   float disc = smoothstep(0.99962, 0.99975, sunDot) * step(0.0, d.y + 0.02);
-  float cloudCut = 1.0 - cl.a * 0.9;
-  col += uSunColor * 7.0 * disc * cloudCut;
+  float cloudCut = 1.0 - cl.a * 0.5;
+  vec3 discColor = mix(uSunColor, vec3(max(uSunColor.r, max(uSunColor.g, uSunColor.b))), 0.55);
+  col += discColor * 12.0 * disc * cloudCut;
   float night = uSkyParams.y;
   if (night > 0.01 && d.y > 0.0) {
     vec3 q = floor(d * 220.0);

@@ -1,9 +1,12 @@
 import { MathUtils, Vector3, type PerspectiveCamera } from 'three';
+import { resolveTerrain } from '../world/terrain/collision';
 import type { SdfGrid } from '../world/terrain/grid';
 import { FLY_PATH, type ShotPose } from './shots';
 
 const EYE_HEIGHT = 1.7;
 const RADIUS = 0.36;
+/** Heights above the feet of the spheres that stand in for the body: ankle, waist and chest. */
+const PROBE_HEIGHTS = [RADIUS, 0.95, 1.5];
 const GRAVITY = 24;
 const JUMP = 7.4;
 const WALK = 4.4;
@@ -31,7 +34,6 @@ export class LookController {
   private velocity = new Vector3();
   private onGround = false;
   private readonly keys = new Set<string>();
-  private readonly grad = new Float32Array(3);
   private readonly tmp = new Vector3();
   locked = false;
 
@@ -124,39 +126,7 @@ export class LookController {
   }
 
   private resolve(): void {
-    this.onGround = false;
-    const heights = [RADIUS, 0.95, 1.5];
-    for (let pass = 0; pass < 3; pass++) {
-      for (const h of heights) {
-        const x = this.position.x;
-        const y = this.position.y + h;
-        const z = this.position.z;
-        const d = this.grid.sample(x, y, z) - RADIUS;
-        if (d >= 0) continue;
-        this.grid.gradient(x, y, z, this.grad);
-        const gx = this.grad[0] as number;
-        const gy = this.grad[1] as number;
-        const gz = this.grad[2] as number;
-        const gl = Math.hypot(gx, gy, gz) || 1;
-        const nx = gx / gl;
-        const ny = gy / gl;
-        const nz = gz / gl;
-        this.position.x -= nx * d;
-        this.position.y -= ny * d;
-        this.position.z -= nz * d;
-        if (ny > 0.55) {
-          this.onGround = true;
-          if (this.velocity.y < 0) this.velocity.y = 0;
-        }
-        // Remove velocity into the surface.
-        const into = this.velocity.x * nx + this.velocity.y * ny + this.velocity.z * nz;
-        if (into < 0) {
-          this.velocity.x -= nx * into;
-          this.velocity.y -= ny * into;
-          this.velocity.z -= nz * into;
-        }
-      }
-    }
+    this.onGround = resolveTerrain(this.grid, this.position, this.velocity, RADIUS, PROBE_HEIGHTS);
   }
 
   private clampToWorld(): void {

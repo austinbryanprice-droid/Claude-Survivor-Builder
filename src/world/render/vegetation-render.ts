@@ -125,15 +125,17 @@ void main() {
 
   float ao = vInfo.z;
   float ndl = dot(N, uKeyDir);
-  float wrap = mix(0.1, 0.5, leaf);
+  float wrap = mix(0.1, 0.45, leaf);
   float diff = clamp((ndl + wrap) / (1.0 + wrap), 0.0, 1.0);
   float shadow = sunShadow(vViewDepth);
-  vec3 direct = uKeyColor * diff * shadow * mix(0.5, 1.0, ao);
+  // Leaves deep inside a crown see little sun and little sky; the rim stays bright.
+  float occ = ao * ao;
+  vec3 direct = uKeyColor * diff * shadow * mix(0.1, 1.0, occ);
   // Light shining through the leaves toward a camera that looks at the sun.
   float vdl = clamp(dot(-V, uKeyDir), 0.0, 1.0);
-  float back = pow(vdl, 2.2) * uTree.y * leaf * shadow * (1.0 - 0.6 * diff);
-  vec3 trans = uKeyColor * back * albedo * vec3(1.45, 0.95, 0.38) * ao;
-  vec3 amb = ambientLight(N) * mix(0.45, 1.0, ao);
+  float back = pow(vdl, 4.5) * uTree.y * leaf * shadow * (1.0 - 0.6 * diff);
+  vec3 trans = uKeyColor * back * albedo * vec3(1.3, 1.0, 0.55) * occ;
+  vec3 amb = ambientLight(N) * mix(0.2, 1.0, occ);
   vec3 lit = albedo * (direct + amb) + trans;
 
   lit = applyAtmosphere(lit, vWorld);
@@ -211,7 +213,7 @@ void main() {
   vec4 splat = texture2D(uSplat, suv);
   float macroA = texture2D(uNoise, iPos.xz * 0.011).r;
   float lush = clamp(splat.a * 0.5 + macroA * 0.9 - 0.15, 0.0, 1.0);
-  vec3 tint = mix(vec3(1.08, 1.0, 0.62), vec3(0.66, 0.92, 0.66), lush);
+  vec3 tint = mix(vec3(0.95, 0.92, 0.7), vec3(0.7, 0.9, 0.74), lush);
   vTint = tint * (0.85 + 0.3 * fract(iData.z * 13.7));
 
   vec4 mv = viewMatrix * vec4(wp, 1.0);
@@ -268,8 +270,10 @@ void main() {
   vec3 V = normalize(uCamPos - vWorld);
   float vdl = clamp(dot(-V, uKeyDir), 0.0, 1.0);
   float back = pow(vdl, 2.0) * shadow * (0.25 + 0.75 * vUv.y);
-  vec3 trans = uKeyColor * back * albedo * vec3(1.4, 1.15, 0.5) * 0.9;
-  vec3 amb = ambientLight(N) * mix(0.4, 1.0, ao);
+  vec3 trans = uKeyColor * back * albedo * vec3(1.3, 1.15, 0.6) * 0.9;
+  // Thin blades pass sky light through them, so shaded grass keeps a soft green glow instead of
+  // going black; the fill follows the ambient colour and fades toward the roots.
+  vec3 amb = ambientLight(N) * mix(0.5, 1.0, ao) * (1.0 + 0.45 * vUv.y);
   vec3 lit = albedo * (direct + amb) + trans;
   lit = applyAtmosphere(lit, vWorld);
   gl_FragColor = vec4(lit, alpha);
@@ -413,17 +417,17 @@ export class VegetationRenderer {
 
     const pine = treeMaterial(
       foliage.frond,
-      new Color(0.7, 0.92, 0.72),
-      new Color(0.95, 0.95, 0.7),
-      0.65,
-      new Color(0.032, 0.075, 0.034),
+      new Color(0.8, 0.95, 0.8),
+      new Color(0.95, 0.95, 0.75),
+      0.55,
+      new Color(0.026, 0.06, 0.03),
     );
     const broad = treeMaterial(
       foliage.leaves,
-      new Color(0.78, 0.98, 0.6),
-      new Color(0.5, 0.88, 0.5),
-      0.8,
-      new Color(0.06, 0.15, 0.03),
+      new Color(0.9, 0.92, 0.7),
+      new Color(0.55, 0.8, 0.7),
+      0.7,
+      new Color(0.045, 0.11, 0.03),
     );
 
     const models: [PackedTrees, ReturnType<typeof treeMaterial>, (lod: Lod) => BufferGeometry][] = [

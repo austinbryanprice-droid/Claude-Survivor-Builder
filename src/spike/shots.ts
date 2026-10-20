@@ -35,8 +35,8 @@ export const SHOTS: Readonly<Record<string, ShotPose>> = {
   valley: {
     x: -50,
     z: -6,
-    height: 14,
-    clear: 14,
+    height: 16,
+    clear: 22,
     bearing: 78,
     pitch: -7,
     fov: 64,
@@ -77,6 +77,18 @@ export const SHOTS: Readonly<Record<string, ShotPose>> = {
     time: 'golden',
     note: 'Backlit grass and trees',
   },
+  // A big rock outcrop at the edge of the clearing, for the terrain mesher comparison.
+  outcrop: {
+    x: 28,
+    z: -33,
+    height: 3,
+    clear: 11,
+    bearing: 38,
+    pitch: 9,
+    fov: 62,
+    time: 'afternoon',
+    note: 'Rock outcrop',
+  },
   noon: {
     x: 0,
     z: 20,
@@ -86,6 +98,18 @@ export const SHOTS: Readonly<Record<string, ShotPose>> = {
     fov: 62,
     time: 'noon',
     note: 'High sun',
+  },
+  // The sun just above the western hills, sky going violet and the haze orange (reference 08).
+  sunset: {
+    x: 20,
+    z: -24,
+    height: 2.5,
+    clear: 10,
+    bearing: 262,
+    pitch: 6,
+    fov: 64,
+    time: 'sunset',
+    note: 'Sunset over the valley',
   },
   dusk: {
     x: 12,

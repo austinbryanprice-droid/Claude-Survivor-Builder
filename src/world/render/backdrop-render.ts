@@ -33,8 +33,10 @@ void main() {
   float slope = 1.0 - N.y;
   float n1 = texture2D(uNoise, vWorld.xz * 0.004).r;
   float n2 = texture2D(uNoise, vWorld.xz * 0.021 + 0.37).g;
+  // Tree-sized blobs: bright crowns, dark gaps. Distance and mipmaps blur them into a texture.
+  float crowns = smoothstep(0.62, 0.12, texture2D(uNoise, vWorld.xz * 0.0075).a);
 
-  vec3 forest = vec3(0.028, 0.062, 0.026) * (0.75 + 0.7 * n2);
+  vec3 forest = vec3(0.028, 0.062, 0.026) * (0.7 + 0.5 * n2) * mix(0.5, 1.5, crowns);
   vec3 meadow = vec3(0.09, 0.14, 0.045) * (0.8 + 0.5 * n1);
   vec3 rock = vec3(0.17, 0.145, 0.125) * (0.75 + 0.5 * n2);
   vec3 snow = vec3(0.78, 0.78, 0.8);
@@ -88,7 +90,7 @@ export class BackdropRenderer {
         const sink = 0.7 * smoothstep(WORLD_HALF + 8, WORLD_HALF, inside);
         const o = (i * ANGLES + a) * 3;
         positions[o] = x;
-        positions[o + 1] = field.heightAt(x, z) - sink;
+        positions[o + 1] = field.skylineAt(x, z) - sink;
         positions[o + 2] = z;
       }
     }
@@ -101,7 +103,7 @@ export class BackdropRenderer {
         const v10 = i * ANGLES + a1;
         const v01 = (i + 1) * ANGLES + a;
         const v11 = (i + 1) * ANGLES + a1;
-        indices.push(v00, v01, v11, v00, v11, v10);
+        indices.push(v00, v10, v11, v00, v11, v01);
       }
     }
 

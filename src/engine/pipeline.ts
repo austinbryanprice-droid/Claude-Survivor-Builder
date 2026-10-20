@@ -175,7 +175,7 @@ export class Pipeline {
           1,
           camera.aspect,
         );
-        shaftStrength = 1.7 * horizon * Math.min(1, facing * 2.2);
+        shaftStrength = 1.3 * horizon * Math.min(1, facing * 2.2);
       }
     }
 
@@ -190,7 +190,7 @@ export class Pipeline {
       sky.contrast,
     );
     c.uParams2.value.set(
-      0.34,
+      0.24,
       shaftStrength,
       q.antiAlias === 'fxaa' ? 1 : 0,
       frame.timeSeconds % 7,

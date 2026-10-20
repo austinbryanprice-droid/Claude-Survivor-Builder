@@ -43,6 +43,8 @@ void main() {
     decay *= 0.94;
   }
   float s = accum / float(STEPS);
+  // Sky pixels already glow on their own; the rays are for what stands in front of the sun.
+  s *= mix(1.0, 0.1, step(0.99999, texture2D(tDepth, vUv).r));
   gl_FragColor = vec4(uColor * s * uWeight, 1.0);
 }
 `;

@@ -24,7 +24,11 @@ import type { MaterialRegistry } from '../../engine/materials';
 import type { BakedTextures } from '../../engine/texture-bake';
 import { WATER_LEVEL, WORLD_HALF, WORLD_SIZE, type TerrainField } from '../terrain/field';
 import { GRID_MARGIN, type SdfGrid } from '../terrain/grid';
+import { meshHeightfield } from '../terrain/heightfield';
 import { meshRegion, surfaceHeightRange, type TerrainMeshData } from '../terrain/surface-nets';
+
+/** How the terrain mesh is built: the real mesher, or the smoothed heightfield it is measured against. */
+export type TerrainMode = 'surface-nets' | 'heightfield';
 
 /** Horizontal size of one terrain chunk in meters (a block of 2 by 2 view-distance chunks). */
 export const CHUNK_SIZE = 32;
@@ -179,7 +183,7 @@ void main() {
   vec4 g1 = texture2D(uGrass, uv * 0.32);
   vec4 g2 = texture2D(uGrass, uv * 0.047 + vec2(0.37, 0.61));
   float lush = clamp(splat.a * 0.5 + macroA * 0.9 - 0.15, 0.0, 1.0);
-  vec3 grassTint = mix(vec3(1.08, 1.0, 0.62), vec3(0.66, 0.92, 0.66), lush);
+  vec3 grassTint = mix(vec3(0.95, 0.92, 0.7), vec3(0.7, 0.9, 0.74), lush);
   vec3 col = g1.rgb * (0.6 + 0.9 * g2.a) * grassTint;
   float height = g1.a * 0.5 + g2.a * 0.5;
 
@@ -268,6 +272,7 @@ export class TerrainRenderer {
     private readonly maps: GroundMaps,
     textures: BakedTextures,
     registry: MaterialRegistry,
+    private readonly mode: TerrainMode = 'surface-nets',
   ) {
     this.group = group;
     const uniforms: Record<string, IUniform> = {
@@ -298,14 +303,16 @@ export class TerrainRenderer {
         const ix0 = GRID_MARGIN + cx * CHUNK_SIZE;
         const iz0 = GRID_MARGIN + cz * CHUNK_SIZE;
         const range = surfaceHeightRange(grid, ix0, ix0 + CHUNK_SIZE, iz0, iz0 + CHUNK_SIZE);
-        const data = meshRegion(grid, {
+        const region = {
           ix0,
           ix1: ix0 + CHUNK_SIZE,
           iz0,
           iz1: iz0 + CHUNK_SIZE,
           iy0: range.low,
           iy1: range.high,
-        });
+        };
+        const data =
+          this.mode === 'heightfield' ? meshHeightfield(grid, region) : meshRegion(grid, region);
         if (data.vertexCount === 0) continue;
         const mesh = new Mesh(this.toGeometry(data), this.material);
         mesh.castShadow = true;

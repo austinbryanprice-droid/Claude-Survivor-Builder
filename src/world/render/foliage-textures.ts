@@ -106,9 +106,9 @@ function paintFrond(p: Painter): void {
   const length = (t: number): number =>
     168 * s * Math.pow(1 - t, 0.5) * (0.34 + 0.66 * smooth(0, 0.18, t));
 
-  const dark: readonly number[] = [20, 46, 26];
-  const mid: readonly number[] = [44, 88, 40];
-  const light: readonly number[] = [108, 150, 62];
+  const dark: readonly number[] = [14, 34, 24];
+  const mid: readonly number[] = [34, 68, 38];
+  const light: readonly number[] = [84, 116, 54];
 
   // A solid core keeps the frond readable at a distance, where thin needles would vanish.
   ctx.fillStyle = p.paint(rgb(dark, mid, 0.35));
@@ -178,9 +178,9 @@ function paintLeaves(p: Painter): void {
   const cy = 256 * s;
   const radius = 226 * s;
 
-  const shadow: readonly number[] = [18, 42, 18];
-  const body: readonly number[] = [44, 88, 28];
-  const lit: readonly number[] = [104, 140, 46];
+  const shadow: readonly number[] = [13, 32, 18];
+  const body: readonly number[] = [34, 68, 30];
+  const lit: readonly number[] = [86, 118, 44];
 
   // Solid core.
   ctx.fillStyle = p.paint(rgb(shadow, body, 0.5));
@@ -269,8 +269,8 @@ function blade(
 function paintGrass(p: Painter, blades: number, tall: number): void {
   const { rng, size } = p;
   const s = size / 512;
-  const dark: readonly number[] = [22, 52, 18];
-  const light: readonly number[] = [136, 158, 62];
+  const dark: readonly number[] = [18, 42, 20];
+  const light: readonly number[] = [100, 124, 54];
   // Short, dense blades behind, tall ones in front.
   for (let i = 0; i < blades; i++) {
     const back = i < blades * 0.45;

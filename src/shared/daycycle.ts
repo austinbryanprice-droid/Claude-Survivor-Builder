@@ -5,6 +5,10 @@
  *
  * The day is a long golden afternoon (the sun stays between 12 and 45 degrees) and the night
  * is cool blue. See docs/art-direction.md.
+ *
+ * Visual only: this module uses Math.sin and Math.cos, which may differ in the last bit between
+ * engines. Gameplay (wave timing, night checks) reads the cycle constants and the phase, never
+ * the values derived here.
  */
 
 export type Rgb = readonly [number, number, number];
@@ -34,6 +38,8 @@ export interface SkyState {
   readonly fog: Rgb;
   readonly fogSun: Rgb;
   readonly fogDensity: number;
+  /** How thick the colored mist pockets lie (0 none, 1 full). */
+  readonly mist: number;
   readonly cloudLit: Rgb;
   readonly cloudShade: Rgb;
   readonly cloudCover: number;
@@ -63,6 +69,7 @@ interface Stop {
   readonly fog: string;
   readonly fogSun: string;
   readonly fogDensity: number;
+  readonly mist: number;
   readonly cloudLit: string;
   readonly cloudShade: string;
   readonly cloudCover: number;
@@ -90,6 +97,7 @@ const STOPS: readonly Stop[] = [
     fog: '#14213f',
     fogSun: '#1a2c52',
     fogDensity: 1.0,
+    mist: 1.0,
     cloudLit: '#3a4a78',
     cloudShade: '#0d1428',
     cloudCover: 0.5,
@@ -114,6 +122,7 @@ const STOPS: readonly Stop[] = [
     fog: '#5a4a80',
     fogSun: '#d8704a',
     fogDensity: 1.1,
+    mist: 0.9,
     cloudLit: '#d6688a',
     cloudShade: '#2a2250',
     cloudCover: 0.5,
@@ -126,20 +135,21 @@ const STOPS: readonly Stop[] = [
   },
   {
     elevation: 0,
-    zenith: '#1f3f86',
-    mid: '#7a5a9e',
-    horizon: '#e0829a',
-    horizonSun: '#ff8a3a',
+    zenith: '#3a3a8c',
+    mid: '#a4589c',
+    horizon: '#ee8896',
+    horizonSun: '#ff7e40',
     sunColor: '#ff8d4a',
     sunIntensity: 2.2,
-    ambientSky: '#6a74b8',
+    ambientSky: '#8a76b0',
     ambientGround: '#6a4a3a',
     ambientIntensity: 0.8,
-    fog: '#c98aa0',
+    fog: '#d88aa2',
     fogSun: '#ff9a50',
     fogDensity: 1.25,
-    cloudLit: '#ffb27a',
-    cloudShade: '#6a4a8a',
+    mist: 0.55,
+    cloudLit: '#ffa890',
+    cloudShade: '#9a5c9a',
     cloudCover: 0.5,
     exposure: 1.1,
     bloom: 1.1,
@@ -150,8 +160,8 @@ const STOPS: readonly Stop[] = [
   },
   {
     elevation: 12,
-    zenith: '#2a55a2',
-    mid: '#8f94bd',
+    zenith: '#26468f',
+    mid: '#8d93c2',
     horizon: '#eab4a6',
     horizonSun: '#ffae58',
     sunColor: '#ffb56c',
@@ -159,15 +169,16 @@ const STOPS: readonly Stop[] = [
     ambientSky: '#8296c4',
     ambientGround: '#8a6a4a',
     ambientIntensity: 0.7,
-    fog: '#d9a0a0',
-    fogSun: '#ffa85a',
+    fog: '#d49a9e',
+    fogSun: '#f2924e',
     fogDensity: 1.0,
-    cloudLit: '#ffcf98',
-    cloudShade: '#9a7ea6',
-    cloudCover: 0.58,
+    mist: 0.3,
+    cloudLit: '#ffd2a8',
+    cloudShade: '#b8a9c9',
+    cloudCover: 0.46,
     exposure: 0.95,
     bloom: 1.0,
-    saturation: 1.18,
+    saturation: 1.12,
     contrast: 1.16,
     shadowTint: '#6a6aa4',
     highlightTint: '#ffb26a',
@@ -178,7 +189,7 @@ const STOPS: readonly Stop[] = [
     mid: '#7aa2d8',
     horizon: '#d8c8c4',
     horizonSun: '#ffc888',
-    sunColor: '#ffd8a0',
+    sunColor: '#ffe0b4',
     sunIntensity: 4.6,
     ambientSky: '#90b2e8',
     ambientGround: '#8a7a58',
@@ -186,12 +197,13 @@ const STOPS: readonly Stop[] = [
     fog: '#c8cbd0',
     fogSun: '#ffd8a0',
     fogDensity: 0.8,
+    mist: 0.85,
     cloudLit: '#fff0dc',
     cloudShade: '#9ab0d0',
     cloudCover: 0.5,
     exposure: 0.95,
     bloom: 0.8,
-    saturation: 1.12,
+    saturation: 1.02,
     contrast: 1.08,
     shadowTint: '#6078b8',
     highlightTint: '#ffd8a0',
@@ -202,7 +214,7 @@ const STOPS: readonly Stop[] = [
     mid: '#80b0e4',
     horizon: '#cfd8e0',
     horizonSun: '#ffe0b0',
-    sunColor: '#fff1c9',
+    sunColor: '#fff4de',
     sunIntensity: 4.8,
     ambientSky: '#98bcf0',
     ambientGround: '#8a8060',
@@ -210,12 +222,13 @@ const STOPS: readonly Stop[] = [
     fog: '#c4d2e0',
     fogSun: '#ffe4b8',
     fogDensity: 0.7,
+    mist: 1.0,
     cloudLit: '#ffffff',
     cloudShade: '#a4b8d8',
     cloudCover: 0.48,
     exposure: 0.92,
     bloom: 0.7,
-    saturation: 1.08,
+    saturation: 1.0,
     contrast: 1.06,
     shadowTint: '#6a82c0',
     highlightTint: '#fff0d0',
@@ -246,24 +259,34 @@ export const NIGHT_SECONDS = 4 * 60;
 export const DUSK_SECONDS = 40;
 export const CYCLE_SECONDS = DAY_SECONDS + NIGHT_SECONDS;
 
-/** Sun elevation in degrees for a cycle phase in [0, 1). */
+/**
+ * Sun elevation in degrees for a cycle phase in [0, 1): a long golden afternoon, a quick dusk,
+ * a night that sinks to its deepest point at midnight, and a quick dawn. The curve is
+ * continuous at every seam, so the sky never pops.
+ */
 export function sunElevationAt(phase: number): number {
   const day = DAY_SECONDS / CYCLE_SECONDS;
   const dusk = DUSK_SECONDS / CYCLE_SECONDS;
   const p = phase - Math.floor(phase);
   if (p < day) return 12 + 33 * Math.sin((Math.PI * p) / day);
   if (p < day + dusk) return lerp(12, -14, smooth((p - day) / dusk));
-  if (p < 1 - dusk) return lerp(-14, -26, smooth((p - day - dusk) / (1 - dusk - day - dusk)));
+  if (p < 1 - dusk) {
+    const u = (p - day - dusk) / (1 - dusk - day - dusk);
+    return -14 - 12 * Math.sin(Math.PI * u);
+  }
   return lerp(-14, 12, smooth((p - (1 - dusk)) / dusk));
 }
 
-/** Compass bearing of the sun in degrees (0 north, 90 east) for a cycle phase. */
+/**
+ * Compass bearing of the sun in degrees (0 north, 90 east) for a cycle phase: from the east
+ * across the south to the west by day, then on round the north during the night to rise in the
+ * east again. The value runs on past 360 at the end of the night; callers wrap it.
+ */
 export function sunBearingAt(phase: number): number {
   const day = DAY_SECONDS / CYCLE_SECONDS;
   const p = phase - Math.floor(phase);
   if (p < day) return lerp(98, 262, p / day);
-  if (p < 1 - DUSK_SECONDS / CYCLE_SECONDS) return 262 + ((p - day) / (1 - day)) * 40;
-  return 98 - (1 - p) * 40 * 4;
+  return lerp(262, 98 + 360, (p - day) / (1 - day));
 }
 
 function directionFrom(bearingDeg: number, elevationDeg: number): [number, number, number] {
@@ -287,6 +310,7 @@ const PARSED = STOPS.map((s) => ({
   fog: hexToRgb(s.fog),
   fogSun: hexToRgb(s.fogSun),
   fogDensity: s.fogDensity,
+  mist: s.mist,
   cloudLit: hexToRgb(s.cloudLit),
   cloudShade: hexToRgb(s.cloudShade),
   cloudCover: s.cloudCover,
@@ -345,6 +369,7 @@ export function skyStateAt(sunElevation: number, sunBearing: number): SkyState {
     fog: lerpRgb(lo.fog, hi.fog, t),
     fogSun: lerpRgb(lo.fogSun, hi.fogSun, t),
     fogDensity: lerp(lo.fogDensity, hi.fogDensity, t),
+    mist: lerp(lo.mist, hi.mist, t),
     cloudLit: lerpRgb(lo.cloudLit, hi.cloudLit, t),
     cloudShade: lerpRgb(lo.cloudShade, hi.cloudShade, t),
     cloudCover: lerp(lo.cloudCover, hi.cloudCover, t),

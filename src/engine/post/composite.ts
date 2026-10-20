@@ -70,10 +70,12 @@ void main() {
   c = mix(vec3(l), c, uParams.z);
 
   c = toSrgb(c);
-  c = (c - 0.5) * uParams.w + 0.5;
+  c = (c - 0.46) * uParams.w + 0.46;
 
   vec2 q = (vUv - 0.5) * vec2(1.0, 0.92);
-  c *= 1.0 - uParams2.x * smoothstep(0.28, 0.95, length(q) * 1.45);
+  float vig = 1.0 - uParams2.x * smoothstep(0.28, 0.95, length(q) * 1.45);
+  // The sun and other very bright things keep their glare in the corners.
+  c *= mix(vig, 1.0, 0.85 * smoothstep(0.82, 1.0, max(c.r, max(c.g, c.b))));
 
   float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy + uParams2.w, vec2(0.06711056, 0.00583715))));
   c += (n - 0.5) / 255.0;

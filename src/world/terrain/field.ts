@@ -135,6 +135,11 @@ export interface TerrainField {
   readonly rocks: readonly RockFeature[];
   /** Ground height without rock features. */
   heightAt(x: number, z: number): number;
+  /**
+   * Height of the distant skyline: the valley's own ground inside the rim, then rolling hills
+   * and mountains beyond it. Only the backdrop uses it, so it is not capped like `heightAt`.
+   */
+  skylineAt(x: number, z: number): number;
   /** Signed distance to the solid: negative inside the ground or a rock. */
   sdf(x: number, y: number, z: number): number;
   /** Signed distance of one rock feature (negative inside). */
@@ -160,6 +165,7 @@ export function createTerrainField(seed: number): TerrainField {
   const sLush = (seed + 24) | 0;
   const sAsh = (seed + 25) | 0;
   const sSand = (seed + 26) | 0;
+  const sHill = (seed + 27) | 0;
 
   function heightAt(x: number, z: number): number {
     // Domain warp keeps rings and ellipses from reading as geometric.
@@ -178,9 +184,6 @@ export function createTerrainField(seed: number): TerrainField {
     const rim = smoothstep(46, 104, rw);
     const rimN = 0.5 + 0.5 * fbm2(sRidge, x * 0.016, z * 0.016, 3);
     h += rim * rim * (10 + 22 * rimN);
-    // Mountains for the backdrop; zero inside the playable area.
-    const far = smoothstep(96, 330, rw);
-    h += far * far * (34 + 170 * ridge2(sMount, x * 0.011, z * 0.011, 5));
 
     // The lake basin.
     const lx = (x - LAKE.x) / LAKE.rx;
@@ -207,6 +210,23 @@ export function createTerrainField(seed: number): TerrainField {
     h -= 0.16 * smoothstep(2.6, 0.8, pathD);
 
     return softCap(Math.max(h, 0.8), 58, 10);
+  }
+
+  function skylineAt(x: number, z: number): number {
+    const wx = x + 16 * fbm2(sWarpA, x * 0.008, z * 0.008, 2);
+    const wz = z + 16 * fbm2(sWarpB, x * 0.008, z * 0.008, 2);
+    const rw = Math.sqrt(wx * wx + wz * wz);
+    let h = heightAt(x, z);
+    // Rolling forested hills beyond the rim, then mountains that close the horizon: wide
+    // massifs with a little ridged detail on top.
+    const hills = smoothstep(100, 260, rw);
+    h += hills * (14 + 40 * (0.5 + 0.5 * fbm2(sHill, x * 0.0046, z * 0.0046, 3)));
+    h += smoothstep(100, 190, rw) * 14 * fbm2(sHill + 1, x * 0.02, z * 0.02, 3);
+    const far = smoothstep(170, 1000, rw);
+    const massif = 0.5 + 0.5 * fbm2(sHill + 2, x * 0.0026, z * 0.0026, 4);
+    const peaks = ridge2(sMount, x * 0.0064, z * 0.0064, 4);
+    h += far * far * (40 + 340 * (0.7 * massif * massif + 0.3 * peaks));
+    return h;
   }
 
   // Rock outcrops, placed deterministically on the rim, in the valley and along the shore.
@@ -297,7 +317,7 @@ export function createTerrainField(seed: number): TerrainField {
     for (const line of PATHS) pathD = Math.min(pathD, distToPolyline(x, z, line));
     pathD += 0.9 * (noise2(sPath, x * 0.35, z * 0.35) - 0.5);
     const path = smoothstep(2.4, 1.0, pathD);
-    const patch = smoothstep(0.78, 0.88, fbm2(sPatch, x * 0.07, z * 0.07, 3) * 0.5 + 0.5);
+    const patch = smoothstep(0.88, 0.96, fbm2(sPatch, x * 0.07, z * 0.07, 3) * 0.5 + 0.5);
 
     const cdx = x - CRASH.x;
     const cdz = z - CRASH.z;
@@ -320,5 +340,5 @@ export function createTerrainField(seed: number): TerrainField {
     };
   }
 
-  return { seed, rocks, heightAt, sdf, rockSdf, splatAt };
+  return { seed, rocks, heightAt, skylineAt, sdf, rockSdf, splatAt };
 }

@@ -2,7 +2,7 @@ import { Group, PerspectiveCamera, Scene, Vector3, WebGLRenderer } from 'three';
 import { Atmosphere } from '../engine/atmosphere';
 import { SunRig } from '../engine/lighting';
 import { MaterialRegistry } from '../engine/materials';
-import { AdaptiveScale, MAX_INTERNAL_PIXELS, scaleForPixelBudget } from '../engine/perf';
+import { AdaptiveScale, GpuTimer, MAX_INTERNAL_PIXELS, scaleForPixelBudget } from '../engine/perf';
 import { Pipeline, type PipelineStats } from '../engine/pipeline';
 import { createSky } from '../engine/sky';
 import { bakeTextures, type BakedTextures } from '../engine/texture-bake';
@@ -66,6 +66,7 @@ export class LookScene {
   readonly controller: LookController;
   readonly timings: BuildTimings;
   readonly stats: { value: PipelineStats | null } = { value: null };
+  readonly gpuTimer: GpuTimer;
 
   quality: QualitySettings;
   sky: SkyState;
@@ -75,8 +76,15 @@ export class LookScene {
   animTime = 0;
   /** Named shot the camera sits at, or null in free movement. */
   shot: string | null = null;
+  /** GPU milliseconds of the latest finished frame, when the browser can time it. */
+  gpuMs: number | null = null;
+  /** Counts finished GPU measurements, so a reader can tell a new one from the last. */
+  gpuSerial = 0;
+  /** Milliseconds the last frame took in JavaScript and command submission. */
+  cpuMs = 0;
 
   private governor: AdaptiveScale | null = null;
+  private governorOn = true;
   private forcedScale: number | null;
   private fixedMoment: { elevation: number; bearing: number } | null;
   private clockTime = 0;
@@ -132,7 +140,14 @@ export class LookScene {
     this.scene.add(sky.mesh);
     this.scene.add(this.world);
 
-    this.terrain = new TerrainRenderer(this.world, this.grid, maps, this.textures, this.registry);
+    this.terrain = new TerrainRenderer(
+      this.world,
+      this.grid,
+      maps,
+      this.textures,
+      this.registry,
+      params.terrain,
+    );
     const meshMs = this.terrain.stats.meshMs;
     this.backdrop = new BackdropRenderer(this.world, this.field, this.registry);
     this.water = maps.lake
@@ -160,6 +175,7 @@ export class LookScene {
     const scatterMs = performance.now() - tScatter;
 
     this.sun = new SunRig(this.world, renderer, shadowParams);
+    this.gpuTimer = new GpuTimer(renderer.getContext() as WebGL2RenderingContext);
     this.pipeline = new Pipeline(renderer);
     this.pipeline.beforeScene = (camera) =>
       this.water?.renderReflection(
@@ -201,11 +217,22 @@ export class LookScene {
     this.vegetation.setQuality(q);
     this.pipeline.setQuality(q);
     this.governor =
-      q.adaptiveScale && this.forcedScale === null
+      q.adaptiveScale && this.forcedScale === null && this.governorOn
         ? new AdaptiveScale(q.renderScale, q.minRenderScale, q.renderScale)
         : null;
     this.fitRenderScale();
     this.dirty = true;
+  }
+
+  /** Turns the adaptive resolution governor on or off (the benchmark measures without it). */
+  setGovernor(on: boolean): void {
+    this.governorOn = on;
+    this.applyQuality(this.quality.name);
+  }
+
+  /** The render scale the governor has settled on, or the preset's own when it is off. */
+  get renderScale(): number {
+    return this.pipeline.renderScale;
   }
 
   /** Puts the camera at a named shot (and the shot's own moment unless the URL chose one). */
@@ -273,6 +300,7 @@ export class LookScene {
 
   /** Advances time and draws one frame. `dt` is in seconds, `frameMs` the previous frame's cost. */
   frame(dt: number, frameMs: number): void {
+    const started = performance.now();
     if (this.params.freeze) {
       this.animTime = FROZEN_TIME;
     } else {
@@ -296,12 +324,19 @@ export class LookScene {
     this.sun.update(this.atmosphere.uniforms.uKeyDir.value, this.camera);
     this.terrain.update(this.camera);
     this.vegetation.update(this.camera);
+    this.gpuTimer.begin();
     this.pipeline.render(
       this.scene,
       this.camera,
       { sky: this.sky, timeSeconds: this.animTime },
       this.stats,
     );
+    this.gpuTimer.end();
+    for (const ms of this.gpuTimer.collect()) {
+      this.gpuMs = ms;
+      this.gpuSerial++;
+    }
+    this.cpuMs = performance.now() - started;
     this.dirty = false;
   }
 

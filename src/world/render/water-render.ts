@@ -170,7 +170,7 @@ export class WaterRenderer {
       uRipple: { value: textures.ripple },
       uLakeDepth: { value: lake.texture },
       uLakeBox: { value: new Vector4(x0, z0, 1 / (x1 - x0), 1 / (z1 - z0)) },
-      uWater: { value: new Vector4(LAKE_DEPTH_RANGE, 1, 0.035, 0) },
+      uWater: { value: new Vector4(LAKE_DEPTH_RANGE, 0.6, 0.035, 0) },
       uReflection: { value: null },
       uReflectionMatrix: { value: this.reflectionMatrix },
     };

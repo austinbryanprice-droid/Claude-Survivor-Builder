@@ -196,7 +196,7 @@ vec4 bakeDirt(vec2 uv) {
   float id = worleyId(uv * 32.0, 32, 131);
   float fine = fbm(uv * 128.0, 128, 3, 137);
   float large = fbm(uv * 4.0, 4, 4, 139);
-  vec3 soil = mix(hex(88.0, 68.0, 44.0), hex(124.0, 100.0, 66.0), large);
+  vec3 soil = mix(hex(70.0, 58.0, 42.0), hex(104.0, 88.0, 62.0), large);
   soil *= 0.78 + fine * 0.45;
   vec3 peb = mix(hex(138.0, 130.0, 118.0), hex(110.0, 94.0, 80.0), id);
   vec3 col = mix(soil, peb * (0.8 + 0.4 * (1.0 - w.x)), pebble * 0.85);
@@ -213,12 +213,15 @@ vec4 bakeAsh(vec2 uv) {
   float id = worleyId(uv * 16.0, 16, 151);
   float fine = fbm(uv * 64.0, 64, 3, 157);
   float large = fbm(uv * 4.0, 4, 4, 163);
-  vec3 col = mix(hex(40.0, 38.0, 36.0), hex(86.0, 80.0, 74.0), large * 0.7 + fine * 0.3);
-  col *= 0.7 + id * 0.45;
-  col = mix(col * 0.55, col, flake);
+  vec3 col = mix(hex(36.0, 34.0, 33.0), hex(96.0, 90.0, 84.0), large * 0.7 + fine * 0.3);
+  col *= 0.78 + id * 0.34;
+  col = mix(col * 0.72, col, flake);
+  // Pale ash drifts over the charcoal.
+  float drift = smoothstep(0.52, 0.78, fbm(uv * 6.0 + 4.0, 8, 3, 169));
+  col = mix(col, hex(128.0, 124.0, 118.0) * (0.8 + fine * 0.4), drift * 0.45);
   // Faint ember tint in a few cracks.
-  float ember = smoothstep(0.72, 0.9, fbm(uv * 8.0, 8, 3, 167)) * (1.0 - flake);
-  col = mix(col, hex(150.0, 62.0, 28.0), ember * 0.45);
+  float ember = smoothstep(0.78, 0.92, fbm(uv * 8.0, 8, 3, 167)) * (1.0 - flake);
+  col = mix(col, hex(170.0, 70.0, 30.0), ember * 0.3);
   float height = clamp(flake * 0.55 + fine * 0.4, 0.0, 1.0);
   return vec4(col, height);
 }
