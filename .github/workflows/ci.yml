@@ -14,7 +14,8 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.56 does not support Ubuntu 26.04, which `ubuntu-latest` now maps to.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7

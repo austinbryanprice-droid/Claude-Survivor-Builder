@@ -32,5 +32,6 @@ Austin reviewed the spec analysis and answered as follows.
 
 - **TypeScript 6.0, not 7.0.** `typescript-eslint` 8.72 supports TypeScript below 6.1 only. Revisit when it supports 7.
 - **Playwright 1.56 is pinned.** It matches Chromium build 1194, which the cloud sandbox ships. Bump it together with the sandbox image.
+- **CI runs on `ubuntu-24.04`.** `ubuntu-latest` now maps to Ubuntu 26.04, which Playwright 1.56 does not support. Move back to `ubuntu-latest` after a Playwright bump that supports it.
 - **Vite uses a relative base (`./`).** The Pages address is `austinbryanprice-droid.github.io/Claude-Survivor-Builder/`, a subpath.
 - **Vitest runs unit tests in Node.** Rendering and multiplayer are covered by Playwright against the production build.
