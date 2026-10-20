@@ -8,7 +8,7 @@ Read these first: [docs/spec/SPEC.md](docs/spec/SPEC.md) is the spec, and sectio
 npm ci                # install
 npm run dev           # dev server
 npm run check         # typecheck, lint, format check, unit tests, build (run before every PR)
-npm run test:e2e      # builds, then runs the Playwright smoke test
+npm run test:e2e      # builds, then runs the Playwright browser tests
 npm run format        # Prettier, writes files
 ```
 
