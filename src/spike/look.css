@@ -1,0 +1,39 @@
+body.look #look-loading {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(232 238 245 / 70%);
+  background: radial-gradient(ellipse at 50% 60%, #1c2a38 0%, var(--bg) 70%);
+  pointer-events: none;
+}
+
+body.look #look-overlay {
+  position: fixed;
+  left: 12px;
+  bottom: 10px;
+  font:
+    11px/1.45 ui-monospace,
+    'SFMono-Regular',
+    Menlo,
+    Consolas,
+    monospace;
+  color: rgb(232 238 245 / 80%);
+  white-space: pre;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
+}
+
+body.look #hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+body.look.no-hud #hud,
+body.look.no-hud #look-overlay {
+  display: none;
+}

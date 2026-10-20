@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 // Short commit id shown on the page so a deployed build can be matched to a commit.
@@ -14,6 +15,13 @@ export default defineConfig({
     sourcemap: true,
     // three.js alone is about 500 kB minified; a real size budget arrives with the CI budgets.
     chunkSizeWarningLimit: 800,
+    // Two pages: the game, and the throwaway look spike at look.html.
+    rolldownOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        look: fileURLToPath(new URL('./look.html', import.meta.url)),
+      },
+    },
   },
   test: {
     environment: 'node',
