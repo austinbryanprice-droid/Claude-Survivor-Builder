@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Ashbound Outpost look spike: a throwaway scene that proves the visual target."
+    />
+    <meta name="theme-color" content="#0e141b" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <title>Ashbound Outpost · look spike</title>
+  </head>
+  <body class="look">
+    <div id="app">
+      <canvas id="game" aria-label="Game view"></canvas>
+    </div>
+    <div id="hud" aria-hidden="true"></div>
+    <div id="look-overlay"></div>
+    <div id="look-loading" role="status">Generating the valley…</div>
+    <div id="fatal" role="alert" hidden></div>
+    <script type="module" src="/src/spike/look-main.ts"></script>
+  </body>
+</html>

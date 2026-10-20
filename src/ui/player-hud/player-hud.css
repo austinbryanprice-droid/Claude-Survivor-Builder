@@ -1,0 +1,528 @@
+/*
+ * Player HUD, after the Enshrouded reference: torn dark frames, pale green health in segments, a
+ * blue stamina bar, round status icons, an ink compass strip with an orange quest marker, a slate
+ * objective banner that fades out to the left, and a frosted hotbar with green durability bars.
+ * Drawn for a 1280 by 720 window; `--u` (set by the HUD) scales every size with the viewport.
+ */
+
+.ph {
+  --u: 1;
+  --ink: #f7f2e6;
+  --ink-soft: rgb(247 242 230 / 72%);
+  --frame: #22252d;
+  --mint: #b6ddb8;
+  --mint-deep: #93c79a;
+  --blue: #4f8fbd;
+  --blue-deep: #3a6f9c;
+  --shadow: 0 1px 2px rgb(0 0 0 / 85%), 0 0 3px rgb(0 0 0 / 55%);
+
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  color: var(--ink);
+  font-family:
+    Merriweather, 'Source Serif 4', 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia,
+    serif;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ph [hidden] {
+  display: none !important;
+}
+
+.ph-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.ph-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Torn frames: the dark shape sits on a pseudo-element so only its edge is roughened. */
+
+.ph-frame {
+  position: relative;
+}
+
+.ph-frame::before {
+  content: '';
+  position: absolute;
+  inset: calc(var(--u) * -4px);
+  background: var(--frame);
+  border-radius: calc(var(--u) * 2px);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 35%);
+  filter: url('#ph-rough');
+}
+
+/* Vitals, top left. */
+
+.ph-vitals {
+  position: absolute;
+  top: calc(var(--u) * 21px);
+  left: calc(var(--u) * 17px);
+}
+
+.ph-health {
+  display: flex;
+  gap: calc(var(--u) * 2px);
+  width: calc(var(--u) * 417px);
+  height: calc(var(--u) * 14px);
+}
+
+.ph-seg {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background: rgb(36 40 50 / 72%);
+}
+
+.ph-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: linear-gradient(180deg, #cdeacb 0%, var(--mint) 48%, var(--mint-deep) 100%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 55%);
+}
+
+.ph-stamina {
+  width: calc(var(--u) * 173px);
+  height: calc(var(--u) * 7px);
+  margin-top: calc(var(--u) * 3px);
+  background: rgb(36 40 50 / 72%);
+}
+
+.ph-stamina-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: linear-gradient(180deg, #7db6df 0%, var(--blue) 45%, var(--blue-deep) 100%);
+}
+
+.ph-stamina-fill .ph-cap {
+  position: absolute;
+  top: 50%;
+  right: calc(var(--u) * -2px);
+  width: calc(var(--u) * 5px);
+  height: calc(var(--u) * 5px);
+  margin-top: calc(var(--u) * -2.5px);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 calc(var(--u) * 6px) rgb(190 225 255 / 90%);
+}
+
+/* Status icons and the timed buff. */
+
+.ph-statuses {
+  position: absolute;
+  top: calc(var(--u) * 57px);
+  left: calc(var(--u) * 13px);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 1px);
+}
+
+.ph-status {
+  width: calc(var(--u) * 26px);
+  height: calc(var(--u) * 26px);
+  padding: calc(var(--u) * 4px);
+  border: calc(var(--u) * 2px) solid #20262b;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 30%, #66b383 0%, #3d8860 55%, #2c6a4a 100%);
+  box-shadow:
+    0 0 0 calc(var(--u) * 1px) rgb(190 230 210 / 35%),
+    0 2px 5px rgb(0 0 0 / 40%);
+}
+
+.ph-buff {
+  position: absolute;
+  top: calc(var(--u) * 57px);
+  left: calc(var(--u) * 49px);
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 6px);
+  font-size: calc(var(--u) * 12px);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-shadow: var(--shadow);
+}
+
+.ph-buff-arrow {
+  width: 0;
+  height: 0;
+  border-right: calc(var(--u) * 4.5px) solid transparent;
+  border-bottom: calc(var(--u) * 8px) solid #55e07d;
+  border-left: calc(var(--u) * 4.5px) solid transparent;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
+}
+
+/* Compass, top center: a brush stroke with a tick every 45 degrees, N in a triangle. */
+
+.ph-compass {
+  position: absolute;
+  top: calc(var(--u) * 4px);
+  left: 50%;
+  width: calc(var(--u) * 324px);
+  height: calc(var(--u) * 40px);
+  transform: translateX(-50%);
+}
+
+.ph-compass-window {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
+}
+
+.ph-compass-strip {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 100%;
+  will-change: transform;
+}
+
+.ph-compass-line {
+  position: absolute;
+  right: 0;
+  bottom: calc(var(--u) * 5px);
+  left: 0;
+  height: calc(var(--u) * 3.4px);
+  background: var(--frame);
+  clip-path: polygon(0 50%, 5% 18%, 50% 0, 95% 18%, 100% 50%, 95% 82%, 50% 100%, 5% 82%);
+}
+
+.ph-tick {
+  position: absolute;
+  bottom: calc(var(--u) * 7px);
+  width: 0;
+  height: 0;
+  border-right: calc(var(--u) * 3px) solid transparent;
+  border-bottom: calc(var(--u) * 11px) solid var(--frame);
+  border-left: calc(var(--u) * 3px) solid transparent;
+  transform: translateX(-50%);
+}
+
+.ph-tick-north {
+  border-right-width: calc(var(--u) * 9.5px);
+  border-bottom-width: calc(var(--u) * 21px);
+  border-left-width: calc(var(--u) * 9.5px);
+}
+
+.ph-tick-letter {
+  border-width: 0;
+}
+
+.ph-tick-label {
+  position: absolute;
+  bottom: calc(var(--u) * 1px);
+  left: 50%;
+  font-size: calc(var(--u) * 13px);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink);
+  text-shadow: var(--shadow);
+  transform: translateX(-50%);
+}
+
+.ph-tick-north .ph-tick-label {
+  top: calc(var(--u) * 7px);
+  bottom: auto;
+  font-size: calc(var(--u) * 12px);
+  text-shadow: none;
+}
+
+.ph-compass-waypoints {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  mask-image: linear-gradient(90deg, transparent 0%, #000 10%, #000 90%, transparent 100%);
+}
+
+.ph-waypoint {
+  position: absolute;
+  bottom: calc(var(--u) * 9px);
+  width: 0;
+  height: calc(var(--u) * 16px);
+}
+
+.ph-waypoint-distance {
+  position: absolute;
+  bottom: calc(100% + var(--u) * 6px);
+  left: 0;
+  font-size: calc(var(--u) * 10.5px);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  text-shadow: var(--shadow);
+  transform: translateX(-50%);
+}
+
+.ph-diamond {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: calc(var(--u) * 16px);
+  height: calc(var(--u) * 16px);
+  border: calc(var(--u) * 1.6px) solid #fbecd0;
+  border-radius: calc(var(--u) * 2.5px);
+  background: linear-gradient(135deg, #ffbd4a 0%, #f58f2c 65%, #e0701d 100%);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 40%);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.ph-diamond span {
+  font-size: calc(var(--u) * 11.5px);
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 1px 1px rgb(120 50 0 / 70%);
+  transform: rotate(-45deg);
+}
+
+/* Objective banner and journal hint, top right. */
+
+.ph-objective {
+  position: absolute;
+  top: calc(var(--u) * 39px);
+  right: calc(var(--u) * 18px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: calc(var(--u) * 11px);
+}
+
+.ph-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: calc(var(--u) * 52px);
+  min-width: calc(var(--u) * 300px);
+  padding: 0 calc(var(--u) * 70px) 0 calc(var(--u) * 90px);
+}
+
+.ph-banner::before {
+  content: '';
+  position: absolute;
+  inset: 0 calc(var(--u) * 35px) 0 0;
+  background: linear-gradient(
+    90deg,
+    rgb(59 62 80 / 0%) 0%,
+    rgb(59 62 80 / 92%) 40%,
+    rgb(56 59 76 / 96%) 100%
+  );
+  filter: url('#ph-rough');
+}
+
+.ph-banner-text {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: calc(var(--u) * 4px);
+  text-align: right;
+}
+
+.ph-banner-place {
+  font-size: calc(var(--u) * 10.5px);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0.17em;
+  color: rgb(214 218 228 / 85%);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ph-banner-title {
+  font-size: calc(var(--u) * 16px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 40%);
+}
+
+.ph-emblem {
+  position: absolute;
+  top: calc(50% - var(--u) * 26px);
+  right: calc(var(--u) * 10px);
+  width: calc(var(--u) * 40px);
+  height: calc(var(--u) * 40px);
+  padding: calc(var(--u) * 7px);
+  border-radius: calc(var(--u) * 4px);
+  background: linear-gradient(135deg, #c3e4dc 0%, #a4cdc4 100%);
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 1.5px) rgb(255 255 255 / 40%),
+    0 2px 5px rgb(0 0 0 / 30%);
+  transform: rotate(45deg);
+}
+
+.ph-emblem .ph-icon {
+  transform: rotate(-45deg);
+}
+
+.ph-journal {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 8px);
+  margin-right: calc(var(--u) * 17px);
+  padding: calc(var(--u) * 2px) calc(var(--u) * 8px) calc(var(--u) * 2px) calc(var(--u) * 10px);
+  border-radius: calc(var(--u) * 7px);
+  background: rgb(255 255 255 / 20%);
+  font-size: calc(var(--u) * 15px);
+  text-shadow: var(--shadow);
+  backdrop-filter: blur(6px);
+}
+
+.ph-key {
+  display: inline-grid;
+  place-items: center;
+  min-width: calc(var(--u) * 15px);
+  height: calc(var(--u) * 15px);
+  padding: 0 calc(var(--u) * 4px);
+  border-radius: calc(var(--u) * 4px);
+  background: #f4efe2;
+  color: #15171c;
+  font:
+    800 calc(var(--u) * 10px) / 1 system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  text-shadow: none;
+}
+
+/* Hotbar, bottom center. */
+
+.ph-hotbar {
+  position: absolute;
+  bottom: calc(var(--u) * 2px);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  transform: translateX(-50%);
+}
+
+.ph-hotbar-hint {
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  margin-right: calc(var(--u) * 8px);
+  transform: translateY(-50%);
+}
+
+.ph-hotbar-row {
+  display: flex;
+  gap: calc(var(--u) * 5px);
+  padding: calc(var(--u) * 6px) calc(var(--u) * 8px);
+  border-radius: calc(var(--u) * 8px);
+  background: rgb(86 96 78 / 36%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%);
+  backdrop-filter: blur(8px) saturate(1.1);
+}
+
+.ph-slot {
+  position: relative;
+  width: calc(var(--u) * 52px);
+  height: calc(var(--u) * 52px);
+  border-radius: calc(var(--u) * 3px);
+  background: linear-gradient(180deg, rgb(28 32 30 / 30%), rgb(14 16 16 / 46%));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 8%);
+}
+
+.ph-slot[data-selected] {
+  background: linear-gradient(180deg, rgb(112 96 150 / 52%), rgb(52 40 84 / 62%));
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 1.5px) #fff,
+    0 0 calc(var(--u) * 8px) rgb(210 190 255 / 30%);
+}
+
+.ph-slot[data-blueprint] {
+  background:
+    linear-gradient(rgb(110 220 240 / 34%) 1px, transparent 1px) 0 0 / calc(var(--u) * 8px)
+      calc(var(--u) * 8px),
+    linear-gradient(90deg, rgb(110 220 240 / 34%) 1px, transparent 1px) 0 0 / calc(var(--u) * 8px)
+      calc(var(--u) * 8px),
+    linear-gradient(180deg, rgb(60 170 200 / 36%), rgb(30 100 130 / 46%));
+  box-shadow: inset 0 0 0 1px rgb(150 235 250 / 50%);
+}
+
+.ph-slot-key {
+  position: absolute;
+  top: calc(var(--u) * 2px);
+  left: calc(var(--u) * 2px);
+  z-index: 2;
+  min-width: calc(var(--u) * 12px);
+  height: calc(var(--u) * 12px);
+  border-radius: calc(var(--u) * 2.5px);
+  background: #f4efe2;
+  color: #15171c;
+  font:
+    800 calc(var(--u) * 8.5px) / calc(var(--u) * 12px) system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  text-align: center;
+}
+
+.ph-slot-icon {
+  position: absolute;
+  inset: calc(var(--u) * 3px) calc(var(--u) * 1px) calc(var(--u) * 8px);
+  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 45%));
+}
+
+.ph-slot-badge {
+  position: absolute;
+  top: calc(var(--u) * 3px);
+  right: calc(var(--u) * 3px);
+  width: calc(var(--u) * 12px);
+  height: calc(var(--u) * 12px);
+}
+
+.ph-dur {
+  position: absolute;
+  right: calc(var(--u) * 5px);
+  bottom: calc(var(--u) * 4px);
+  left: calc(var(--u) * 5px);
+  height: calc(var(--u) * 4px);
+  border-radius: calc(var(--u) * 2px);
+  background: rgb(0 0 0 / 40%);
+}
+
+.ph-dur i {
+  display: block;
+  height: 100%;
+  border-radius: calc(var(--u) * 2px);
+  background: linear-gradient(180deg, #7bd279 0%, #3f9e4a 100%);
+}
+
+.ph-count {
+  position: absolute;
+  right: calc(var(--u) * 5px);
+  bottom: calc(var(--u) * 8px);
+  font-size: calc(var(--u) * 12px);
+  font-weight: 600;
+  text-shadow: var(--shadow);
+}
+
+/* A small dot at the screen center. */
+
+.ph-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: calc(var(--u) * 4px);
+  height: calc(var(--u) * 4px);
+  margin: calc(var(--u) * -2px) 0 0 calc(var(--u) * -2px);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 80%);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 45%);
+}

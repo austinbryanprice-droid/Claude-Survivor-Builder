@@ -25,6 +25,8 @@ Mouse sensitivity, field of view and inverted look are on the pause panel and ar
 
 To check the frame rate, open the game with `?bench=1`. It flies a fixed 30-second route (walking, sprinting, jumping, third person), then shows the average frame rate, the 95th percentile frame time and the graphics adapter, with a button that copies the report. `?bench=1&benchSeconds=60` changes the length.
 
+The look spike page, `look.html`, shows the valley in the target look. Its `?bench=1` is the same benchmark, with the same report and pass mark, flown through the valley once each for Low, Balanced and Ultra. That run is the frame-rate check for the look; the game page measures the movement test deck until the valley moves into the game in Phase 2.
+
 ## Develop
 
 You need Node 22.12 or newer.

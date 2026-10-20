@@ -33,8 +33,8 @@ export interface BenchReport {
 export const TARGET_FPS = 60;
 
 /** Allows for timer jitter around the 16.7 ms of a 60 Hz refresh. */
-const P95_LIMIT_MS = 18.5;
-const AVG_FPS_FLOOR = 57;
+export const P95_LIMIT_MS = 18.5;
+export const AVG_FPS_FLOOR = 57;
 
 export function holdsTarget(frames: FrameSummary): boolean {
   return frames.frames > 0 && frames.fps >= AVG_FPS_FLOOR && frames.p95Ms <= P95_LIMIT_MS;

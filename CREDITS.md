@@ -4,7 +4,7 @@ The code is released under the MIT License (see [LICENSE](LICENSE)). Assets must
 
 ## Assets
 
-None yet. Models, textures and audio are generated in code.
+None yet. Models, textures and audio are generated in code, and so are the HUD icons. No font files ship: the HUD names Merriweather first and falls back to the system serif.
 
 | Asset | Author | Source | License | Used for |
 | ----- | ------ | ------ | ------- | -------- |

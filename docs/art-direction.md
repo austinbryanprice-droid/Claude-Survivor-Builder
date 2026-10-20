@@ -38,7 +38,7 @@ References 01, 02, 03 and 08 are Minecraft-style and use pixel-cube textures, wh
 | Structures: metal, plate | `#20262d`, `#38414b`            |
 | Accents: amber, cyan     | `#f2a43a`, `#3ad1e0`            |
 
-These are starting values for the look spike to tune against screenshots.
+The look spike tuned these against screenshots. The palette stops in `src/shared/daycycle.ts` are now the source of truth; this table only names the intent.
 
 ## Light and atmosphere
 
@@ -50,7 +50,7 @@ These are starting values for the look spike to tune against screenshots.
 
 ## Terrain, foliage and water
 
-- **Terrain.** A smooth mesh from the seeded density field, with collision from the same field, shaded with triplanar textures that blend by slope and height: grass on flats, rock on steep faces, dirt on worn paths, ash at the crash site. If the look spike shows the cost is too high, the fallback is a smoothed heightfield.
+- **Terrain.** A smooth surface-nets mesh from the seeded density field, with collision from the same field, shaded with triplanar textures that blend by slope and height: grass on flats, rock on steep faces, dirt on worn paths, ash at the crash site. The look spike measured it against the smoothed-heightfield fallback and kept surface nets, because a heightfield smears rock faces (see `decisions.md`).
 - **Foliage.** Instanced trees (pines and a broadleaf) with two levels of detail and distant impostors, grass cards and flowers that sway in the wind, and scattered boulders. Density scales with the preset.
 - **Water.** One lake with a sky-colored fresnel, ripples and sun glitter. Ultra adds a half-resolution planar reflection for the still-water look of references 01 and 02.
 
@@ -65,27 +65,29 @@ Structures keep the spec's dark metal with amber and cyan accents, built with th
 
 ## HUD
 
-Reference images 04 and 07 are the model. The HUD is HTML and CSS over the canvas with original icons, in dark translucent panels with thin light borders, soft amber accents, cream text and rounded key caps.
+Reference images 04 and 07 are the model, and the look spike builds it (`src/ui/player-hud/`, with original icons). The layout is drawn for 1280 by 720 and scales with the window. Type is a humanist serif system stack (Merriweather when installed, otherwise Georgia or the nearest serif).
 
-- **Top left.** A wide Health bar with a slimmer Energy bar under it, then a column of round status icons (buffs and debuffs) with timers beside them.
-- **Top center.** A thin compass strip with cardinal letters and tick marks, a diamond waypoint marker with a distance (the Outpost Core), and a small day, night and wave indicator.
-- **Top right.** An objective banner: a small caps category over a bold objective line (for example "Night 3" over "Defend the Core"), with a round emblem at the end and a key hint underneath.
-- **Bottom center.** The hotbar: square slots numbered 1 to 9 in the corner, item icons, stack counts at the lower right, a charge or durability bar under each, and a bright frame on the selected slot. Above it, the held item's name and a key hint.
-- **Bottom right.** A translucent status panel with the area's name (for example "Powered area") and key hints such as the camera toggle.
-- **Overlays.** Inventory and research use the same panel style, with cyan and amber accents (spec section 10).
+- **Top left.** One torn, dark slate frame holds a wide health bar in three pale mint segments over a slim blue stamina bar that ends in a white cap. Under it, a column of round green status icons, with the timed buff ("Rested 10:52" after a small green triangle) beside the first.
+- **Top center.** A compass: a brush-stroke line about 320 px wide that shows 222 degrees, a small tick every 45 degrees, "N" inside a larger triangle with E, S and W as plain letters, and an orange diamond with an exclamation mark and a distance ("48M") for a waypoint.
+- **Top right.** An objective banner: a slate bar that fades out to the left, a small letter-spaced place name over a bold objective line, and a mint diamond emblem straddling the end; under it, "Journal" with a white J key cap on a frosted pill.
+- **Bottom center.** The hotbar: eight frosted slots with a numbered key cap at the top left, a status glyph at the top right, a green durability bar along the bottom, a stack count at the lower right, a cyan grid on blueprint items, and a white outline with a violet tint on the selected slot. An "ALT" key cap sits to its left.
+- **Center.** A small dot for a crosshair.
+- **Still to come.** The day, night and wave indicator by the compass, the held item's name above the hotbar, a powered-area panel at the bottom right, and the inventory and research overlays (spec section 10) arrive with their phases and reuse the same frames and type.
 
 ## Quality presets
 
-| Element         | Low                          | Balanced                        | Ultra                                    |
-| --------------- | ---------------------------- | ------------------------------- | ---------------------------------------- |
-| Shadows         | Blob shadows                 | One filtered shadow map         | Two cascades                             |
-| Haze and light  | Fog only                     | Adds mist pockets and sun glow  | Adds light shafts                        |
-| Bloom and grade | Grade only                   | Half-resolution bloom and grade | Full-resolution bloom and grade          |
-| Water           | Flat tint                    | Ripples and glitter             | Adds a half-resolution planar reflection |
-| Terrain         | 8 chunks, two texture layers | 10 chunks, four layers          | 12 chunks, four layers, detail normals   |
-| Foliage density | 25 percent                   | 60 percent                      | 100 percent                              |
+| Element             | Low                             | Balanced                                    | Ultra                            |
+| ------------------- | ------------------------------- | ------------------------------------------- | -------------------------------- |
+| Internal resolution | 75 percent, floor 60, 1.0 MP    | 100 percent, floor 70, up to 2.1 MP         | 100 percent, fixed, up to 3.7 MP |
+| Anti-aliasing       | None                            | FXAA                                        | 4x MSAA                          |
+| Shadows             | None (blob shadows still to do) | One 2048 filtered map, 90 m                 | Two cascades, 160 m              |
+| Haze and light      | Fog only                        | Adds mist pockets and a lit sky             | Adds light shafts                |
+| Bloom and grade     | Grade only                      | Half-resolution bloom and grade             | Full-resolution bloom and grade  |
+| Water               | Flat tint                       | Ripples, glitter and a 0.3 scale reflection | A 0.5 scale planar reflection    |
+| Terrain view        | 8 chunks, plain textures        | 10 chunks, detail normals                   | 12 chunks, detail normals        |
+| Foliage             | 25 percent, grass to 22 m       | 60 percent, grass to 34 m                   | 100 percent, grass to 52 m       |
 
-The numbers are starting values. Balanced is the default and is tuned for 60 FPS at 1080p on a mid-range laptop; the owner confirms it on real hardware with the benchmark switch. Presets change from a menu and a `?quality=` URL switch.
+The numbers live in `src/shared/quality.ts`. Balanced is the default and is tuned for 60 FPS at 1080p on a mid-range laptop; its governor lowers the internal resolution a step at a time when frames run long. The owner confirms it on real hardware with the benchmark switch (`?bench=1` on the look page). Presets change with the P key and a `?quality=` URL switch; a menu comes with Phase 6.
 
 ## Rules of thumb
 
@@ -93,3 +95,56 @@ The numbers are starting values. Balanced is the default and is tuned for 60 FPS
 - Pick the cheaper effect when two look alike, and measure before adding the next one.
 - Never ship an asset that is not generated in code, CC0 or clearly licensed, and list every external asset in `CREDITS.md`.
 - Do not commit reference images, screenshots of other games or anything traced from them.
+
+## Look spike results
+
+The look spike (`look.html` and `src/spike/`) built the target look end to end: seeded surface-nets terrain, a day cycle with a shadowed sun, an analytic sky, haze with mist pockets, a lake, trees, grass, the Enshrouded-style HUD and the three presets. It also settled terrain meshing and collision (see [decisions](decisions.md#look-spike-2026-10-20)). The reference images stay out of this repository, so the side-by-side sheets sit in the project files instead; the screenshots here are ours.
+
+### Screenshots
+
+Headless Chromium on software GL at 1280 by 720, with `freeze=1` so every run draws the same frame. Each reproduces from its URL, for example `/look.html?shot=lake&quality=balanced&hud=0&stats=0&freeze=1`.
+
+![Across the lake into the low sun, Balanced](look/bal-lake.jpg)
+
+![The valley in the morning with the player HUD, Balanced](look/hud-valley.jpg)
+
+| Image                                                                                                   | Preset     | Compare with                                                             |
+| ------------------------------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------ |
+| [bal-lake](look/bal-lake.jpg)                                                                           | Balanced   | 01 and 02: a low warm sun, glitter and mist on the water, backlit pines  |
+| [bal-valley](look/bal-valley.jpg)                                                                       | Balanced   | 07: pines and rock, cyan mist pools, snow peaks far away                 |
+| [bal-canopy](look/bal-canopy.jpg)                                                                       | Balanced   | 03: layered forest, orange haze, a sun glow                              |
+| [bal-sunset](look/bal-sunset.jpg)                                                                       | Balanced   | 08: a violet sky, orange haze, a strong grade                            |
+| [bal-trail](look/bal-trail.jpg)                                                                         | Balanced   | 01 and 07: backlit grass and flowers up close                            |
+| [bal-crash](look/bal-crash.jpg), [bal-noon](look/bal-noon.jpg)                                          | Balanced   | The crash clearing and high sun (no wreck until Phase 2)                 |
+| [bal-outcrop](look/bal-outcrop.jpg), [terr-heightfield](look/terr-heightfield.jpg)                      | Balanced   | 06: a rock outcrop from surface nets, and the same view as a heightfield |
+| [bal-dusk](look/bal-dusk.jpg), [bal-night](look/bal-night.jpg)                                          | Balanced   | Moon, stars, cool blue                                                   |
+| [hud-valley](look/hud-valley.jpg), [hud-lake](look/hud-lake.jpg)                                        | Balanced   | 04 and 07: the player HUD at 1280 by 720                                 |
+| [low-lake](look/low-lake.jpg), [ultra-lake](look/ultra-lake.jpg), [ultra-valley](look/ultra-valley.jpg) | Low, Ultra | The presets beside Balanced                                              |
+
+### Frame budgets
+
+Draw calls and triangles per frame at 1280 by 720, every pass counted (shadows, reflection, main view, post). The sandbox has no GPU, so these are the static budget; the milliseconds come from the benchmark below.
+
+| View   | Low                 | Balanced             | Ultra                 |
+| ------ | ------------------- | -------------------- | --------------------- |
+| Lake   | 25 draws, 151k tris | 86 draws, 722k tris  | 91 draws, 1.52M tris  |
+| Valley | 37 draws, 200k tris | 111 draws, 855k tris | 149 draws, 1.85M tris |
+| Canopy | 35 draws, 218k tris | 103 draws, 892k tris | 131 draws, 1.91M tris |
+
+Low draws at 0.75 scale. The terrain alone is 123k triangles per pass with surface nets. Ultra roughly doubles the triangle count because two shadow cascades redraw the scene.
+
+Software rendering (SwiftShader, a 640 by 360 canvas) puts Balanced at about 12 times the cost of Low and Ultra at about 18 times. Only the ratios mean anything there, and a real GPU will not scale the same way, so they say which preset is heavier and nothing about frame rate.
+
+Building the valley in headless Chromium takes about half a second: textures 20 to 30 ms, density field 3 to 6 ms, ground grid 150 to 380 ms, terrain mesh 150 to 180 ms (60 to 85 ms for the heightfield), scatter 60 to 80 ms.
+
+**The frame rate itself needs a real machine.** Open `look.html?bench=1` on the target laptop at 1080p, plugged in, and leave the tab in front. It runs the game page's benchmark through the valley once each for Low, Balanced and Ultra (about 100 seconds), then shows a table with the verdict, and Copy report gives Markdown with GPU time where the browser has timer queries. Balanced has to show "holds 60" there. See [the spike README](../src/spike/README.md#benchmark).
+
+### Known gaps
+
+- The crash site is an empty ash clearing. The wreck, the Outpost Core and lantern glow need structures, which arrive in Phase 2, and references 01, 04 and 05 are mostly about buildings.
+- Textures are detailed and smooth. References 01, 02, 03 and 08 use pixel cubes; whether to match that is still Austin's call (see [decisions](decisions.md#look-spike-2026-10-20)).
+- Low has no shadows yet; blob shadows under trees are the planned stand-in.
+- Balanced reflects the far shore faintly (0.3 scale); the near-mirror water of references 01 and 02 needs Ultra.
+- The broadleaf canopies are brighter and simpler than the pines and oaks in reference 07. A second leaf texture and more colour variation are the next pass.
+- Clouds are soft and procedural, not the sculpted volumes of references 01 and 03.
+- Shaded grass at golden hour is dark, as it is in reference 01; reference 07's brighter mid-greens belong to a high-key daylight look that the morning and noon views already show.
