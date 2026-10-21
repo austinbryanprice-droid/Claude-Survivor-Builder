@@ -2,6 +2,8 @@ import type { Game } from '../engine/game';
 import type { BlockWorld } from '../shared/block-world';
 import type { NetFlags } from '../shared/net-flags';
 import type { PlayerSample } from '../shared/protocol';
+import { createReading, nightStart } from '../shared/survival-state';
+import { SurvivalSim } from '../systems/survival/sim';
 import { createMultiplayer, type Multiplayer } from './multiplayer';
 import { seatSpawn } from './seat-spawn';
 
@@ -18,6 +20,10 @@ export interface AttachOptions {
   voxels(): BlockWorld;
   flags: NetFlags;
   buildId: string;
+  /** Begin the run at the start of this night (the `?night=` switch), or at the first morning when null. */
+  night: number | null;
+  /** The sky follows the run's clock. False when the page holds a moment or runs its own demo clock. */
+  skyFollowsClock: boolean;
 }
 
 /** The cells players have built in a world. */
@@ -27,7 +33,14 @@ function editsOf(world: BlockWorld): { x: number; y: number; z: number }[] {
   return cells;
 }
 
-export function attachMultiplayer({ game, voxels, flags, buildId }: AttachOptions): Multiplayer {
+export function attachMultiplayer({
+  game,
+  voxels,
+  flags,
+  buildId,
+  night,
+  skyFollowsClock,
+}: AttachOptions): Multiplayer {
   const multiplayer = createMultiplayer({
     flags,
     buildId,
@@ -62,6 +75,7 @@ export function attachMultiplayer({ game, voxels, flags, buildId }: AttachOption
         return Promise.resolve(voxels());
       },
       spawnPoint: (slot) => seatSpawn(game.world, voxels(), slot),
+      survival: () => new SurvivalSim({ startAt: night === null ? 0 : nightStart(night) }),
     },
     groundAt: (x, z) => game.world.groundAt(x, z),
     scene: game.stage.world,
@@ -70,9 +84,17 @@ export function attachMultiplayer({ game, voxels, flags, buildId }: AttachOption
   });
   const stopUpdates = game.onBeforeRender((_camera, dt) => multiplayer.update(dt));
 
+  // From here on the light follows the run: sunrise, a long golden day, dusk, night, dawn.
+  const reading = createReading();
+  if (skyFollowsClock) {
+    game.stage.setSkyDriver(() => multiplayer.lobby.hub.survival.read(reading).sky);
+    game.stage.setMoment(null);
+  }
+
   return {
     ...multiplayer,
     dispose() {
+      if (skyFollowsClock) game.stage.setSkyDriver(null);
       stopUpdates();
       multiplayer.dispose();
     },

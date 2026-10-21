@@ -9,8 +9,9 @@ import type {
   RemotePose,
   WorldEvent,
 } from '../shared/protocol';
+import type { SurvivalView, Unsubscribe } from '../shared/survival-state';
 
-export type Unsubscribe = () => void;
+export type { Unsubscribe } from '../shared/survival-state';
 
 /**
  * `solo` is a host with nobody else in the room (single-player and tests), `host` has opened a
@@ -82,8 +83,21 @@ export interface GameSession {
   readonly roomOnline: boolean;
   readonly stats: Readonly<NetStats>;
 
+  /**
+   * The survival loop as this peer sees it: the day and night clock now, and what the host
+   * announces. A guest reads a mirror of the host's last word; the host reads its own simulation.
+   */
+  readonly survival: SurvivalView;
+
   /** Asks the host to change the world. Fire and forget: the result arrives as an event or a rejection. */
   sendCommand(command: BlockCommand): void;
+
+  /**
+   * Tells the session whether the local player is playing right now (the mouse is captured).
+   * Alone in the world the survival clock is held while nobody is playing; in a room it runs as
+   * long as anyone else is there. Guests ignore it: the host decides.
+   */
+  setLocalActive(active: boolean): void;
 
   onEvent(listener: (event: WorldEvent) => void): Unsubscribe;
   onRejected(listener: (rejection: Rejection) => void): Unsubscribe;

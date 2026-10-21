@@ -150,6 +150,10 @@ describe('host control frames', () => {
     { t: 'rej', id: 4, r: 'occupied' },
     { t: 'fix', epoch: 3, x: 1, y: 0, z: -2 },
     { t: 'pong', n: 9 },
+    { t: 'sv', tick: 14400, run: true },
+    { t: 'sv', tick: 0, run: false },
+    { t: 'se', e: { k: 'nightfall', n: 1 } },
+    { t: 'se', e: { k: 'dawn', n: 12 } },
     {
       t: 'pings',
       p: [
@@ -195,6 +199,26 @@ describe('host control frames', () => {
     expect(
       decodeHostFrame(JSON.stringify({ ...base, players: new Array(9).fill(base.players[0]) })),
     ).toBeNull();
+  });
+
+  it('refuses survival frames with a bad step count, a flag that is not a flag or an event it does not know', () => {
+    for (const text of [
+      '{"t":"sv","tick":-1,"run":true}',
+      '{"t":"sv","tick":1.5,"run":true}',
+      '{"t":"sv","tick":3000000000,"run":true}',
+      '{"t":"sv","tick":"9","run":true}',
+      '{"t":"sv","tick":9}',
+      '{"t":"sv","tick":9,"run":1}',
+      '{"t":"se"}',
+      '{"t":"se","e":null}',
+      '{"t":"se","e":{"k":"nightfall"}}',
+      '{"t":"se","e":{"k":"nightfall","n":0}}',
+      '{"t":"se","e":{"k":"nightfall","n":1.5}}',
+      '{"t":"se","e":{"k":"nightfall","n":70000}}',
+      '{"t":"se","e":{"k":"eclipse","n":1}}',
+    ]) {
+      expect(decodeHostFrame(text), text).toBeNull();
+    }
   });
 
   it('refuses an event with an out of range cell', () => {

@@ -43,6 +43,19 @@ export interface HudWaypoint {
   readonly distance: number;
 }
 
+/** The day and night clock by the compass. */
+export interface HudClock {
+  readonly phase: 'day' | 'night';
+  /** "Day 2" or "Night 2". */
+  readonly label: string;
+  /** Time left until the light changes, as "5:12". */
+  readonly time: string;
+  /** 0 to 1: how far through the day or the night. */
+  readonly progress: number;
+  /** The light is about to change. */
+  readonly soon: boolean;
+}
+
 export interface PlayerHudState {
   /** 0 to 1. */
   readonly health: number;
@@ -57,6 +70,8 @@ export interface PlayerHudState {
   /** Which way the player faces, as a compass bearing in degrees. */
   readonly heading: number;
   readonly waypoints: readonly HudWaypoint[];
+  /** The day and night clock under the compass; absent or null hides it. */
+  readonly clock?: HudClock | null;
   readonly objective: { readonly place: string; readonly title: string } | null;
   readonly slots: readonly HotbarSlot[];
   /** Index of the selected hotbar slot. */
@@ -117,6 +132,11 @@ export class PlayerHud {
   private readonly strip: HTMLElement;
   private readonly waypointLayer: HTMLElement;
   private readonly waypoints: WaypointRefs[] = [];
+  private readonly clock: HTMLElement;
+  private readonly clockIcon: HTMLElement;
+  private readonly clockLabel: HTMLElement;
+  private readonly clockTime: HTMLElement;
+  private readonly clockFill: HTMLElement;
   private readonly objective: HTMLElement;
   private readonly objectivePlace: HTMLElement;
   private readonly objectiveTitle: HTMLElement;
@@ -133,6 +153,8 @@ export class PlayerHud {
   private lastStatuses = '';
   private lastBuff = '';
   private lastHeading = Number.NaN;
+  private lastClock = '';
+  private lastClockFill = -1;
   private lastObjective = '';
   private readonly lastSlots: string[] = [];
   private lastSelected = -1;
@@ -177,6 +199,17 @@ export class PlayerHud {
     this.waypointLayer = el('div', 'ph-compass-waypoints');
     compass.append(compassWindow, el('div', 'ph-compass-line'), this.waypointLayer);
 
+    // The day and night clock, a small pill under the compass.
+    this.clock = el('div', 'ph-clock');
+    this.clock.hidden = true;
+    this.clockIcon = el('span', 'ph-clock-icon');
+    this.clockLabel = el('span', 'ph-clock-label');
+    this.clockTime = el('span', 'ph-clock-time');
+    const track = el('i', 'ph-clock-track');
+    this.clockFill = el('i', 'ph-clock-fill');
+    track.append(this.clockFill);
+    this.clock.append(this.clockIcon, this.clockLabel, this.clockTime, track);
+
     // Objective banner and the journal hint under it.
     this.objective = el('div', 'ph-objective');
     const banner = el('div', 'ph-banner');
@@ -214,6 +247,7 @@ export class PlayerHud {
       this.statusColumn,
       this.buff,
       compass,
+      this.clock,
       this.objective,
       this.prompt,
       bar,
@@ -263,6 +297,7 @@ export class PlayerHud {
     this.updateVitals(state);
     this.updateStatuses(state);
     this.updateCompass(state);
+    this.updateClock(state);
     this.updateObjective(state);
     this.updateHotbar(state);
     this.updateBuild(state);
@@ -339,6 +374,31 @@ export class PlayerHud {
     root.append(distance, diamond);
     this.waypointLayer.append(root);
     return { root, distance };
+  }
+
+  private updateClock(state: PlayerHudState): void {
+    const clock = state.clock ?? null;
+    const key = clock ? `${clock.phase}|${clock.label}|${clock.time}|${clock.soon ? 1 : 0}` : '';
+    if (key !== this.lastClock) {
+      const phaseChanged = clock !== null && !this.lastClock.startsWith(`${clock.phase}|`);
+      this.lastClock = key;
+      this.clock.hidden = clock === null;
+      if (clock) {
+        this.clock.dataset.phase = clock.phase;
+        this.clock.toggleAttribute('data-soon', clock.soon);
+        this.clockLabel.textContent = clock.label;
+        this.clockTime.textContent = clock.time;
+        if (phaseChanged)
+          this.clockIcon.innerHTML = iconMarkup(clock.phase === 'day' ? 'sun' : 'moon');
+      }
+    }
+    if (clock) {
+      const fill = Math.round(clamp01(clock.progress) * 1000) / 10;
+      if (fill !== this.lastClockFill) {
+        this.lastClockFill = fill;
+        this.clockFill.style.width = `${fill}%`;
+      }
+    }
   }
 
   private updateObjective(state: PlayerHudState): void {

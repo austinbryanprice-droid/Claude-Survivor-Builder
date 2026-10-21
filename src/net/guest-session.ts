@@ -21,6 +21,7 @@ import {
   encodeGuestState,
   seqNewer,
 } from '../shared/wire';
+import type { SurvivalView } from '../shared/survival-state';
 import { Emitter } from './emitter';
 import type { Scheduler } from './scheduler';
 import { StallWatch } from './stall-watch';
@@ -35,6 +36,7 @@ import type {
   Unsubscribe,
   WorldBinding,
 } from './session';
+import { SurvivalMirror } from './survival-mirror';
 import { NetError, type Link, type Transport } from './transport';
 
 export interface GuestSessionOptions {
@@ -78,6 +80,7 @@ export class GuestSession implements GameSession {
   private readonly scheduler: Scheduler;
   private readonly binding: WorldBinding;
   private readonly transport: Transport;
+  private readonly mirror: SurvivalMirror;
 
   private phaseValue: SessionPhase = 'connecting';
   private closedInfo: CloseInfo | null = null;
@@ -134,6 +137,7 @@ export class GuestSession implements GameSession {
     this.scheduler = options.scheduler;
     this.binding = options.world;
     this.transport = options.transport;
+    this.mirror = new SurvivalMirror(options.scheduler);
   }
 
   // --------------------------------------------------------------------------------------------
@@ -160,6 +164,9 @@ export class GuestSession implements GameSession {
   }
   get stats(): Readonly<NetStats> {
     return this.counters;
+  }
+  get survival(): SurvivalView {
+    return this.mirror;
   }
   get players(): readonly RosterEntry[] {
     return [...this.seats.values()]
@@ -198,6 +205,11 @@ export class GuestSession implements GameSession {
   }
   onCorrection(listener: (correction: Correction) => void): Unsubscribe {
     return this.corrections.on(listener);
+  }
+
+  /** The host decides whether the clock runs; a guest in the room is always counted as playing. */
+  setLocalActive(): void {
+    // Nothing to do on this side.
   }
 
   publishState(sample: PlayerSample): void {
@@ -404,6 +416,12 @@ export class GuestSession implements GameSession {
         }
         break;
       }
+      case 'sv':
+        this.mirror.apply(frame.tick, frame.run);
+        break;
+      case 'se':
+        this.mirror.announce(frame.e);
+        break;
       case 'pings':
         for (const [id, rtt] of frame.p) {
           const seat = this.seats.get(id);

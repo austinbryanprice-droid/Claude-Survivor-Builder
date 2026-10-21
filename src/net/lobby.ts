@@ -2,6 +2,7 @@ import type { BlockWorld } from '../shared/block-world';
 import { cleanName, defaultName, isToken } from '../shared/names';
 import { closeInfo, type CloseInfo, type PlayerId } from '../shared/protocol';
 import { normalizeRoomCode } from '../shared/room-code';
+import type { SurvivalSim } from '../systems/survival/sim';
 import { Emitter } from './emitter';
 import { GuestSession } from './guest-session';
 import { HostSession } from './host-session';
@@ -37,6 +38,12 @@ export interface LobbyGame {
   loadWorld(seed: number): Promise<BlockWorld>;
   /** Where the player in this seat starts, standing on the ground. */
   spawnPoint(slot: number): { x: number; y: number; z: number };
+  /**
+   * A new survival run to host: the clock at the start of day 1 (or wherever the page was told to
+   * begin). Called each time the player is on their own again. Games that play without one leave
+   * it out.
+   */
+  survival?(): SurvivalSim;
 }
 
 /** Browser storage as the lobby uses it. Reads and writes never throw, so private windows just forget. */
@@ -321,6 +328,7 @@ export class Lobby {
       name: this.nameValue,
       token: this.token,
       spawnFor: (slot) => this.options.game.spawnPoint(slot),
+      survival: this.options.game.survival?.(),
     });
   }
 

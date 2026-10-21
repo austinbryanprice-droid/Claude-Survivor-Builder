@@ -21,6 +21,8 @@ export type IconId =
   | 'shield'
   | 'heart'
   | 'spire'
+  | 'sun'
+  | 'moon'
   | 'block-scrap'
   | 'block-composite'
   | 'block-alloy'
@@ -48,6 +50,8 @@ export const ICON_IDS: readonly IconId[] = [
   'shield',
   'heart',
   'spire',
+  'sun',
+  'moon',
   'block-scrap',
   'block-composite',
   'block-alloy',
@@ -233,6 +237,12 @@ const SPRITE_BODY = /* html */ `
   <radialGradient id="ph-bomb" cx="0.35" cy="0.3" r="0.8">
     <stop offset="0" stop-color="#6a7585"/><stop offset="1" stop-color="#232a35"/>
   </radialGradient>
+  <radialGradient id="ph-sun" cx="0.38" cy="0.32" r="0.85">
+    <stop offset="0" stop-color="#fff3b0"/><stop offset="0.55" stop-color="#ffc24a"/><stop offset="1" stop-color="#e8851f"/>
+  </radialGradient>
+  <linearGradient id="ph-moon" x1="0.1" y1="0" x2="0.9" y2="1">
+    <stop offset="0" stop-color="#f4f8ff"/><stop offset="0.6" stop-color="#bcd0f2"/><stop offset="1" stop-color="#7f97c8"/>
+  </linearGradient>
   <linearGradient id="ph-glass" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0" stop-color="#f4fbff" stop-opacity="0.85"/><stop offset="1" stop-color="#9fc7d8" stop-opacity="0.55"/>
   </linearGradient>
@@ -333,6 +343,19 @@ const SPRITE_BODY = /* html */ `
   <path d="M33 10 V4 M30 7 H36" stroke="${INK}" stroke-width="2.2" stroke-linecap="round"/>
   <path d="M3 41 H45" stroke="${INK}" stroke-width="2.4" stroke-linecap="round"/>
   <path d="M17 17 V41 M33 10 V41" stroke="${INK}" stroke-width="1.5" opacity="0.55"/>
+</symbol>
+
+<symbol id="ph-i-sun" viewBox="0 0 48 48">
+  <g stroke="${INK}" stroke-width="3.4" stroke-linecap="round"><path d="M24 4 V10 M24 38 V44 M4 24 H10 M38 24 H44 M9.9 9.9 L14.1 14.1 M33.9 33.9 L38.1 38.1 M9.9 38.1 L14.1 33.9 M33.9 14.1 L38.1 9.9"/></g>
+  <g stroke="#ffd36a" stroke-width="1.8" stroke-linecap="round"><path d="M24 4 V10 M24 38 V44 M4 24 H10 M38 24 H44 M9.9 9.9 L14.1 14.1 M33.9 33.9 L38.1 38.1 M9.9 38.1 L14.1 33.9 M33.9 14.1 L38.1 9.9"/></g>
+  <circle cx="24" cy="24" r="10.5" fill="url(#ph-sun)" stroke="${INK}" stroke-width="1.8"/>
+  <path d="M18.5 20.5 C19.8 18.2 22 17 24.5 17" stroke="#fff6d0" stroke-opacity="0.8" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+</symbol>
+
+<symbol id="ph-i-moon" viewBox="0 0 48 48">
+  <path d="M31 5 C21.5 6.5 14 14.5 14 24.5 C14 34.5 21.5 42.5 31 43.5 C22.6 45.6 12 40.5 8.4 31.8 C4.8 23 9 12.6 17.6 8 C21.6 5.8 26.4 4.6 31 5 Z" fill="url(#ph-moon)" stroke="${INK}" stroke-width="1.8" stroke-linejoin="round"/>
+  <path d="M15.5 17 C17.5 12.8 21 9.8 25 8.4" stroke="#ffffff" stroke-opacity="0.75" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+  <circle cx="37" cy="13" r="1.6" fill="#dbe7ff"/><circle cx="41" cy="24" r="1.2" fill="#dbe7ff"/><circle cx="35" cy="34" r="1.3" fill="#dbe7ff"/>
 </symbol>
 ${BLOCK_SYMBOLS}
 ${SHAPE_SYMBOLS}

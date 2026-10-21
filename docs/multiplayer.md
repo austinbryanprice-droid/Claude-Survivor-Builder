@@ -41,7 +41,7 @@ A page that reloads goes back into its room by itself: while a player is in a ro
 | ------------------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Protocol, wire codec, tuning table   | `src/shared/protocol.ts`, `wire.ts`, `net-config.ts`            | Message shapes, bytes on the wire, and every number in one table (`NET`).                                                                                                                   |
 | Clock, interpolation, movement check | `src/shared/clock-sync.ts`, `interpolation.ts`, `move-guard.ts` | Pure code, tested on virtual time.                                                                                                                                                          |
-| `HostSession`                        | `src/net/host-session.ts`                                       | The authority. Also plays single-player with no room open.                                                                                                                                  |
+| `HostSession`                        | `src/net/host-session.ts`                                       | The authority. Also plays single-player with no room open, and runs the survival simulation.                                                                                                |
 | `GuestSession`                       | `src/net/guest-session.ts`                                      | Dials a room, builds the host's world from the snapshot, requests edits, applies events.                                                                                                    |
 | `Transport`                          | `src/net/transport.ts`, `loopback.ts`, `peer-transport.ts`      | What the sessions need from a network. The loopback runs rooms in memory for tests; `PeerTransport` is the real one.                                                                        |
 | `Lobby`, `SessionHub`                | `src/net/lobby.ts`, `hub.ts`                                    | Alone, hosting or visiting, and the buttons between them. The hub is the one `GameSession` the rest of the game holds, whichever session is behind it.                                      |
@@ -72,6 +72,15 @@ Content and balance live in data tables (`src/shared/blocks.ts` for shapes and m
 ## Joining late
 
 A guest that says hello gets a `welcome` with the world seed, its seat, the room list, the event counter and where to start, then the player-made blocks as `snap` frames. The guest builds the same terrain from the seed (terrain never travels over the wire), places the edits, applies any events that arrived meanwhile, and only then becomes `open`. The host's own copy is the source: the snapshot is whatever `forEachEdit` visits, in a fixed order. A test places 2,600 blocks and checks that a late joiner ends with an identical world (same count, same fingerprint).
+
+## The survival clock
+
+Since Phase 4a the host also plays the day and night clock (`src/systems/survival/`), and the room sees the same time.
+
+- **The host plays it, the guests mirror it.** The host steps a pure simulation in fixed 20 Hz steps from its session timer and tells the guests with an `sv` control frame (its step count, and whether the clock is running) about twice a second, at once when the clock starts or stops, and straight after the world snapshot for a newcomer. A guest carries the last word forward on its own timer (for three seconds at most) and never lets the countdown tick backwards. An `se` frame announces a change of light (nightfall, dawn) as it happens; a late joiner is not told the past, the snapshot says where things stand.
+- **Alone, the run waits for the player.** With nobody else in the room the clock runs only while the mouse is captured, so a menu, a hidden tab or a forgotten page costs no night. With a guest in the room it never waits, because the others are playing.
+- **A blocked host loses time instead of replaying it.** A tick that finds more than two seconds to catch up plays two and drops the rest, so a tab that comes back after a minute does not skip a night.
+- **Protocol version 2.** The frames above are new, so a version 1 host and a version 2 guest refuse each other and say why.
 
 ## Movement
 
@@ -119,7 +128,7 @@ The invite link the card builds keeps these network switches, so a room on a pri
 
 ## Known limits
 
-- **A hidden host tab slows the room.** Browsers throttle timers in tabs that are hidden or covered, and the host's tab does the relaying. The card tells the host to keep the tab visible. Moving the host's loop into a Worker is a natural follow-up (Phase 4's host Worker will do most of it).
+- **A hidden host tab slows the room.** Browsers throttle timers in tabs that are hidden or covered, and the host's tab does the relaying. The card tells the host to keep the tab visible. The survival clock itself keeps real time (it catches up in steps), but the relay of players drops to about once a second. Moving the host's loop into a Worker is a natural follow-up (Phase 4's decision about it is in [decisions](decisions.md#phase-4a-the-day-and-night-clock-2026-10-21)).
 - **A wrong code takes about five seconds to report.** The matchmaking server holds the introduction for five seconds before it answers that there is no such room. A broker that is down is reported at once.
 - **No kick, no spectators, no chat.** Not in the spec's Phase 3.
 - **The movement check is a sanity check** (see above).
@@ -128,5 +137,5 @@ The invite link the card builds keeps these network switches, so a room on a pri
 ## For later phases
 
 - New commands (upgrade a block, place a module, set a hotbar) are new `BlockCommand` shapes validated in `HostSession.refusal`; new world changes are new event types with the same numbered, idempotent delivery.
-- Enemies, waves, health and resources become host state that rides the same `ev` stream or a sibling frame, and the host's Worker (Phase 4) can call the same session methods.
+- Enemies, waves, health and resources become host state that rides the same frames: `sv` and `se` carry the survival state and its events (Phase 4a), and the machines' positions get a fast-lane packet of their own.
 - Saves (Phase 6) hook the same moments the host-left screen does: the **Close room** button and `pagehide`. The spec asks the host to attempt an auto-save before the session ends when it can.

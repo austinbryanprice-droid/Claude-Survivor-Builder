@@ -1,10 +1,12 @@
 import type { Game } from '../engine/game';
 import type { ShapeKind } from '../shared/blocks';
 import { MOVEMENT } from '../shared/movement';
+import { createReading, type SurvivalView } from '../shared/survival-state';
 import { CRASH } from '../world/terrain/field';
 import { BuildPromptTracker, blockSlotsByKind, type BuildHudSource } from './build-hud';
 import { wrapBearing } from './player-hud/format';
 import { PlayerHud, type HotbarSlot, type PlayerHudState } from './player-hud/player-hud';
+import { clockForHud, objectiveForRun } from './run-hud';
 
 /** Placeholder tools for the slots after the building blocks; the real ones come with the inventory. */
 const TOOLS: readonly HotbarSlot[] = [
@@ -25,6 +27,8 @@ const RADIANS_TO_DEGREES = 180 / Math.PI;
 export interface PlaceholderHud {
   readonly hud: PlayerHud;
   setVisible(visible: boolean): void;
+  /** Takes the day and night clock and the objective from the run; null goes back to the made-up objective. */
+  setSurvival(view: SurvivalView | null): void;
   /** Advances the made-up numbers by `dt` seconds and redraws the HUD. */
   update(dt: number): void;
   dispose(): void;
@@ -32,9 +36,10 @@ export interface PlaceholderHud {
 
 /**
  * The player HUD of the reference, driven by the game where the game knows the answer (the compass
- * follows the view, the waypoint points at the crash site, stamina drains while sprinting, and the
- * hotbar, the crosshair and Build Mode come from the player's building hands) and by made-up
- * numbers where it does not yet: health, status effects, the objective and the tools.
+ * follows the view, the waypoint points at the crash site, stamina drains while sprinting, the
+ * hotbar, the crosshair and Build Mode come from the player's building hands, and the day and
+ * night clock and the objective come from the run) and by made-up numbers where it does not yet:
+ * health, status effects and the tools.
  */
 export function createPlaceholderHud(
   parent: HTMLElement,
@@ -52,12 +57,17 @@ export function createPlaceholderHud(
   let stamina = 1;
   let buffSeconds = 10 * 60 + 52;
   let visible = true;
+  let survival: SurvivalView | null = null;
+  const reading = createReading();
 
   return {
     hud,
     setVisible(next) {
       visible = next;
       hud.root.hidden = !next;
+    },
+    setSurvival(view) {
+      survival = view;
     },
     update(dt) {
       if (!visible) return;
@@ -75,6 +85,7 @@ export function createPlaceholderHud(
       const dx = CRASH.x - camera.position.x;
       const dz = CRASH.z - camera.position.z;
       const hands = build.hudState();
+      const run = survival ? survival.read(reading) : null;
       const state: PlayerHudState = {
         health: 0.78,
         healthSegments: 3,
@@ -88,7 +99,10 @@ export function createPlaceholderHud(
             distance: Math.hypot(dx, dz),
           },
         ],
-        objective: { place: 'The Ashbound Outpost', title: 'Light the beacon at the crash site' },
+        clock: run ? clockForHud(run) : null,
+        objective: run
+          ? objectiveForRun(run)
+          : { place: 'The Ashbound Outpost', title: 'Light the beacon at the crash site' },
         slots: slotRows.get(hands.kind) ?? [],
         selected: hands.selected,
         prompt: prompts.update(dt, hands),

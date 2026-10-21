@@ -14,6 +14,7 @@ import { ManualScheduler } from '../../../src/net/scheduler';
 import { fixedWorld, type WorldBinding } from '../../../src/net/session';
 import type { Link } from '../../../src/net/transport';
 import type { HostFrame } from '../../../src/shared/protocol';
+import { SurvivalSim, type SurvivalOptions } from '../../../src/systems/survival/sim';
 
 /** A small in-memory world with the same kinds of rules as the real one (bounds, support, known ids). */
 export class TestWorld implements BlockWorld {
@@ -113,6 +114,8 @@ export interface Guest {
 export interface RoomOptions extends Partial<Omit<LoopbackOptions, 'scheduler'>> {
   /** How long a guest's world takes to build, in milliseconds. */
   loadMs?: number;
+  /** Gives the host a survival simulation (true for a new run, or the options to start one with). */
+  survival?: boolean | SurvivalOptions;
 }
 
 /** A host and a loopback network on virtual time. */
@@ -129,6 +132,9 @@ export function makeRoom(options: RoomOptions = {}) {
     world: fixedWorld(hostWorld),
     name: 'Host',
     token: token(0),
+    survival: options.survival
+      ? new SurvivalSim(options.survival === true ? {} : options.survival)
+      : undefined,
   });
 
   const flush = async (): Promise<void> => {
