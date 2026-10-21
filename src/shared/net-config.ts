@@ -33,6 +33,8 @@ export const NET = {
   fastChannelWaitMs: 6000,
   /** A room code that the broker says is taken is replaced, up to this many times. */
   codeRetries: 8,
+  /** How many departed guests the host remembers, by token, for a return to the same seat. */
+  departedKept: 16,
 
   roomCodeLength: 5,
   maxNameLength: 16,
@@ -56,8 +58,8 @@ export const NET = {
   move: {
     /** Allowed speed as a multiple of the fastest speed the controller can reach. */
     speedSlack: 1.35,
-    /** How much unspent movement may be banked, in seconds of top speed, so a late burst of packets passes. */
-    burstSeconds: 0.6,
+    /** How much unspent movement may be banked, in seconds of top speed, so a burst of delayed packets passes. */
+    burstSeconds: 1.5,
     /** A guest whose body centre sits inside a solid block for this long is moved back. */
     insideSolidMs: 600,
     /** Below this height a reset (the fall-out-of-the-world respawn) is believed. */

@@ -1,6 +1,8 @@
+import type { BlockWorld } from '../shared/block-world';
 import type {
   BlockCommand,
   CloseInfo,
+  EditRecord,
   PlayerId,
   PlayerInfo,
   PlayerSample,
@@ -87,16 +89,39 @@ export interface GameSession {
 
   /**
    * Tells the session where the local player is. Call it every frame or tick; the session sends
-   * at its own rate (about 20 a second) and ignores the calls in between.
+   * at its own rate (about 20 a second) and ignores the calls in between. Set `reset` for the
+   * first sample after the player was moved on purpose (a respawn), so others draw a jump.
    */
-  publishState(sample: PlayerSample, nowMs: number): void;
+  publishState(sample: PlayerSample): void;
 
   /**
-   * Where to draw the other players at `nowMs` (a `performance.now()` value). The array and the
-   * poses in it are reused: read them before the next call.
+   * Where to draw the other players right now. The array and the poses in it are reused: read
+   * them before the next call.
    */
-  sampleRemotes(nowMs: number): readonly RemotePose[];
+  sampleRemotes(): readonly RemotePose[];
 
   /** Leaves the room, or closes it when hosting. Safe to call more than once. */
   close(): void;
+}
+
+/**
+ * How the session reaches the game's world. The host (and solo play) only ever edits the world it
+ * has; a guest also has to replace its world with the host's when it joins.
+ */
+export interface WorldBinding {
+  /** The world being played right now. */
+  current(): BlockWorld;
+  /**
+   * Replaces the world with one built from the host's terrain seed and the player-made blocks
+   * (guests, once, after joining). Resolves when the new world is playable.
+   */
+  load(seed: number, edits: readonly EditRecord[]): Promise<void>;
+}
+
+/** A binding for a world that is never replaced. */
+export function fixedWorld(world: BlockWorld): WorldBinding {
+  return {
+    current: () => world,
+    load: () => Promise.reject(new Error('This world cannot be replaced.')),
+  };
 }
