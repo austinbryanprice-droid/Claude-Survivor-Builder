@@ -49,14 +49,21 @@ describe('surface-nets terrain mesh', () => {
   });
 
   it('indexes only vertices that exist and keeps every number finite', () => {
+    // Count the bad entries in a plain loop and assert once: an `expect` for each of the million
+    // entries took 4.5 s here and timed out on a loaded CI runner.
+    const countBad = (values: ArrayLike<number>, isBad: (v: number) => boolean): number => {
+      let bad = 0;
+      for (let i = 0; i < values.length; i++) if (isBad(values[i] as number)) bad++;
+      return bad;
+    };
     for (const m of meshes) {
       expect(m.positions.length).toBe(m.vertexCount * 3);
       expect(m.normals.length).toBe(m.vertexCount * 3);
       expect(m.ao.length).toBe(m.vertexCount);
       expect(m.indices.length).toBe(m.triangleCount * 3);
-      for (const i of m.indices) expect(i).toBeLessThan(m.vertexCount);
-      for (const v of m.positions) expect(Number.isFinite(v)).toBe(true);
-      for (const v of m.normals) expect(Number.isFinite(v)).toBe(true);
+      expect(countBad(m.indices, (i) => i >= m.vertexCount)).toBe(0);
+      expect(countBad(m.positions, (v) => !Number.isFinite(v))).toBe(0);
+      expect(countBad(m.normals, (v) => !Number.isFinite(v))).toBe(0);
     }
   });
 
