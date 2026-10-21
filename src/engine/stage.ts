@@ -45,6 +45,9 @@ export interface StageOptions {
   mist: MistZones;
 }
 
+/** Where the sky is in its day-night cycle, as a position in [0, 1). The game's clock supplies it. */
+export type SkyDriver = () => number;
+
 export type QualityListener = (quality: QualitySettings) => void;
 export type RenderListener = (camera: PerspectiveCamera, dt: number) => void;
 
@@ -86,6 +89,8 @@ export class Stage {
   private fixedMoment: { elevation: number; bearing: number } | null;
   private skyDirty = true;
   private clockTime = 0;
+  private skyDriver: SkyDriver | null = null;
+  private drivenPhase = Number.NaN;
   private canvasWidth = 2;
   private canvasHeight = 2;
   private announced = false;
@@ -222,8 +227,31 @@ export class Stage {
     return this.momentName;
   }
 
+  /**
+   * Lets the game's own clock say where the sky is whenever no moment is held. Without a driver
+   * the sky runs the compressed demo clock instead. Pass null to take the driver away.
+   */
+  setSkyDriver(driver: SkyDriver | null): void {
+    this.skyDriver = driver;
+    this.drivenPhase = Number.NaN;
+    this.skyDirty = true;
+  }
+
+  /**
+   * Whether the sky has moved since it was last worked out, without anyone asking: the demo clock
+   * moves every frame, the game's clock only when it has, and a held moment never.
+   */
+  private skyMoves(): boolean {
+    if (this.fixedMoment !== null) return false;
+    return this.skyDriver === null || this.skyDriver() !== this.drivenPhase;
+  }
+
   private computeSky(): SkyState {
     if (this.fixedMoment) return skyStateAt(this.fixedMoment.elevation, this.fixedMoment.bearing);
+    if (this.skyDriver) {
+      this.drivenPhase = this.skyDriver();
+      return skyStateForPhase(this.drivenPhase);
+    }
     return skyStateForPhase((this.clockTime / CLOCK_SECONDS) % 1);
   }
 
@@ -271,7 +299,7 @@ export class Stage {
       this.animTime += dt;
       if (this.fixedMoment === null) this.clockTime += dt;
     }
-    if (this.fixedMoment === null || this.skyDirty) {
+    if (this.skyDirty || this.skyMoves()) {
       this.sky = this.computeSky();
       this.skyDirty = false;
     }

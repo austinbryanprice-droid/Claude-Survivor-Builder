@@ -6,6 +6,7 @@ import type {
   RemotePose,
   WorldEvent,
 } from '../shared/protocol';
+import type { SurvivalEvent, SurvivalReading, SurvivalView } from '../shared/survival-state';
 import { Emitter } from './emitter';
 import type {
   Correction,
@@ -28,6 +29,7 @@ import type {
 export class SessionHub implements GameSession {
   private session: GameSession;
   private unbind: Unsubscribe[] = [];
+  private localActive = false;
 
   private readonly events = new Emitter<WorldEvent>();
   private readonly rejections = new Emitter<Rejection>();
@@ -35,6 +37,11 @@ export class SessionHub implements GameSession {
   private readonly phases = new Emitter<SessionPhase>();
   private readonly corrections = new Emitter<Correction>();
   private readonly swaps = new Emitter<GameSession>();
+  private readonly survivalEvents = new Emitter<SurvivalEvent>();
+  private readonly survivalView: SurvivalView = {
+    read: (out: SurvivalReading) => this.session.survival.read(out),
+    onEvent: (listener) => this.survivalEvents.on(listener),
+  };
 
   constructor(initial: GameSession) {
     this.session = initial;
@@ -56,6 +63,7 @@ export class SessionHub implements GameSession {
     for (const stop of this.unbind) stop();
     this.unbind = [];
     this.session = next;
+    next.setLocalActive(this.localActive);
     this.bind();
     this.swaps.emit(next);
     this.phases.emit(next.phase);
@@ -74,6 +82,7 @@ export class SessionHub implements GameSession {
       session.onPlayers(() => this.playerChanges.emit()),
       session.onPhase((phase) => this.phases.emit(phase)),
       session.onCorrection((correction) => this.corrections.emit(correction)),
+      session.survival.onEvent((event) => this.survivalEvents.emit(event)),
     ];
   }
 
@@ -101,9 +110,17 @@ export class SessionHub implements GameSession {
   get stats(): Readonly<NetStats> {
     return this.session.stats;
   }
+  /** One view for the life of the hub: it reads whichever session is current and hears from each in turn. */
+  get survival(): SurvivalView {
+    return this.survivalView;
+  }
 
   sendCommand(command: BlockCommand): void {
     this.session.sendCommand(command);
+  }
+  setLocalActive(active: boolean): void {
+    this.localActive = active;
+    this.session.setLocalActive(active);
   }
   publishState(sample: PlayerSample): void {
     this.session.publishState(sample);

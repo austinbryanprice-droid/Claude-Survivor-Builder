@@ -8,6 +8,7 @@ describe('view URL switches', () => {
     expect(v.seed).toBe(DEFAULT_SEED);
     expect(v.time).toBeNull();
     expect(v.clock).toBe(false);
+    expect(v.night).toBeNull();
     expect(v.shot).toBeNull();
     expect(v.demo).toBeNull();
     expect(v.hud).toBe(true);
@@ -51,6 +52,16 @@ describe('view URL switches', () => {
     expect(readViewFlags('?scale=3').scale).toBe(1);
     expect(readViewFlags('?terrain=voxels').terrain).toBe('surface-nets');
     expect(readViewFlags('?seed=abc').seed).toBe(DEFAULT_SEED);
+  });
+
+  it('starts the run at a night when asked, and only for a night that exists', () => {
+    expect(readViewFlags('?night=1').night).toBe(1);
+    expect(readViewFlags('?night=5').night).toBe(5);
+    expect(readViewFlags('?night=99').night).toBe(99);
+    for (const bad of ['0', '100', '-2', '2.5', 'five', '', '007x', '1e1']) {
+      expect(readViewFlags(`?night=${bad}`).night, bad).toBeNull();
+    }
+    expect(readViewFlags('?night').night).toBeNull();
   });
 
   it('turns the flags off with 0', () => {

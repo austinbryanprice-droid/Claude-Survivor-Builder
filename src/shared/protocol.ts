@@ -1,4 +1,5 @@
 import type { CellState } from './block-world';
+import type { SurvivalEvent } from './survival-state';
 
 export type { CellState } from './block-world';
 
@@ -157,6 +158,14 @@ export type HostFrame =
       readonly z: number;
     }
   | { readonly t: 'pong'; readonly n: number }
+  /**
+   * Where the survival clock stands: the host's step count (20 a second) and whether the clock is
+   * running. Sent about twice a second while it runs, whenever it stops or starts, and to every
+   * newcomer, so a guest can show the time and move the sky between frames.
+   */
+  | { readonly t: 'sv'; readonly tick: number; readonly run: boolean }
+  /** Something the survival loop announces as it happens (nightfall, dawn). */
+  | { readonly t: 'se'; readonly e: SurvivalEvent }
   /** Every guest's ping, so the room list can show them. */
   | { readonly t: 'pings'; readonly p: readonly (readonly [PlayerId, number])[] }
   | { readonly t: 'bye'; readonly why: 'closed' };

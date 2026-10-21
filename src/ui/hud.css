@@ -155,6 +155,14 @@
   color: var(--ink-dim);
 }
 
+.run-line {
+  margin-top: 10px;
+  color: var(--amber);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 .pause-card .play-button {
   margin-top: 18px;
   padding: 13px 34px;

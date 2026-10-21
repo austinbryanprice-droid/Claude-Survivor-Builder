@@ -21,6 +21,7 @@ import {
   type RemotePose,
   type WorldEvent,
 } from '../shared/protocol';
+import type { SurvivalEvent, SurvivalReading, SurvivalView } from '../shared/survival-state';
 import {
   decodeGuestFrame,
   decodeGuestState,
@@ -30,6 +31,7 @@ import {
   seqNewer,
   type RelayEntry,
 } from '../shared/wire';
+import type { SurvivalSim } from '../systems/survival/sim';
 import { Emitter } from './emitter';
 import type { Scheduler } from './scheduler';
 import { StallWatch } from './stall-watch';
@@ -64,6 +66,8 @@ export interface HostSessionOptions {
   token: string;
   /** Where a player in this slot starts. */
   spawnFor?: (slot: number) => { x: number; y: number; z: number };
+  /** The survival simulation this host runs. Absent where only the world is under test. */
+  survival?: SurvivalSim;
 }
 
 interface Member {
@@ -107,6 +111,21 @@ const DEFAULT_SPAWN = (slot: number) => ({
   z: 0.5 + Math.floor(slot / 2) * 2,
 });
 
+/** What a host without a simulation shows: the first morning, held, and nothing to announce. */
+const IDLE_SURVIVAL: SurvivalView = {
+  read(out) {
+    out.elapsed = 0;
+    out.cycle = 1;
+    out.phase = 'day';
+    out.into = 0;
+    out.left = 0;
+    out.sky = 0;
+    out.running = false;
+    return out;
+  },
+  onEvent: () => () => undefined,
+};
+
 /** Time a refused or finished link is given to flush its last frame before it is closed. */
 const GOODBYE_GRACE_MS = 400;
 /** A returning guest whose old link has been quiet this long takes its old seat back. */
@@ -133,6 +152,15 @@ export class HostSession implements GameSession {
   private relayDirty = false;
   private lastPing = 0;
 
+  private readonly sim: SurvivalSim | null;
+  private readonly survivalView: SurvivalView;
+  private localActive = false;
+  private survivalAt: number;
+  private survivalRunning = false;
+  private survivalDirty = false;
+  private lastSurvivalSend = -Infinity;
+  private readonly survivalQueue: SurvivalEvent[] = [];
+
   private endpoint: HostEndpoint | null = null;
   private brokerOnline = true;
   private stopTimer: (() => void) | null = null;
@@ -145,6 +173,7 @@ export class HostSession implements GameSession {
   private readonly playerChanges = new Emitter<void>();
   private readonly phases = new Emitter<SessionPhase>();
   private readonly corrections = new Emitter<Correction>();
+  private readonly survivalEvents = new Emitter<SurvivalEvent>();
 
   private readonly counters: NetStats = {
     rttMs: null,
@@ -175,6 +204,9 @@ export class HostSession implements GameSession {
     host.guard.place(spawn.x, spawn.y, spawn.z, now);
     this.members.set(HOST_PLAYER_ID, host);
     this.stall = new StallWatch(NET.relayIntervalMs, now);
+    this.sim = options.survival ?? null;
+    this.survivalAt = now;
+    this.survivalView = this.sim ? this.viewOf(this.sim) : IDLE_SURVIVAL;
     this.stopTimer = this.scheduler.every(NET.relayIntervalMs, () => this.step());
   }
 
@@ -203,6 +235,13 @@ export class HostSession implements GameSession {
   get stats(): Readonly<NetStats> {
     return this.counters;
   }
+  get survival(): SurvivalView {
+    return this.survivalView;
+  }
+  /** The simulation itself, for the debug hook and the tests. Null where there is none. */
+  get survivalSim(): SurvivalSim | null {
+    return this.sim;
+  }
   get players(): readonly RosterEntry[] {
     return [...this.members.values()]
       .sort((a, b) => a.slot - b.slot)
@@ -218,6 +257,10 @@ export class HostSession implements GameSession {
   sendCommand(command: BlockCommand): void {
     if (this.phaseValue !== 'open') return;
     this.runCommand(this.members.get(HOST_PLAYER_ID) as Member, null, command);
+  }
+
+  setLocalActive(active: boolean): void {
+    this.localActive = active;
   }
 
   onEvent(listener: (event: WorldEvent) => void): Unsubscribe {
@@ -478,6 +521,8 @@ export class HostSession implements GameSession {
     for (let i = 0; i < parts; i++) {
       this.sendTo(member, encodeFrame({ t: 'snap', i, b: encodeEdits(edits, i * per, per) }));
     }
+    // The newcomer should see the time at once, not at the next regular word.
+    if (this.sim) this.sendTo(member, this.survivalFrame());
 
     const joined = encodeFrame({ t: 'join', p: { id, slot, name } });
     for (const other of this.members.values()) {
@@ -657,6 +702,7 @@ export class HostSession implements GameSession {
   private step(): void {
     const now = this.scheduler.now();
     const late = this.stall.lateBy(now);
+    this.stepSurvival(now);
     if (!this.endpoint) return;
     // Our own page was blocked, so the guests' packets are still waiting to be read: their silence
     // during the stall is not theirs.
@@ -735,6 +781,77 @@ export class HostSession implements GameSession {
       if (oldest.done) break;
       this.departed.delete(oldest.value);
     }
+  }
+
+  // --------------------------------------------------------------------------------------------
+  // Survival: the simulation, paced by real time, and what the guests are told about it.
+  // --------------------------------------------------------------------------------------------
+
+  private viewOf(sim: SurvivalSim): SurvivalView {
+    return {
+      read: (out: SurvivalReading) => {
+        sim.read(out);
+        out.running = this.refreshRunning();
+        return out;
+      },
+      onEvent: (listener) => this.survivalEvents.on(listener),
+    };
+  }
+
+  private hasGuests(): boolean {
+    for (const member of this.members.values()) if (member.link) return true;
+    return false;
+  }
+
+  /**
+   * Whether the run is going right now: with guests in the room it always is; alone, only while
+   * the player is playing. A change is noted so the guests hear of it at the next tick.
+   */
+  private refreshRunning(): boolean {
+    const running = this.hasGuests() || this.localActive;
+    if (running !== this.survivalRunning) {
+      this.survivalRunning = running;
+      this.survivalDirty = true;
+    }
+    return running;
+  }
+
+  /**
+   * Plays the real time since the last tick, unless the run is held: alone in the world, it waits
+   * for the player to be playing (the mouse captured), so a menu, a hidden tab or a forgotten
+   * page does not cost a night. With guests in the room it never waits.
+   */
+  private stepSurvival(now: number): void {
+    const sim = this.sim;
+    if (!sim) return;
+    const dt = (now - this.survivalAt) / 1000;
+    this.survivalAt = now;
+    const guests = this.hasGuests();
+    const running = this.refreshRunning();
+    if (running) sim.advance(dt);
+
+    sim.drainEvents(this.survivalQueue);
+    for (const event of this.survivalQueue) {
+      if (guests) this.broadcast(encodeFrame({ t: 'se', e: event }));
+      this.survivalDirty = true;
+      this.survivalEvents.emit(event);
+    }
+    this.survivalQueue.length = 0;
+
+    const due = running && now - this.lastSurvivalSend >= NET.survivalIntervalMs;
+    if (guests && (this.survivalDirty || due)) {
+      this.lastSurvivalSend = now;
+      this.broadcast(this.survivalFrame());
+    }
+    this.survivalDirty = false;
+  }
+
+  private survivalFrame(): string {
+    return encodeFrame({ t: 'sv', tick: this.sim?.tick ?? 0, run: this.refreshRunning() });
+  }
+
+  private broadcast(frame: string): void {
+    for (const member of this.members.values()) this.sendTo(member, frame);
   }
 
   private sendTo(member: Member, frame: string): void {

@@ -4,7 +4,7 @@
  */
 export const NET = {
   /** Bumped whenever a message changes shape; a host and a guest on different versions refuse each other. */
-  protocolVersion: 1,
+  protocolVersion: 2,
   maxPlayers: 4,
 
   /** The local player's state is sent about this often (about 20 Hz). */
@@ -19,6 +19,9 @@ export const NET = {
   snapDistance: 6,
   /** How many samples a remote player's track keeps. */
   trackLength: 32,
+
+  /** The host tells guests where the survival clock stands at least this often while it runs. */
+  survivalIntervalMs: 500,
 
   pingIntervalMs: 2000,
   /**

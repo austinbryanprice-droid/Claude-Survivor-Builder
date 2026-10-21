@@ -469,13 +469,24 @@ test.describe('playing', () => {
     expect(await read<string>(page, 'game.stage.quality.name')).toBe('low');
   });
 
-  test('the time of day can be changed from the pause panel', async ({ page }) => {
+  test('the sky follows the run, and ?debug can preview a time of day over it', async ({
+    page,
+  }) => {
     await open(page);
-    expect(await read<string | null>(page, 'game.stage.moment')).toBe('golden');
+    // Playing together loads once the game is up, and the run's clock takes the sky from then on.
+    await page.waitForFunction(() => !!window.__ashbound?.mp, null, { timeout: STATE_TIMEOUT });
+    expect(await read<string | null>(page, 'game.stage.moment')).toBeNull();
+    await expect(page.getByLabel('Time of day')).toHaveValue('clock');
     await page.getByLabel('Time of day').selectOption('night');
     expect(await read<string | null>(page, 'game.stage.moment')).toBe('night');
     await page.getByLabel('Time of day').selectOption('clock');
     expect(await read<string | null>(page, 'game.stage.moment')).toBeNull();
+  });
+
+  test('without ?debug the pause panel has no time of day to pick', async ({ page }) => {
+    await open(page, '?quality=low');
+    await expect(page.getByLabel('Graphics')).toBeVisible();
+    await expect(page.getByLabel('Time of day')).toHaveCount(0);
   });
 
   test('screenshot: playing in first and third person', async ({ page }, testInfo) => {

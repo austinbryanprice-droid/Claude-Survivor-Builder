@@ -20,6 +20,8 @@ export interface ViewFlags {
   readonly time: string | null;
   /** Run the day-night cycle (compressed to about two minutes) instead of a fixed moment. */
   readonly clock: boolean;
+  /** Start the run at the beginning of this night (1 is the first), for trying the later nights; null starts at the first morning. */
+  readonly night: number | null;
   /** Named viewpoint to take photos from (see `world/terrain/viewpoints.ts`); the player walks when absent. */
   readonly shot: string | null;
   readonly terrain: TerrainMode;
@@ -35,6 +37,16 @@ export interface ViewFlags {
   readonly scale: number | null;
   /** Presets the benchmark runs, in order; all three by default. */
   readonly benchPresets: readonly QualityName[];
+}
+
+/** The latest night `?night=` can ask for. */
+export const MAX_START_NIGHT = 99;
+
+/** `?night=5` starts the run at nightfall of the fifth night. Anything that is not a whole night from 1 on is ignored. */
+function readNight(value: string | null): number | null {
+  if (value === null || !/^\d{1,3}$/.test(value)) return null;
+  const night = Number(value);
+  return night >= 1 && night <= MAX_START_NIGHT ? night : null;
 }
 
 /** `?benchPresets=balanced,ultra` picks which presets the benchmark runs. */
@@ -57,6 +69,7 @@ export function readViewFlags(search: string): ViewFlags {
     seed: p.has('seed') && Number.isFinite(seed) ? seed | 0 : DEFAULT_SEED,
     time: time && time in TIME_PRESETS ? time : null,
     clock: p.has('clock') && p.get('clock') !== '0',
+    night: readNight(p.get('night')),
     shot: p.get('shot'),
     terrain: p.get('terrain') === 'heightfield' ? 'heightfield' : 'surface-nets',
     demo: p.get('demo'),

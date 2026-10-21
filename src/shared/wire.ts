@@ -13,6 +13,7 @@ import type {
   WorldEvent,
 } from './protocol';
 import { createPlayerSample } from './protocol';
+import { SURVIVAL_EVENT_KINDS, type SurvivalEvent } from './survival-state';
 
 /**
  * Turns the protocol into bytes and back. Control frames are JSON text on the ordered channel;
@@ -88,6 +89,13 @@ function readEvent(raw: unknown): WorldEvent | null {
   }
   if (!isInt(state, 0, MAX_U16) || !isInt(by, 0, MAX_U16)) return null;
   return { type: 'set', x, y, z, state, by };
+}
+
+function readSurvivalEvent(raw: unknown): SurvivalEvent | null {
+  if (!isRecord(raw)) return null;
+  const kind = SURVIVAL_EVENT_KINDS.find((candidate) => candidate === raw.k);
+  if (!kind || !isInt(raw.n, 1, MAX_U16)) return null;
+  return { k: kind, n: raw.n };
 }
 
 function readPlayerWire(raw: unknown): PlayerWire | null {
@@ -220,6 +228,13 @@ export function decodeHostFrame(text: string): HostFrame | null {
     }
     case 'pong':
       return isInt(raw.n, 0, MAX_U31) ? { t: 'pong', n: raw.n } : null;
+    case 'sv':
+      if (!isInt(raw.tick, 0, MAX_U31) || typeof raw.run !== 'boolean') return null;
+      return { t: 'sv', tick: raw.tick, run: raw.run };
+    case 'se': {
+      const event = readSurvivalEvent(raw.e);
+      return event ? { t: 'se', e: event } : null;
+    }
     case 'pings': {
       if (!Array.isArray(raw.p) || raw.p.length > NET.maxPlayers) return null;
       const pings: [PlayerId, number][] = [];

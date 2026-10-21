@@ -14,6 +14,13 @@ export interface PausePanel {
   readonly element: HTMLElement;
   /** Updates the hint line (for example after the browser refused the mouse). */
   refresh(): void;
+  /** Sets the line about the run ("Day 2 · 5:12 until nightfall"); null hides it. */
+  setRun(line: string | null): void;
+}
+
+export interface PausePanelOptions {
+  /** Offers the Time of day choice, a preview of the light at each hour for development. */
+  readonly skyPreview?: boolean;
 }
 
 interface Control {
@@ -38,7 +45,11 @@ const CLOCK = 'clock';
 const MOMENT_LABELS: Readonly<Record<string, string>> = { golden: 'Golden hour' };
 const capitalized = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
-export function createPausePanel(game: Game, buildId: string): PausePanel {
+export function createPausePanel(
+  game: Game,
+  buildId: string,
+  { skyPreview = false }: PausePanelOptions = {},
+): PausePanel {
   const root = el('section', 'pause');
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', 'Paused');
@@ -49,6 +60,10 @@ export function createPausePanel(game: Game, buildId: string): PausePanel {
   card.append(
     el('p', 'lede', 'The valley around the crash site is yours to walk, run, climb and build on.'),
   );
+
+  const runLine = el('p', 'run-line');
+  runLine.hidden = true;
+  card.append(runLine);
 
   const button = el('button', 'play-button', 'Play');
   button.type = 'button';
@@ -136,18 +151,20 @@ export function createPausePanel(game: Game, buildId: string): PausePanel {
       saveSettings(game.settings);
     },
   );
-  // A preview of the light at each hour, until the day and night cycle runs on its own.
-  const timeOfDay = choice(
-    'Time of day',
-    [
-      ...Object.keys(TIME_PRESETS).map((name) => ({
-        value: name,
-        label: MOMENT_LABELS[name] ?? capitalized(name),
-      })),
-      { value: CLOCK, label: 'Day and night cycle' },
-    ],
-    (value) => game.stage.setMoment(value === CLOCK ? null : value),
-  );
+  // A preview of the light at each hour, for development: in play the sky follows the run's clock.
+  const timeOfDay = skyPreview
+    ? choice(
+        'Time of day',
+        [
+          ...Object.keys(TIME_PRESETS).map((name) => ({
+            value: name,
+            label: MOMENT_LABELS[name] ?? capitalized(name),
+          })),
+          { value: CLOCK, label: 'Day and night cycle' },
+        ],
+        (value) => game.stage.setMoment(value === CLOCK ? null : value),
+      )
+    : null;
   card.append(settingsBlock);
 
   card.append(el('p', 'footnote', `Build ${buildId}`));
@@ -162,7 +179,7 @@ export function createPausePanel(game: Game, buildId: string): PausePanel {
 
   const refresh = (): void => {
     graphics.value = game.stage.quality.name;
-    timeOfDay.value = game.stage.moment ?? CLOCK;
+    if (timeOfDay) timeOfDay.value = game.stage.moment ?? CLOCK;
     hint.textContent = game.input.blocked
       ? 'The browser did not hand over the mouse. Wait a moment, then click Play again.'
       : 'Esc frees the mouse at any time. F5 will not reload the page while you are playing.';
@@ -170,5 +187,10 @@ export function createPausePanel(game: Game, buildId: string): PausePanel {
   };
   refresh();
 
-  return { element: root, refresh };
+  const setRun = (line: string | null): void => {
+    runLine.hidden = line === null;
+    if (line !== null) runLine.textContent = line;
+  };
+
+  return { element: root, refresh, setRun };
 }

@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
+import { DAY_SECONDS } from '../../src/shared/daycycle';
 
 /**
  * Four browsers play together through a local PeerServer (started by `playwright.config.ts`):
@@ -146,6 +147,7 @@ const lobby = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.lobby(
 const session = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.session());
 const remotes = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.remotes());
 const digest = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.blocks());
+const clockOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.clock());
 
 /**
  * Stops these pages drawing, or lets them draw again (see `slowFrames`). Their frame loop waits;
@@ -274,6 +276,25 @@ test.describe('multiplayer', () => {
       // A guest's world is the host's: same seed, no blocks yet.
       expect(await digest(ada)).toEqual({ count: 0, hash: (await digest(host)).hash });
 
+      // The run's clock is the host's, and with guests in it runs even while the host's mouse is
+      // free. A jump past the end of the day reaches every screen: the host announces the night
+      // and each guest's mirror says the same.
+      for (const p of everyone) {
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+      }
+      await host.page.evaluate((to) => {
+        const mp = window.__ashbound!.mp!;
+        mp.warp(to - mp.clock().elapsed);
+      }, DAY_SECONDS + 1);
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await clockOf(p)).phase, { message: `${p.name} sees the night` })
+          .toBe('night');
+        await expect(p.page.locator('.toast')).toContainText('Night 1 has fallen', {
+          timeout: 30_000,
+        });
+      }
+
       // A click inside the room card does not start the game (a click on the backdrop would);
       // Play does, and while playing a small list of who is in stays on the screen.
       const hud = host.page.locator('#hud');
@@ -382,6 +403,10 @@ test.describe('multiplayer', () => {
       everyone.splice(everyone.indexOf(bo), 1, dee);
       await joinRoom(dee, code);
       await expectSameWorld([host, ada, cy, dee], 5);
+      // The latecomer also gets the run as it stands (night is well under way), not a fresh morning.
+      await expect
+        .poll(async () => (await clockOf(dee)).elapsed, { message: 'Dee has the run clock' })
+        .toBeGreaterThan(DAY_SECONDS);
       // Dee has the seat Bo left, so the room list runs Host, Ada, Dee, Cy.
       await expectSeeEachOther([host, ada, dee, cy]);
       await bo.context.close();

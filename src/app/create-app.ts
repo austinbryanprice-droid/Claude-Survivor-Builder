@@ -82,9 +82,14 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           },
           flags: readNetFlags(search, { secure: window.location.protocol === 'https:' }),
           buildId,
+          night: view.night,
+          // A fixed moment (`?time=`, a named `?shot=`) or the demo clock (`?clock`) keeps the sky to itself.
+          skyFollowsClock: view.time === null && !view.clock && !shot,
         });
         // Blocks are placed and broken by asking the session, which is the host's rules in solo play too.
         building.setSession(multiplayer.lobby.hub);
+        // The clock by the compass and the objective come from the run, which lives in the session.
+        hud.setSurvival(multiplayer.lobby.hub.survival);
         if (flags.debug && window.__ashbound) window.__ashbound.mp = multiplayer.debug;
       })
       .catch((error: unknown) => {
@@ -101,6 +106,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
       disposed = true;
       building.dispose();
       multiplayer?.dispose();
+      hud.setSurvival(null);
       hud.dispose();
       game.dispose();
     },

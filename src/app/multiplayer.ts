@@ -1,6 +1,7 @@
 import type { Object3D } from 'three';
 import type { MaterialRegistry } from '../engine/materials';
 import { createRemotePlayers } from '../engine/remote-players';
+import { HostSession } from '../net/host-session';
 import { Lobby, type LobbyGame, type LobbyState } from '../net/lobby';
 import { PeerTransport } from '../net/peer-transport';
 import { cryptoRandom } from '../net/random';
@@ -15,6 +16,7 @@ import {
   type NetFlags,
 } from '../shared/net-flags';
 import { createPlayerSample, type PlayerId, type PlayerSample } from '../shared/protocol';
+import { createReading, type SurvivalReading } from '../shared/survival-state';
 import { createRoomPanel } from '../ui/room-panel';
 import { browserStore } from './browser-storage';
 import { PlayerSync, type LocalPlayer } from './player-sync';
@@ -75,6 +77,10 @@ export interface MultiplayerDebug {
     state: CellState,
     up?: number,
   ): { x: number; y: number; z: number };
+  /** The run's clock as the screen sees it: which day or night, the time left, and whether it runs. */
+  clock(): SurvivalReading;
+  /** Jumps the run's clock ahead by this many seconds. Only a host (or single-player) can; others ignore it. */
+  warp(seconds: number): void;
   /** Refusals the host sent back, newest last. */
   rejections(): Rejection[];
   /** World events applied since the page loaded. */
@@ -168,6 +174,11 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     events++;
   });
 
+  // The run waits for the player: alone in the world, its clock runs only while the mouse is captured.
+  const syncPresence = (): void => hub.setLocalActive(options.input.locked);
+  const stopPresence = options.input.onChange(syncPresence);
+  syncPresence();
+
   const probe = createPlayerSample();
   const here = (): PlayerSample => {
     options.player.read(probe);
@@ -200,6 +211,11 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       hub.sendCommand({ type: 'place', x, y, z, state });
       return { x, y, z };
     },
+    clock: () => ({ ...hub.survival.read(createReading()) }),
+    warp: (seconds) => {
+      const session = hub.current;
+      if (session instanceof HostSession) session.survivalSim?.warp(seconds);
+    },
     rejections: () => [...refusals],
     eventCount: () => events,
   };
@@ -219,6 +235,7 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       window.removeEventListener('pageshow', onPageShow);
       window.removeEventListener('beforeunload', onBeforeUnload);
       stopAddress();
+      stopPresence();
       stopRejected();
       stopEvents();
       panel.dispose();
