@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import {
+  MATERIAL,
+  SHAPES,
+  packState,
+  slabShape,
+  stateShape,
+  wedgeShape,
+} from '../../src/shared/blocks';
 import { createRng } from '../../src/shared/hash';
 import type { Vec3 } from '../../src/shared/look';
 import { castRay, createRayHit, type RayWorld } from '../../src/shared/raycast';
+import { shapeGeometry } from '../../src/shared/shapes';
 import { SparseCells } from '../../src/shared/solid';
 
 /** Cells as a block world: whatever is set holds a block. */
@@ -181,6 +190,199 @@ function bruteForce(
     }
   }
   return best;
+}
+
+const piece = (shape: number): number => packState(shape, MATERIAL.scrap);
+const LOWER = piece(slabShape(false));
+const UPPER = piece(slabShape(true));
+/** A wedge that rises toward +x. */
+const RAMP = piece(wedgeShape(0));
+
+describe('castRay against slabs and wedges', () => {
+  function world(...entries: readonly (readonly [number, number, number, number])[]): RayWorld {
+    const cells = new SparseCells();
+    for (const [x, y, z, state] of entries) cells.set(x, y, z, state);
+    return { blocks: blocksOf(cells) };
+  }
+
+  it('lands on the top of a lower slab, half a block down, and names the top', () => {
+    const hit = cast(world([4, 0, 4, LOWER]), { x: 4.5, y: 4, z: 4.5 }, { x: 0, y: -1, z: 0 });
+    expect(hit).toMatchObject({ kind: 'block', x: 4, y: 0, z: 4, nx: 0, ny: 1, nz: 0 });
+    expect(hit?.distance).toBeCloseTo(3.5, 9);
+  });
+
+  it('lands on the underside of an upper slab, half a block up', () => {
+    const hit = cast(world([4, 5, 4, UPPER]), { x: 4.5, y: 1, z: 4.5 }, { x: 0, y: 1, z: 0 });
+    expect(hit).toMatchObject({ x: 4, y: 5, z: 4, nx: 0, ny: -1, nz: 0 });
+    expect(hit?.distance).toBeCloseTo(4.5, 9);
+  });
+
+  it('goes over the empty half of a lower slab, and into the half that is there', () => {
+    const w = world([4, 0, 4, LOWER], [8, 0, 4, piece(1)]);
+    const east = { x: 1, y: 0, z: 0 };
+    expect(cast(w, { x: 1.5, y: 0.75, z: 4.5 }, east)).toMatchObject({ x: 8, nx: -1 });
+    const low = cast(w, { x: 1.5, y: 0.25, z: 4.5 }, east);
+    expect(low).toMatchObject({ x: 4, y: 0, z: 4, nx: -1, ny: 0, nz: 0 });
+    expect(low?.distance).toBeCloseTo(2.5, 9);
+  });
+
+  it('goes under the empty half of an upper slab', () => {
+    const w = world([4, 0, 4, UPPER], [8, 0, 4, piece(1)]);
+    expect(cast(w, { x: 1.5, y: 0.25, z: 4.5 }, { x: 1, y: 0, z: 0 })).toMatchObject({ x: 8 });
+    expect(cast(w, { x: 1.5, y: 0.75, z: 4.5 }, { x: 1, y: 0, z: 0 })).toMatchObject({ x: 4 });
+  });
+
+  it('hits the underside of a lower slab from below, on the cell’s own floor', () => {
+    const hit = cast(world([4, 3, 4, LOWER]), { x: 4.5, y: -2, z: 4.5 }, { x: 0, y: 1, z: 0 });
+    expect(hit).toMatchObject({ x: 4, y: 3, z: 4, nx: 0, ny: -1, nz: 0 });
+    expect(hit?.distance).toBeCloseTo(5, 9);
+  });
+
+  it('hits the slope of a wedge where the slope is, with the vertical step when it slants evenly', () => {
+    const w = world([4, 0, 4, RAMP]);
+    // Down through the middle of the cell: the slope is half a block up there.
+    const down = cast(w, { x: 4.5, y: 4, z: 4.5 }, { x: 0, y: -1, z: 0 });
+    expect(down).toMatchObject({ x: 4, y: 0, z: 4, nx: 0, ny: 1, nz: 0 });
+    expect(down?.distance).toBeCloseTo(3.5, 9);
+    // Along the ground from the low side: the slope climbs into the ray at x = 4.5.
+    const along = cast(w, { x: 2, y: 0.5, z: 4.5 }, { x: 1, y: 0, z: 0 });
+    expect(along).toMatchObject({ x: 4, y: 0, z: 4, nx: 0, ny: 1, nz: 0 });
+    expect(along?.distance).toBeCloseTo(2.5, 9);
+  });
+
+  it('hangs the step below an upside-down wedge’s slope', () => {
+    const roof = piece(wedgeShape(0, true));
+    const hit = cast(world([4, 5, 4, roof]), { x: 4.5, y: 1, z: 4.5 }, { x: 0, y: 1, z: 0 });
+    expect(hit).toMatchObject({ x: 4, y: 5, z: 4, nx: 0, ny: -1, nz: 0 });
+    expect(hit?.distance).toBeCloseTo(4.5, 9);
+  });
+
+  it('hits the tall wall of a wedge from behind, and its three-cornered side', () => {
+    const w = world([4, 0, 4, RAMP]);
+    const wall = cast(w, { x: 7.5, y: 0.5, z: 4.5 }, { x: -1, y: 0, z: 0 });
+    expect(wall).toMatchObject({ x: 4, y: 0, z: 4, nx: 1, ny: 0, nz: 0 });
+    expect(wall?.distance).toBeCloseTo(2.5, 9);
+    const side = cast(w, { x: 4.8, y: 0.2, z: 7.5 }, { x: 0, y: 0, z: -1 });
+    expect(side).toMatchObject({ x: 4, y: 0, z: 4, nx: 0, ny: 0, nz: 1 });
+    expect(side?.distance).toBeCloseTo(2.5, 9);
+    // Above the slope the side has no face, and the ray goes on.
+    expect(cast(w, { x: 4.8, y: 0.9, z: 7.5 }, { x: 0, y: 0, z: -1 })).toBeNull();
+  });
+
+  it('goes over a wedge that its ray climbs away from', () => {
+    // A ray rising at 45 degrees above the slope never meets it.
+    const hit = cast(world([4, 0, 4, RAMP]), { x: 2, y: 1, z: 4.5 }, unit(1, 1, 0));
+    expect(hit).toBeNull();
+  });
+
+  it('does not report the slab the ray starts in, as with any other cell', () => {
+    const w = world([4, 0, 4, LOWER], [8, 0, 4, piece(1)]);
+    expect(cast(w, { x: 4.5, y: 0.25, z: 4.5 }, { x: 1, y: 0, z: 0 })).toMatchObject({ x: 8 });
+  });
+
+  it('stays within the range when the shape is only reached late in its cell', () => {
+    const w = world([4, 0, 4, LOWER]);
+    // The slab's top is 3.5 below; a ray that long reaches it and one that is shorter does not.
+    expect(cast(w, { x: 4.5, y: 4, z: 4.5 }, { x: 0, y: -1, z: 0 }, 3.4)).toBeNull();
+    expect(cast(w, { x: 4.5, y: 4, z: 4.5 }, { x: 0, y: -1, z: 0 }, 3.6)).not.toBeNull();
+  });
+
+  it('treats a shape id the table does not know as a whole cell', () => {
+    const odd = packState(0xfe, MATERIAL.scrap);
+    expect(shapeGeometry(stateShape(odd))).toBeUndefined();
+    const hit = cast(world([4, 0, 4, odd]), { x: 4.5, y: 0.9, z: 1.5 }, { x: 0, y: 0, z: 1 });
+    expect(hit).toMatchObject({ x: 4, z: 4, nz: -1 });
+  });
+
+  it('agrees with a brute-force test of every face for random rays at a mixed world', () => {
+    const random = createRng(0xa11f);
+    const cells = new SparseCells();
+    const placed: [number, number, number, number][] = [];
+    for (let i = 0; i < 160; i++) {
+      const at: [number, number, number] = [
+        Math.floor(random() * 16) - 8,
+        Math.floor(random() * 16) - 8,
+        Math.floor(random() * 16) - 8,
+      ];
+      if (cells.get(...at) !== 0) continue;
+      const shape = SHAPES[Math.floor(random() * SHAPES.length)]?.id ?? 1;
+      cells.set(...at, piece(shape));
+      placed.push([...at, shape]);
+    }
+    const w: RayWorld = { blocks: blocksOf(cells) };
+    const max = 14;
+    let hits = 0;
+    for (let i = 0; i < 4000; i++) {
+      const origin = { x: random() * 16 - 8, y: random() * 16 - 8, z: random() * 16 - 8 };
+      const dir = unit(random() - 0.5, random() - 0.5, random() - 0.5);
+      const expected = nearestFace(placed, origin, dir, max);
+      const hit = cast(w, origin, dir, max);
+      if (!expected) {
+        expect(hit).toBeNull();
+        continue;
+      }
+      hits++;
+      expect(hit).not.toBeNull();
+      expect([hit?.x, hit?.y, hit?.z]).toEqual(expected.cell);
+      expect(hit?.distance).toBeCloseTo(expected.distance, 7);
+    }
+    expect(hits).toBeGreaterThan(800);
+  });
+});
+
+/** The nearest face of any placed shape the ray crosses, by intersecting the ray with each face's triangles. */
+function nearestFace(
+  placed: readonly (readonly [number, number, number, number])[],
+  origin: Vec3,
+  dir: Vec3,
+  max: number,
+): { cell: number[]; distance: number } | null {
+  let best: { cell: number[]; distance: number } | null = null;
+  for (const [cx, cy, cz, shape] of placed) {
+    // The cell the ray starts in is never reported.
+    if (Math.floor(origin.x) === cx && Math.floor(origin.y) === cy && Math.floor(origin.z) === cz) {
+      continue;
+    }
+    const geometry = shapeGeometry(shape);
+    if (!geometry) continue;
+    for (const face of geometry.faces) {
+      const corner = (i: number): Vec3 => {
+        const p = geometry.vertices[face.loop[i] as number] as readonly [number, number, number];
+        return { x: cx + p[0], y: cy + p[1], z: cz + p[2] };
+      };
+      for (let i = 1; i + 1 < face.loop.length; i++) {
+        const t = triangleDistance(origin, dir, corner(0), corner(i), corner(i + 1));
+        if (t !== null && t > 0 && t <= max && (!best || t < best.distance)) {
+          best = { cell: [cx, cy, cz], distance: t };
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/** Möller–Trumbore: how far along the ray the triangle is crossed, or null. */
+function triangleDistance(origin: Vec3, dir: Vec3, a: Vec3, b: Vec3, c: Vec3): number | null {
+  const e1 = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+  const e2 = { x: c.x - a.x, y: c.y - a.y, z: c.z - a.z };
+  const p = {
+    x: dir.y * e2.z - dir.z * e2.y,
+    y: dir.z * e2.x - dir.x * e2.z,
+    z: dir.x * e2.y - dir.y * e2.x,
+  };
+  const det = e1.x * p.x + e1.y * p.y + e1.z * p.z;
+  if (Math.abs(det) < 1e-12) return null;
+  const s = { x: origin.x - a.x, y: origin.y - a.y, z: origin.z - a.z };
+  const u = (s.x * p.x + s.y * p.y + s.z * p.z) / det;
+  if (u < 0 || u > 1) return null;
+  const q = {
+    x: s.y * e1.z - s.z * e1.y,
+    y: s.z * e1.x - s.x * e1.z,
+    z: s.x * e1.y - s.y * e1.x,
+  };
+  const v = (dir.x * q.x + dir.y * q.y + dir.z * q.z) / det;
+  if (v < 0 || u + v > 1) return null;
+  return (e2.x * q.x + e2.y * q.y + e2.z * q.z) / det;
 }
 
 describe('castRay against the ground', () => {

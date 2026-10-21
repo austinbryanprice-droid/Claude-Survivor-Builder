@@ -4,7 +4,7 @@ HUD, menus and overlays in HTML and CSS, on top of the canvas. The look follows 
 
 - `hud.ts`, `hud.css`: builds the HUD and keeps it in step with pointer lock, the benchmark, the camera and the graphics preset.
 - `player-hud/`: the in-game HUD of the reference (vitals, compass, objective, hotbar) as a pure view. `placeholder-hud.ts` drives it with the game's real heading and sprint, the player's building hands (the hotbar selection, the crosshair, Build Mode and the caption) and made-up numbers for what does not exist yet.
-- `build-hud.ts`: how the HUD shows the building hands, as plain data in and out so Vitest can run it: which icon each block gets, the words for why a click would do nothing, the caption above the hotbar (the piece in hand and its cost, or the reason in red) and the key list of Build Mode.
+- `build-hud.ts`: how the HUD shows the building hands, as plain data in and out so Vitest can run it: which icon each block gets (in the shape it will have), the words for why a click would do nothing, the caption above the hotbar (the piece in hand and its cost, or the reason in red) and the key list of Build Mode.
 - `pause-panel.ts`: the click-to-play card with the controls, graphics preset and time of day, and the settings.
 - `status-panel.ts`: the key hints and the camera and graphics readout while playing; in Build Mode the hints give way to the keys of Build Mode.
 - `frame-overlay.ts`: the F3 frame-time overlay.

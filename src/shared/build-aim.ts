@@ -1,14 +1,17 @@
 import type { BlockWorld, CellState } from './block-world';
+import { packState } from './blocks';
 import type { GroundQuery } from './ground';
 import type { Vec3 } from './look';
 import { PLAYER } from './movement';
+import { orientShape, type PieceChoice } from './placement';
 import { castRay, createRayHit, type RayHit } from './raycast';
 
 /**
  * What a click would do where the cursor points. `updateAim` turns a ray into the block under the
- * cursor (a click breaks it), the cell a new block would take (a click places one) and, for each,
- * the reason it is refused. The rules are the host's, so a click that passes here passes there:
- * reach from the eyes, then the world's own rules, then nobody standing in the cell.
+ * cursor (a click breaks it), the cell a new block would take and the piece that goes in it (a click
+ * places one) and, for each, the reason it is refused. The rules are the host's, so a click that
+ * passes here passes there: reach from the eyes, then the world's own rules, then nobody standing
+ * in the cell.
  */
 
 /** How far from the player's eyes a block can be placed or broken, in blocks. */
@@ -36,12 +39,16 @@ export interface Aim {
   on: 'nothing' | 'block' | 'terrain';
   /** The block under the cursor; meaningful when `on` is 'block'. */
   target: Cell;
+  /** What stands in that cell: its shape tells the outline how to draw. Meaningful when `on` is 'block'. */
+  targetState: CellState;
   /** Why a click would not break `target`; null when it would. Meaningful when `on` is 'block'. */
   breakRefusal: string | null;
   /** True when there is a cell a new block would take (a piece is selected and the cursor is on something). */
   hasPlace: boolean;
   /** The cell a new block would take; meaningful when `hasPlace`. */
   place: Cell;
+  /** The piece a click would put there, turned the way the aim and the player's view decide; meaningful when `hasPlace`. */
+  state: CellState;
   /** Why a click would not place the piece there; null when it would. Meaningful when `hasPlace`. */
   placeRefusal: string | null;
   /** How far the cursor's hit is from the eyes, in blocks. Meaningful when `on` is not 'nothing'. */
@@ -52,9 +59,11 @@ export function createAim(): Aim {
   return {
     on: 'nothing',
     target: { x: 0, y: 0, z: 0 },
+    targetState: 0,
     breakRefusal: null,
     hasPlace: false,
     place: { x: 0, y: 0, z: 0 },
+    state: 0,
     placeRefusal: null,
     distance: 0,
   };
@@ -69,8 +78,8 @@ export interface AimInput {
   dir: Vec3;
   /** The player's eyes: reach is measured from here, as the host measures it. */
   eye: Vec3;
-  /** The piece a click would place, or 0 when the selected item is not a block. */
-  piece: CellState;
+  /** The piece a click would place, or null when the selected item is not a block. */
+  piece: PieceChoice | null;
   /** The feet of every player who could be standing where a block goes, the local one included. */
   bodies: readonly Vec3[];
   reach?: number;
@@ -78,6 +87,7 @@ export interface AimInput {
 
 const hit: RayHit = createRayHit();
 const start: Vec3 = { x: 0, y: 0, z: 0 };
+const surface = { ny: 0, height: 0 };
 
 /** Whether a player standing with their feet at `body` touches the cell (x, y, z), with a small margin. */
 export function bodyOverlapsCell(body: Vec3, x: number, y: number, z: number): boolean {
@@ -102,8 +112,10 @@ export function updateAim(aim: Aim, input: AimInput): void {
   const { blocks, eye, piece, bodies } = input;
   const reach = input.reach ?? BUILD_REACH;
   aim.on = 'nothing';
+  aim.targetState = 0;
   aim.breakRefusal = null;
   aim.hasPlace = false;
+  aim.state = 0;
   aim.placeRefusal = null;
   aim.distance = 0;
 
@@ -127,6 +139,7 @@ export function updateAim(aim: Aim, input: AimInput): void {
     aim.target.x = hit.x;
     aim.target.y = hit.y;
     aim.target.z = hit.z;
+    aim.targetState = blocks.getBlock(hit.x, hit.y, hit.z);
     aim.breakRefusal =
       distanceToCell(eye, hit.x, hit.y, hit.z) > reach
         ? AIM_REFUSAL.outOfReach
@@ -143,16 +156,21 @@ export function updateAim(aim: Aim, input: AimInput): void {
     start.z + dir.z * hit.distance - eye.z,
   );
 
-  if (piece === 0) return;
+  if (piece === null) return;
   aim.hasPlace = true;
   aim.place.x = placeX;
   aim.place.y = placeY;
   aim.place.z = placeZ;
+  // Where the cursor is on the face decides how a slab goes against a wall; the view decides which way a wedge faces.
+  // The ground cuts through its cell at any height, so on ground that faces up a slab goes in the half the ground leaves open, as it does against a wall.
+  surface.ny = hit.kind === 'terrain' && hit.ny > 0 ? 0 : hit.ny;
+  surface.height = Math.min(1, Math.max(0, start.y + dir.y * hit.distance - placeY));
+  aim.state = packState(orientShape(piece.kind, piece.turn, surface, dir.x, dir.z), piece.material);
   if (distanceToCell(eye, placeX, placeY, placeZ) > reach) {
     aim.placeRefusal = AIM_REFUSAL.outOfReach;
     return;
   }
-  const refusal = blocks.checkPlace(placeX, placeY, placeZ, piece);
+  const refusal = blocks.checkPlace(placeX, placeY, placeZ, aim.state);
   if (refusal) {
     aim.placeRefusal = refusal;
     return;

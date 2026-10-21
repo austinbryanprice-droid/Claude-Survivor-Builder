@@ -2,7 +2,13 @@ import type { PlayerInput } from '../shared/movement';
 
 /** Things the player can ask for that are not movement. */
 export type InputAction =
-  'toggleCamera' | 'toggleOverlay' | 'cycleQuality' | 'toggleBuild' | 'cancel';
+  | 'toggleCamera'
+  | 'toggleOverlay'
+  | 'cycleQuality'
+  | 'toggleBuild'
+  | 'cycleShape'
+  | 'turnPiece'
+  | 'cancel';
 
 /** The two mouse buttons the game uses: left breaks or attacks, right places or interacts. */
 export type PointerButton = 'primary' | 'secondary';
@@ -47,12 +53,22 @@ const CAMERA_KEYS = ['KeyV', 'F5'];
 const OVERLAY_KEY = 'F3';
 const QUALITY_KEY = 'KeyP';
 const BUILD_KEY = 'KeyB';
+const SHAPE_KEY = 'KeyQ';
+const TURN_KEY = 'KeyR';
 const CANCEL_KEY = 'Escape';
 const HOTBAR_KEY = /^Digit([1-9])$/;
 
 const HELD_KEYS = new Set([FORWARD, BACK, LEFT, RIGHT, JUMP, ...SPRINT]);
 /** Keys the page must not act on while the game has the mouse (scrolling, reloading, button clicks). */
-const SWALLOWED_KEYS = new Set([...HELD_KEYS, ...CAMERA_KEYS, OVERLAY_KEY, QUALITY_KEY, BUILD_KEY]);
+const SWALLOWED_KEYS = new Set([
+  ...HELD_KEYS,
+  ...CAMERA_KEYS,
+  OVERLAY_KEY,
+  QUALITY_KEY,
+  BUILD_KEY,
+  SHAPE_KEY,
+  TURN_KEY,
+]);
 
 /** Browsers can report one huge movement when the lock starts; no real flick is this large in one event. */
 const MAX_MOVEMENT = 400;
@@ -160,6 +176,14 @@ export function createInput(canvas: HTMLCanvasElement): Input {
     }
     if (code === BUILD_KEY) {
       if (!event.repeat) emitAction('toggleBuild');
+      return;
+    }
+    if (code === SHAPE_KEY) {
+      if (!event.repeat) emitAction('cycleShape');
+      return;
+    }
+    if (code === TURN_KEY) {
+      if (!event.repeat) emitAction('turnPiece');
       return;
     }
     const digit = HOTBAR_KEY.exec(code);

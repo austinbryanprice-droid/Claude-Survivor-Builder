@@ -1,13 +1,15 @@
 import type { BlockWorld, CellState } from '../shared/block-world';
-import { MATERIALS, SHAPE, packState } from '../shared/blocks';
+import { MATERIALS, SHAPE_KINDS, baseShape, packState, type ShapeKind } from '../shared/blocks';
 import { createAim, updateAim, type Aim } from '../shared/build-aim';
 import type { GroundQuery } from '../shared/ground';
 import type { Vec3 } from '../shared/look';
+import { nextTurn, type PieceChoice } from '../shared/placement';
 import type { BlockCommand } from '../shared/protocol';
 
 /**
- * The player's building hands: which hotbar slot is selected, whether Build Mode is on, what the
- * cursor would do and the clicks that send it. It holds no DOM and no three.js, and reaches the
+ * The player's building hands: which hotbar slot is selected, which kind of shape it makes and how
+ * that is turned, whether Build Mode is on, what the cursor would do and the clicks that send it.
+ * It holds no DOM and no three.js, and reaches the
  * rest of the game through `BuildPorts`, so the tests can drive it with fakes. Nothing here
  * changes the world: a click becomes a command for the session, the host validates it, and the
  * world changes when the host's event comes back.
@@ -26,10 +28,8 @@ export const NOTICE_SECONDS = 1.8;
 /** The refusal shown when there is nobody to send a command to yet (the network code is still loading). */
 export const NOT_READY = 'not-ready';
 
-/** The pieces the hotbar starts with: one block of each material, in tier order. */
-export const HOTBAR_PIECES: readonly CellState[] = MATERIALS.map((material) =>
-  packState(SHAPE.cube, material.id),
-);
+/** The material each of the first hotbar slots builds with, in tier order; the slots after them hold no block. */
+export const HOTBAR_MATERIALS: readonly number[] = MATERIALS.map((material) => material.id);
 
 export type Button = 'primary' | 'secondary';
 
@@ -40,7 +40,11 @@ export type Crosshair = 'none' | 'place' | 'blocked';
 export interface BuildHudState {
   readonly selected: number;
   readonly buildMode: boolean;
-  /** The piece the selected slot places, or 0 when the slot holds no block. */
+  /** The kind of shape every block slot makes now: the shape key chooses it. */
+  readonly kind: ShapeKind;
+  /** How far the turn key has turned the piece from the way the aim would put it. */
+  readonly turn: number;
+  /** The piece the selected slot makes in that kind, before it is turned, or 0 when the slot holds no block. */
   readonly piece: CellState;
   readonly crosshair: Crosshair;
   /** Why a click would do nothing right now (a world rule such as 'occupied', or the host's words), or null. */
@@ -72,8 +76,15 @@ export interface BuildPorts {
 
 export class BuildController {
   private selectedSlot = 0;
+  private shapeKind: ShapeKind = 'cube';
+  private turnSteps = 0;
   private buildMode = false;
   private readonly aim: Aim = createAim();
+  private readonly pick: { material: number; kind: ShapeKind; turn: number } = {
+    material: 0,
+    kind: 'cube',
+    turn: 0,
+  };
   private clock = 0;
   private notice: string | null = null;
   private noticeUntil = 0;
@@ -84,13 +95,17 @@ export class BuildController {
   private readonly state: {
     selected: number;
     buildMode: boolean;
+    kind: ShapeKind;
+    turn: number;
     piece: CellState;
     crosshair: Crosshair;
     refusal: string | null;
   } = {
     selected: 0,
     buildMode: false,
-    piece: HOTBAR_PIECES[0] ?? 0,
+    kind: 'cube',
+    turn: 0,
+    piece: 0,
     crosshair: 'none',
     refusal: null,
   };
@@ -101,18 +116,34 @@ export class BuildController {
     return this.selectedSlot;
   }
 
-  /** The piece each hotbar slot places, from the first slot; the slots after them hold no block. */
-  get pieces(): readonly CellState[] {
-    return HOTBAR_PIECES;
+  /** The kind of shape the block slots make: a block, a slab or a wedge. */
+  get kind(): ShapeKind {
+    return this.shapeKind;
+  }
+
+  /** How many turn steps the piece is from the way the aim would put it. */
+  get turn(): number {
+    return this.turnSteps;
   }
 
   get inBuildMode(): boolean {
     return this.buildMode;
   }
 
-  /** The piece a click places: the selected slot's block, or 0 when the slot holds none. */
+  /** The piece the selected slot makes in the chosen kind before the aim turns it, or 0 when the slot holds no block. */
   get piece(): CellState {
-    return HOTBAR_PIECES[this.selectedSlot] ?? 0;
+    const material = HOTBAR_MATERIALS[this.selectedSlot];
+    return material === undefined ? 0 : packState(baseShape(this.shapeKind), material);
+  }
+
+  /** What a click would make for the aim to orient, or null when the selected slot holds no block. */
+  get choice(): PieceChoice | null {
+    const material = HOTBAR_MATERIALS[this.selectedSlot];
+    if (material === undefined) return null;
+    this.pick.material = material;
+    this.pick.kind = this.shapeKind;
+    this.pick.turn = this.turnSteps;
+    return this.pick;
   }
 
   /** What the cursor is on and what a click would do there, as of the last `update`. */
@@ -129,6 +160,18 @@ export class BuildController {
   scrollSlot(steps: number): void {
     this.selectedSlot =
       (((this.selectedSlot + steps) % HOTBAR_SLOTS) + HOTBAR_SLOTS) % HOTBAR_SLOTS;
+  }
+
+  /** Chooses the next kind of shape: a block, then a slab, then a wedge, then a block again. The turn starts over. */
+  cycleShape(): void {
+    const at = SHAPE_KINDS.indexOf(this.shapeKind);
+    this.shapeKind = SHAPE_KINDS[(at + 1) % SHAPE_KINDS.length] ?? 'cube';
+    this.turnSteps = 0;
+  }
+
+  /** Turns the piece one step further from the way the aim would put it; a block has no other way. */
+  turnPiece(): void {
+    this.turnSteps = nextTurn(this.shapeKind, this.turnSteps);
   }
 
   toggleBuildMode(): void {
@@ -166,7 +209,7 @@ export class BuildController {
       origin: view.origin,
       dir: view.dir,
       eye: view.eye,
-      piece: this.piece,
+      piece: this.choice,
       bodies: this.ports.bodies(),
     });
     for (const button of ['primary', 'secondary'] as const) {
@@ -185,6 +228,8 @@ export class BuildController {
     const state = this.state;
     state.selected = this.selectedSlot;
     state.buildMode = this.buildMode;
+    state.kind = this.shapeKind;
+    state.turn = this.turnSteps;
     state.piece = this.piece;
     if (!aim.hasPlace) state.crosshair = 'none';
     else if (!aim.placeRefusal) state.crosshair = 'place';
@@ -202,16 +247,15 @@ export class BuildController {
   }
 
   private placePiece(): void {
-    const piece = this.piece;
     // A slot that holds no block has nothing to place; interacting with what is aimed at comes with the modules.
-    if (piece === 0) return;
+    if (this.choice === null) return;
     const aim = this.aim;
     if (!aim.hasPlace) return;
     if (aim.placeRefusal) {
       this.setNotice(aim.placeRefusal);
       return;
     }
-    this.send({ type: 'place', x: aim.place.x, y: aim.place.y, z: aim.place.z, state: piece });
+    this.send({ type: 'place', x: aim.place.x, y: aim.place.y, z: aim.place.z, state: aim.state });
   }
 
   private breakTarget(): void {

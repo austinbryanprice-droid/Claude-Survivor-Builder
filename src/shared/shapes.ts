@@ -17,6 +17,9 @@ export type CellBox = readonly [number, number, number, number, number, number];
 /** A rectangle on one side of a cell, in that side's tangent coordinates: a0, a1, b0, b1. */
 export type SideRect = readonly [number, number, number, number];
 
+/** The plane of a face as nx, ny, nz, d: a point p is on the inside of the face when n . p <= d. */
+export type ShapePlane = readonly [number, number, number, number];
+
 /** Sides of a cell are numbered axis * 2 + (negative ? 1 : 0): +x, -x, +y, -y, +z, -z. */
 export const SIDE = { px: 0, nx: 1, py: 2, ny: 3, pz: 4, nz: 5 } as const;
 
@@ -51,6 +54,11 @@ export interface ShapeGeometry {
   readonly kind: ShapeKind;
   readonly vertices: readonly Point[];
   readonly faces: readonly ShapeFace[];
+  /**
+   * The plane of each face, in the same order as `faces`. The shape is convex, so it is exactly the
+   * points on the inside of every plane, which is all a ray needs to find where it meets it.
+   */
+  readonly planes: readonly ShapePlane[];
   /**
    * The solid parts for movement, or null when the shape is the whole cell. Their union contains
    * the shape, so a body that stands on the boxes never sinks into it.
@@ -261,6 +269,11 @@ function describe(
     faces.push({ loop, normal, side, bounds, exact });
   }
 
+  const planes = faces.map((face): ShapePlane => {
+    const corner = vertices[face.loop[0] as number] as Point;
+    return [face.normal[0], face.normal[1], face.normal[2], dot(face.normal, corner)];
+  });
+
   // Volume by the divergence theorem over the faces (each fan-triangulated from its first corner).
   let volume = 0;
   for (const face of faces) {
@@ -272,7 +285,7 @@ function describe(
     }
   }
 
-  return { id, kind, vertices, faces, boxes, cover, reach, volume: Math.abs(volume) };
+  return { id, kind, vertices, faces, planes, boxes, cover, reach, volume: Math.abs(volume) };
 }
 
 function turnSolid(solid: Solid, turns: number, flip: boolean): Solid {

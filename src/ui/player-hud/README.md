@@ -4,7 +4,7 @@ The in-game HUD, after reference 07: vitals, status icons, compass, objective ba
 
 - `player-hud.ts` is the component and its state types.
 - `player-hud.css` has the styles, drawn for 1280 by 720 and scaled by `--u`.
-- `icons.ts` is an SVG sprite of original icons, the four block icons of the hotbar among them.
+- `icons.ts` is an SVG sprite of original icons, the block icons of the hotbar among them: a block, a slab and a wedge in each of the four materials, the slab and the wedge cut from the block's own paint.
 - `format.ts` holds the pure helpers (compass math, distance and clock text, segment fills, scale) that the unit tests cover.
 
 The state also carries the caption above the hotbar (`prompt`), the crosshair (`none`, `place` or `blocked`) and whether Build Mode is on; `../build-hud.ts` works those out from the player's building hands.
