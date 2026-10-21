@@ -42,6 +42,9 @@ export const MATERIALS: readonly MaterialDef[] = [
   { id: MATERIAL.energy, name: 'Energy-Infused', tier: 4 },
 ];
 
+/** How many different tiles each material has. Each face of each block picks one by chance, so a wall is never a stamp. */
+export const TILE_LAYOUTS = 4;
+
 const MAX_STATE = 0xffff;
 
 /** Packs a shape and a material into a cell state. */

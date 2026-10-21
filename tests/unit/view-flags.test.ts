@@ -9,6 +9,7 @@ describe('view URL switches', () => {
     expect(v.time).toBeNull();
     expect(v.clock).toBe(false);
     expect(v.shot).toBeNull();
+    expect(v.demo).toBeNull();
     expect(v.hud).toBe(true);
     expect(v.stats).toBe(true);
     expect(v.freeze).toBe(false);
@@ -33,6 +34,13 @@ describe('view URL switches', () => {
       terrain: 'heightfield',
       scale: 0.5,
     });
+  });
+
+  it('passes the name of a demo structure through for the world to check', () => {
+    expect(readViewFlags('?demo=outpost').demo).toBe('outpost');
+    expect(readViewFlags('?demo=swatch&shot=swatch').demo).toBe('swatch');
+    // A bare switch is an empty name, which the app reads as the outpost.
+    expect(readViewFlags('?demo').demo).toBe('');
   });
 
   it('ignores a preset, a moment or a scale it cannot use', () => {

@@ -5,7 +5,10 @@ import {
   GrassField,
   TREE_BROADLEAF,
   TREE_PINE,
+  rootBuried,
   scatterTrees,
+  trunkBlocked,
+  type Obstacles,
 } from '../../src/world/scatter';
 import { CRASH, WATER_LEVEL, WORLD_HALF } from '../../src/world/terrain/field';
 import { TEST_SEED, valley } from './helpers/valley';
@@ -96,5 +99,55 @@ describe('grass field', () => {
       );
       expect(d).toBeGreaterThan(0.7);
     }
+  });
+});
+
+describe('plants and the blocks players build', () => {
+  /** A world with solid cells at the given positions. */
+  function blocks(...cells: [number, number, number][]): Obstacles {
+    const solid = new Set(cells.map((c) => c.join(',')));
+    return { blockCount: solid.size, isSolid: (x, y, z) => solid.has(`${x},${y},${z}`) };
+  }
+
+  it('buries a plant rooted inside a block', () => {
+    const world = blocks([4, 10, -3]);
+    expect(rootBuried(world, 4.4, 10.5, -2.6)).toBe(true);
+  });
+
+  it('buries a plant rooted on top of a block, but not one beside it', () => {
+    const world = blocks([4, 10, -3]);
+    // Ground at the top face of the block: the root sits on it.
+    expect(rootBuried(world, 4.5, 11, -2.5)).toBe(true);
+    // The same height one cell over has nothing under it.
+    expect(rootBuried(world, 5.5, 11, -2.5)).toBe(false);
+    // And the block's neighbour at ground level is open ground.
+    expect(rootBuried(world, 5.5, 10.5, -2.5)).toBe(false);
+  });
+
+  it('finds the cell of a negative coordinate by flooring, not by truncating', () => {
+    const world = blocks([-1, 5, -1]);
+    expect(rootBuried(world, -0.4, 5.5, -0.4)).toBe(true);
+    expect(rootBuried(world, 0.4, 5.5, 0.4)).toBe(false);
+  });
+
+  it('stops a trunk that a block stands in, up to head height', () => {
+    const foot = [4.5, 10.2, -2.5] as const;
+    expect(trunkBlocked(blocks([4, 10, -3]), ...foot)).toBe(true);
+    expect(trunkBlocked(blocks([4, 11, -3]), ...foot)).toBe(true);
+    expect(trunkBlocked(blocks([4, 12, -3]), ...foot)).toBe(true);
+    // A roof well above a person leaves the tree alone, as does a wall beside it.
+    expect(trunkBlocked(blocks([4, 14, -3]), ...foot)).toBe(false);
+    expect(trunkBlocked(blocks([5, 10, -3], [3, 11, -3]), ...foot)).toBe(false);
+  });
+
+  it('hides nothing while there are no blocks', () => {
+    const none: Obstacles = {
+      blockCount: 0,
+      isSolid: () => {
+        throw new Error('nothing to ask');
+      },
+    };
+    expect(rootBuried(none, 1, 2, 3)).toBe(false);
+    expect(trunkBlocked(none, 1, 2, 3)).toBe(false);
   });
 });

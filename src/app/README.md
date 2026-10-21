@@ -3,7 +3,7 @@
 The composition root: the one place that knows the engine, the world and the interface together. `main.ts` calls `createApp`, which builds the stage, the game loop and the HUD and puts the valley into them. Nothing here is game logic; it is wiring.
 
 - `create-app.ts` reads the URL switches and the saved settings, builds the `Stage`, creates the `Game` with a `createWorld` callback, adds the HUD and starts the loop. With `?debug` it exposes `window.__ashbound` (`{ stage, game }`).
-- `valley-world.ts` builds a `ValleyWorld` for a seed: the baked terrain, the empty `VoxelWorld` on top of it (the `BlockWorld` the net layer builds on), the `ValleyView` that draws the terrain, lake, trees and grass, and the collision, spawn and benchmark route the game reads through the engine's `GameWorld` interface. `Game.loadWorld(seed)` calls the same callback again for a new seed.
+- `valley-world.ts` builds a `ValleyWorld` for a seed: the baked terrain, the `VoxelWorld` on top of it (the `BlockWorld` the net layer builds on; empty, unless `?demo=` raises a structure), the `ValleyView` that draws the terrain, lake, trees, grass and blocks, and the collision, spawn and benchmark route the game reads through the engine's `GameWorld` interface. `Game.loadWorld(seed)` calls the same callback again for a new seed.
 
 ## Keys
 
@@ -29,13 +29,14 @@ Click the page to take the mouse; Esc gives it back.
 | `shot=<name>`                  | Photo mode: hold the camera at a named viewpoint (see `viewpoints.ts`)     |
 | `time=<moment>`                | Fix the time of day; `clock` runs the day and night cycle instead          |
 | `seed=<n>`                     | Build another valley                                                       |
+| `demo=outpost\|swatch`         | Raise a demo structure before the first frame (`demo` alone: the outpost)  |
 | `terrain=heightfield`          | Mesh the terrain as a smoothed heightfield instead of surface nets         |
 | `scale=<0..1>`                 | Force the internal resolution and switch the adaptive governor off         |
 | `hud=0`                        | Hide the whole HUD (player HUD, panels and overlay), for clean screenshots |
 | `stats=0`                      | Keep the frame overlay off even when `bench` or `debug` would show it      |
 | `freeze=1`                     | Freeze clouds, wind and water, and draw only when something changes        |
 
-The viewpoints are `lake`, `valley`, `canopy`, `crash`, `trail`, `outcrop`, `noon`, `sunset`, `dusk` and `night`. A viewpoint brings its own time of day unless `time=` says otherwise. For example, `/?shot=lake&quality=balanced&hud=0&stats=0&freeze=1` draws the same frame every time.
+The viewpoints are `lake`, `valley`, `canopy`, `crash`, `trail`, `outcrop`, `noon`, `sunset`, `dusk`, `night` and four that look at the demo structures: `outpost` and `gate` for `demo=outpost`, `swatch` and `closeup` for `demo=swatch`. A viewpoint brings its own time of day unless `time=` says otherwise. For example, `/?shot=lake&quality=balanced&hud=0&stats=0&freeze=1` draws the same frame every time.
 
 ## Benchmark
 
