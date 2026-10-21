@@ -1,24 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { SdfGrid } from '../../src/world/terrain/grid';
-import { WALKABLE_NORMAL_Y, resolveTerrain } from '../../src/world/terrain/collision';
+import type { GroundBody } from '../../src/shared/ground';
+import {
+  WALKABLE_NORMAL_Y,
+  createTerrainGround,
+  resolveTerrain,
+} from '../../src/world/terrain/collision';
+import { tiltedPlane as slope } from './helpers/ground';
 import { valley } from './helpers/valley';
 
 const RADIUS = 0.36;
 const PROBES = [RADIUS, 0.95, 1.5];
-
-/** A planar ground tilted by `angle` radians about the z axis, passing through the origin. */
-function slope(angle: number): SdfGrid {
-  const nx = -Math.sin(angle);
-  const ny = Math.cos(angle);
-  return {
-    sample: (x: number, y: number) => x * nx + y * ny,
-    gradient: (_x: number, _y: number, _z: number, out: Float32Array | number[]) => {
-      out[0] = nx;
-      out[1] = ny;
-      out[2] = 0;
-    },
-  } as unknown as SdfGrid;
-}
 
 describe('terrain collision', () => {
   it('lifts a body out of flat ground and calls it grounded', () => {
@@ -98,5 +89,69 @@ describe('terrain collision', () => {
         }
       }
     }
+  });
+});
+
+function body(x: number, y: number, z: number, vx = 0, vy = 0, vz = 0): GroundBody {
+  return { x, y, z, vx, vy, vz };
+}
+
+describe('terrain as a ground query', () => {
+  it('reports the signed distance to the surface', () => {
+    const ground = createTerrainGround(slope(0), 50);
+    expect(ground.distance(3, 2.5, -1)).toBeCloseTo(2.5, 6);
+    expect(ground.distance(0, -0.4, 0)).toBeCloseTo(-0.4, 6);
+  });
+
+  it('pushes a body out and says whether it stands on walkable ground', () => {
+    const ground = createTerrainGround(slope(0), 50);
+    const sunk = body(0, -0.3, 0, 1, -4, 0);
+    expect(ground.pushOut(sunk, 0.3, [0.3, 0.9, 1.5])).toBe(true);
+    expect(sunk.y).toBeCloseTo(0, 6);
+    expect(sunk.vy).toBe(0);
+    expect(sunk.vx).toBe(1);
+    expect(ground.pushOut(body(0, 4, 0), 0.3, [0.3, 0.9, 1.5])).toBe(false);
+  });
+
+  it('sets a body that hovers over walkable ground back on it', () => {
+    const ground = createTerrainGround(slope(0), 50);
+    const hovering = body(0, 0.25, 0);
+    expect(ground.snapDown(hovering, 0.3, 0.3, 0.4)).toBe(true);
+    expect(hovering.y).toBeCloseTo(0, 6);
+  });
+
+  it('measures the drop along the way down, which is longer than the gap on a slope', () => {
+    const angle = 0.4;
+    const ground = createTerrainGround(slope(angle), 50);
+    const hovering = body(0, 0.2, 0);
+    expect(ground.snapDown(hovering, 0.3, 0.3, 0.4)).toBe(true);
+    // Resting on the slope puts the sphere's center a radius from the plane, along the normal.
+    expect(ground.distance(0, hovering.y + 0.3, 0)).toBeCloseTo(0.3, 6);
+  });
+
+  it('does not snap to ground that is too far below, too steep, or already touching', () => {
+    const flat = createTerrainGround(slope(0), 50);
+    expect(flat.snapDown(body(0, 0.5, 0), 0.3, 0.3, 0.4)).toBe(false);
+    expect(flat.snapDown(body(0, -0.1, 0), 0.3, 0.3, 0.4)).toBe(false);
+    const steep = createTerrainGround(slope(Math.acos(WALKABLE_NORMAL_Y - 0.05)), 50);
+    expect(steep.snapDown(body(0, 0.2, 0), 0.3, 0.3, 0.4)).toBe(false);
+  });
+
+  it('keeps bodies inside the wall around the world and stops them against it', () => {
+    const ground = createTerrainGround(slope(0), 10);
+    const out = body(14, 0, -12, 3, 0, -5);
+    ground.pushOut(out, 0.3, [0.3]);
+    expect(out.x).toBe(10);
+    expect(out.z).toBe(-10);
+    expect(out.vx).toBe(0);
+    expect(out.vz).toBe(0);
+    const inside = body(9.5, 0, 0, 3, 0, 0);
+    ground.pushOut(inside, 0.3, [0.3]);
+    expect(inside.x).toBe(9.5);
+    expect(inside.vx).toBe(3);
+    const leaving = body(-12, 0, 0, 2, 0, 0);
+    ground.pushOut(leaving, 0.3, [0.3]);
+    expect(leaving.x).toBe(-10);
+    expect(leaving.vx).toBe(2);
   });
 });

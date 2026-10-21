@@ -7,7 +7,8 @@ import {
   type PlayerInput,
   type PlayerState,
 } from '../../src/shared/movement';
-import { SparseCells, type SolidQuery } from '../../src/shared/solid';
+import type { CollisionWorld } from '../../src/shared/ground';
+import { SparseCells } from '../../src/shared/solid';
 
 /** A big flat floor whose top surface is at y = 0. */
 export function flatWorld(): SparseCells {
@@ -21,7 +22,7 @@ export function input(overrides: Partial<PlayerInput> = {}): PlayerInput {
 }
 
 /** A player standing on the floor at the center of cell (x, z), already settled. */
-export function standingAt(world: SolidQuery, x = 0.5, z = 0.5, y = 0): PlayerState {
+export function standingAt(world: CollisionWorld, x = 0.5, z = 0.5, y = 0): PlayerState {
   const state = createPlayerState(x, y, z);
   run(state, input(), 5, world);
   return state;
@@ -32,7 +33,7 @@ export function run(
   state: PlayerState,
   playerInput: PlayerInput,
   ticks: number,
-  world: SolidQuery,
+  world: CollisionWorld,
   tuning?: MovementTuning,
 ): { peakY: number } {
   let peakY = state.y;

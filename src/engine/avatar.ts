@@ -1,5 +1,7 @@
-import { Group, Mesh, MeshStandardMaterial, type BufferGeometry } from 'three';
+import { Group, Mesh, type BufferGeometry, type ShaderMaterial } from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { createLitMaterial } from './lit-material';
+import type { MaterialRegistry } from './materials';
 
 /**
  * The crew member seen in third person: a small articulated suit built from rounded boxes, with a
@@ -35,16 +37,26 @@ const WALK_SPEED_FOR_FULL_SWING = 4.4;
 /** Radians of gait phase per block walked. */
 const STRIDE = 3.4;
 
-export function createAvatar({ accent = '#f2a43a' }: AvatarOptions = {}): Avatar {
+export function createAvatar(
+  registry: MaterialRegistry,
+  { accent = '#f2a43a' }: AvatarOptions = {},
+): Avatar {
   const geometries: BufferGeometry[] = [];
-  const materials: MeshStandardMaterial[] = [];
+  const materials: ShaderMaterial[] = [];
 
-  const material = (color: string, roughness: number, metalness: number, emissive?: string) => {
-    const m = new MeshStandardMaterial({ color, roughness, metalness });
-    if (emissive) {
-      m.emissive.set(emissive);
-      m.emissiveIntensity = 0.9;
-    }
+  const material = (
+    color: string,
+    roughness: number,
+    metalness: number,
+    glow?: string,
+    glowIntensity = 0.9,
+  ): ShaderMaterial => {
+    const m = createLitMaterial(registry, {
+      color,
+      gloss: 1 - roughness,
+      metalness,
+      ...(glow ? { glow, glowIntensity } : {}),
+    });
     materials.push(m);
     return m;
   };
@@ -53,24 +65,16 @@ export function createAvatar({ accent = '#f2a43a' }: AvatarOptions = {}): Avatar
   const dark = material('#262d35', 0.85, 0.15);
   const helmet = material('#b4bfcb', 0.45, 0.35);
   const visor = material('#0d1c22', 0.18, 0.7, '#2bb8c8');
-  const accentTrim = material(accent, 0.5, 0.2, accent);
-  accentTrim.emissiveIntensity = 0.35;
+  const accentTrim = material(accent, 0.5, 0.2, accent, 0.35);
 
-  const box = (
-    w: number,
-    h: number,
-    d: number,
-    mat: MeshStandardMaterial,
-    x = 0,
-    y = 0,
-    z = 0,
-  ): Mesh => {
+  const box = (w: number, h: number, d: number, mat: ShaderMaterial, x = 0, y = 0, z = 0): Mesh => {
     const radius = Math.min(w, h, d) * 0.32;
     const geometry = new RoundedBoxGeometry(w, h, d, 3, radius);
     geometries.push(geometry);
     const mesh = new Mesh(geometry, mat);
     mesh.position.set(x, y, z);
     mesh.castShadow = true;
+    mesh.receiveShadow = true;
     return mesh;
   };
 
@@ -151,7 +155,9 @@ export function createAvatar({ accent = '#f2a43a' }: AvatarOptions = {}): Avatar
     },
     dispose() {
       geometries.forEach((g) => g.dispose());
-      materials.forEach((m) => m.dispose());
+      // The registry made these materials; handing them back lets it forget them, so players
+      // who come and go do not pile up in it.
+      materials.forEach((m) => registry.release(m));
     },
   };
 }

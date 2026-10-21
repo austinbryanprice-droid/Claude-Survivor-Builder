@@ -1,7 +1,4 @@
-import { readFlags } from './shared/flags';
-import { createGame } from './engine/game';
-import { createHud } from './ui/hud';
-import { loadSettings } from './ui/settings-store';
+import { createApp } from './app/create-app';
 import './ui/styles.css';
 
 function showFatal(message: string): void {
@@ -11,24 +8,34 @@ function showFatal(message: string): void {
   el.hidden = false;
 }
 
-const canvas = document.querySelector<HTMLCanvasElement>('#game');
-if (!canvas) throw new Error('Missing #game canvas');
-
-const tag = document.querySelector<HTMLElement>('#build-tag');
-if (tag) tag.textContent = `Ashbound Outpost · scaffold build ${__BUILD_ID__}`;
-
-canvas.addEventListener('webglcontextlost', (event) => {
-  event.preventDefault();
-  showFatal('The graphics context was lost. Reload the page to continue.');
-});
-
-try {
-  const flags = readFlags(window.location.search);
-  const game = createGame({ canvas, settings: loadSettings(), flags, buildId: __BUILD_ID__ });
-  createHud(game, flags, __BUILD_ID__);
-  if (flags.debug) window.__ashbound = { stage: game.stage, game };
-  game.start();
-} catch (error) {
-  console.error(error);
-  showFatal('Ashbound Outpost needs WebGL 2, which this browser could not start.');
+function nextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
 }
+
+async function main(): Promise<void> {
+  const canvas = document.querySelector<HTMLCanvasElement>('#game');
+  if (!canvas) throw new Error('Missing #game canvas');
+
+  const tag = document.querySelector<HTMLElement>('#build-tag');
+  if (tag) tag.textContent = `Ashbound Outpost · build ${__BUILD_ID__}`;
+
+  canvas.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault();
+    showFatal('The graphics context was lost. Reload the page to continue.');
+  });
+
+  // Let the "Generating the valley" text paint before the synchronous build starts.
+  await nextPaint();
+  try {
+    createApp({ canvas, search: window.location.search, buildId: __BUILD_ID__ }).start();
+  } catch (error) {
+    console.error(error);
+    showFatal('Ashbound Outpost needs WebGL 2, which this browser could not start.');
+  } finally {
+    document.querySelector('#loading')?.remove();
+  }
+}
+
+void main();

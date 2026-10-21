@@ -1,9 +1,9 @@
 import type { PerspectiveCamera } from 'three';
 import { overlapsSolid, type Body } from '../shared/collision';
+import type { CollisionWorld } from '../shared/ground';
 import { lookDirection, rightVector, type LookState, type Vec3 } from '../shared/look';
 import { MOVEMENT, PLAYER, type PlayerState } from '../shared/movement';
 import type { Settings } from '../shared/settings';
-import type { SolidQuery } from '../shared/solid';
 
 export type CameraMode = 'first' | 'third';
 
@@ -17,6 +17,8 @@ const THIRD = {
   height: 1.55,
   /** Half the width of the camera's clearance cube; larger than the near plane's corner, so walls never clip in. */
   probeRadius: 0.2,
+  /** How far the camera stays from the terrain's surface, which is smooth and so needs a sphere. */
+  groundClearance: 0.32,
   /** The body is hidden when the camera is pulled in closer than this. */
   minDistanceForBody: 0.9,
 } as const;
@@ -61,7 +63,7 @@ export interface CameraRig {
   update(frame: RigFrame): void;
 }
 
-export function createCameraRig(camera: PerspectiveCamera, world: SolidQuery): CameraRig {
+export function createCameraRig(camera: PerspectiveCamera, world: CollisionWorld): CameraRig {
   camera.rotation.order = 'YXZ';
 
   let mode: CameraMode = 'first';
@@ -69,7 +71,6 @@ export function createCameraRig(camera: PerspectiveCamera, world: SolidQuery): C
   let boom: number = THIRD.distance;
   let dip = 0;
   let kick = 0;
-  let appliedFov = -1;
   const dir: Vec3 = { x: 0, y: 0, z: 0 };
   const right: Vec3 = { x: 0, y: 0, z: 0 };
   const radius = THIRD.probeRadius;
@@ -79,7 +80,9 @@ export function createCameraRig(camera: PerspectiveCamera, world: SolidQuery): C
     probe.x = x;
     probe.y = y - radius;
     probe.z = z;
-    return !overlapsSolid(probe, world);
+    if (overlapsSolid(probe, world)) return false;
+    const ground = world.ground;
+    return !ground || ground.distance(x, y, z) > THIRD.groundClearance;
   };
 
   /** How far the clearance cube can travel from an origin along a unit direction, up to `max`. */
@@ -154,10 +157,9 @@ export function createCameraRig(camera: PerspectiveCamera, world: SolidQuery): C
       const kickTarget = Math.min(1, Math.max(0, sprintShare)) * SPRINT_FOV_KICK;
       kick += (kickTarget - kick) * (1 - Math.exp(-7 * dt));
       const fov = settings.fov + kick;
-      if (Math.abs(fov - appliedFov) > 0.01) {
+      if (Math.abs(fov - camera.fov) > 0.01) {
         camera.fov = fov;
         camera.updateProjectionMatrix();
-        appliedFov = fov;
       }
 
       let cx = x;

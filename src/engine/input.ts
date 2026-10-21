@@ -1,7 +1,7 @@
 import type { PlayerInput } from '../shared/movement';
 
 /** Things the player can ask for that are not movement. */
-export type InputAction = 'toggleCamera' | 'toggleOverlay' | 'cancel';
+export type InputAction = 'toggleCamera' | 'toggleOverlay' | 'cycleQuality' | 'cancel';
 
 export interface LookDelta {
   dx: number;
@@ -34,11 +34,12 @@ const JUMP = 'Space';
 const SPRINT = ['ShiftLeft', 'ShiftRight'];
 const CAMERA_KEYS = ['KeyV', 'F5'];
 const OVERLAY_KEY = 'F3';
+const QUALITY_KEY = 'KeyP';
 const CANCEL_KEY = 'Escape';
 
 const HELD_KEYS = new Set([FORWARD, BACK, LEFT, RIGHT, JUMP, ...SPRINT]);
 /** Keys the page must not act on while the game has the mouse (scrolling, reloading, button clicks). */
-const SWALLOWED_KEYS = new Set([...HELD_KEYS, ...CAMERA_KEYS, OVERLAY_KEY]);
+const SWALLOWED_KEYS = new Set([...HELD_KEYS, ...CAMERA_KEYS, OVERLAY_KEY, QUALITY_KEY]);
 
 /** Browsers can report one huge movement when the lock starts; no real flick is this large in one event. */
 const MAX_MOVEMENT = 400;
@@ -116,6 +117,10 @@ export function createInput(canvas: HTMLCanvasElement): Input {
     if (SWALLOWED_KEYS.has(code)) event.preventDefault();
     if (CAMERA_KEYS.includes(code)) {
       if (!event.repeat) emitAction('toggleCamera');
+      return;
+    }
+    if (code === QUALITY_KEY) {
+      if (!event.repeat) emitAction('cycleQuality');
       return;
     }
     if (HELD_KEYS.has(code)) pressed.add(code);
