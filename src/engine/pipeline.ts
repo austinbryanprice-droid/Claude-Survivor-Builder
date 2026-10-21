@@ -8,6 +8,7 @@ import {
   Vector2,
   Vector3,
   WebGLRenderTarget,
+  type Object3D,
   type PerspectiveCamera,
   type Scene,
   type Texture,
@@ -109,6 +110,22 @@ export class Pipeline {
     this.hdr = target;
     if (q.bloom !== 'off') this.bloom.resize(w, h, q.bloom === 'full' ? 1 : 0.5);
     if (q.lightShafts) this.shafts.resize(w, h);
+  }
+
+  /**
+   * Compiles the programs `object` needs for the main pass, in the state that pass runs in (a
+   * program is built for the target it draws to, so compiling for the canvas would miss). Resolves
+   * when the driver has them; where the browser compiles in parallel the frame loop keeps going.
+   */
+  precompile(object: Object3D, scene: Scene, camera: PerspectiveCamera): Promise<void> {
+    const renderer = this.renderer;
+    const previous = renderer.getRenderTarget();
+    renderer.setRenderTarget(this.hdr);
+    try {
+      return renderer.compileAsync(object, camera, scene).then(() => undefined);
+    } finally {
+      renderer.setRenderTarget(previous);
+    }
   }
 
   get width(): number {

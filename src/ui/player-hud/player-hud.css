@@ -419,6 +419,29 @@
   transform: translateY(-50%);
 }
 
+/* The Build hint sits on the other side of the hotbar and lights up while Build Mode is on. */
+
+.ph-build-hint {
+  right: auto;
+  left: 100%;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 6px);
+  margin: 0 0 0 calc(var(--u) * 8px);
+  font-size: calc(var(--u) * 13px);
+  text-shadow: var(--shadow);
+  white-space: nowrap;
+}
+
+.ph-build-hint[data-active] {
+  color: #9fe9f7;
+}
+
+.ph-build-hint[data-active] .ph-key {
+  background: #9fe9f7;
+  box-shadow: 0 0 calc(var(--u) * 7px) rgb(110 225 245 / 55%);
+}
+
 .ph-hotbar-row {
   display: flex;
   gap: calc(var(--u) * 5px);
@@ -453,6 +476,14 @@
       calc(var(--u) * 8px),
     linear-gradient(180deg, rgb(60 170 200 / 36%), rgb(30 100 130 / 46%));
   box-shadow: inset 0 0 0 1px rgb(150 235 250 / 50%);
+}
+
+/* A selected block keeps its cyan grid and gains the white ring. */
+
+.ph-slot[data-selected][data-blueprint] {
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 1.5px) #fff,
+    0 0 calc(var(--u) * 8px) rgb(150 235 250 / 40%);
 }
 
 .ph-slot-key {
@@ -513,7 +544,41 @@
   text-shadow: var(--shadow);
 }
 
-/* A small dot at the screen center. */
+/* The caption above the hotbar: the piece in hand and what it costs, or why a click would do nothing. */
+
+.ph-prompt {
+  position: absolute;
+  bottom: calc(var(--u) * 76px);
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--u) * 3px);
+  transform: translateX(-50%);
+  text-align: center;
+  text-shadow: var(--shadow);
+  white-space: nowrap;
+}
+
+.ph-prompt-title {
+  font-size: calc(var(--u) * 15px);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.ph-prompt-detail {
+  font-size: calc(var(--u) * 12px);
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.ph-prompt[data-tone='warn'] .ph-prompt-detail {
+  color: #ff9a86;
+  font-weight: 600;
+}
+
+/* A small dot at the screen center. Over a surface a click could build on it gets a cyan ring, and a red one over a surface it could not. */
 
 .ph-crosshair {
   position: absolute;
@@ -525,4 +590,34 @@
   border-radius: 50%;
   background: rgb(255 255 255 / 80%);
   box-shadow: 0 0 0 1px rgb(0 0 0 / 45%);
+}
+
+.ph-crosshair::before {
+  content: '';
+  position: absolute;
+  inset: calc(var(--u) * -7px);
+  border: calc(var(--u) * 1.5px) solid transparent;
+  border-radius: 50%;
+}
+
+.ph-crosshair[data-state='place']::before {
+  border-color: rgb(125 232 250 / 92%);
+  box-shadow:
+    0 0 calc(var(--u) * 6px) rgb(90 210 240 / 55%),
+    inset 0 0 calc(var(--u) * 4px) rgb(90 210 240 / 35%);
+}
+
+.ph-crosshair[data-state='blocked']::before {
+  border-color: rgb(255 112 90 / 92%);
+  box-shadow: 0 0 calc(var(--u) * 6px) rgb(255 90 60 / 45%);
+}
+
+.ph-crosshair[data-state='blocked'] {
+  background: rgb(255 130 108 / 95%);
+}
+
+/* In Build Mode the ring is always there, faintly, so the mode reads before anything is aimed at. */
+
+.ph-crosshair[data-build][data-state='none']::before {
+  border-color: rgb(255 255 255 / 30%);
 }

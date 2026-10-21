@@ -31,15 +31,21 @@ export interface MaterialDef {
   readonly name: string;
   /** 1 for Scrap up to 4 for Energy-Infused (spec section 9). */
   readonly tier: number;
+  /**
+   * What one block costs, in units of the shared pool's stock of this material. Build Mode shows
+   * it; nothing is charged until the economy (Phase 5) adds the pool, and its balance pass tunes
+   * the numbers.
+   */
+  readonly cost: number;
 }
 
 export const SHAPES: readonly ShapeDef[] = [{ id: SHAPE.cube, name: 'Block' }];
 
 export const MATERIALS: readonly MaterialDef[] = [
-  { id: MATERIAL.scrap, name: 'Scrap', tier: 1 },
-  { id: MATERIAL.composite, name: 'Reinforced Composite', tier: 2 },
-  { id: MATERIAL.alloy, name: 'Advanced Alloy', tier: 3 },
-  { id: MATERIAL.energy, name: 'Energy-Infused', tier: 4 },
+  { id: MATERIAL.scrap, name: 'Scrap', tier: 1, cost: 1 },
+  { id: MATERIAL.composite, name: 'Reinforced Composite', tier: 2, cost: 1 },
+  { id: MATERIAL.alloy, name: 'Advanced Alloy', tier: 3, cost: 1 },
+  { id: MATERIAL.energy, name: 'Energy-Infused', tier: 4, cost: 1 },
 ];
 
 /** How many different tiles each material has. Each face of each block picks one by chance, so a wall is never a stamp. */
@@ -76,4 +82,17 @@ export function isKnownState(state: CellState): boolean {
   const shape = stateShape(state);
   const material = stateMaterial(state);
   return SHAPES.some((s) => s.id === shape) && MATERIALS.some((m) => m.id === material);
+}
+
+/** The material a cell state is made of, or undefined when the tables do not know it. */
+export function materialOf(state: CellState): MaterialDef | undefined {
+  const id = stateMaterial(state);
+  return MATERIALS.find((m) => m.id === id);
+}
+
+/** What a player calls a placed piece, such as "Scrap Block", or an empty string for a state the tables do not know. */
+export function pieceName(state: CellState): string {
+  const material = materialOf(state);
+  const shape = SHAPES.find((s) => s.id === stateShape(state));
+  return material && shape ? `${material.name} ${shape.name}` : '';
 }

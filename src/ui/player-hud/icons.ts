@@ -20,7 +20,11 @@ export type IconId =
   | 'mushroom'
   | 'shield'
   | 'heart'
-  | 'spire';
+  | 'spire'
+  | 'block-scrap'
+  | 'block-composite'
+  | 'block-alloy'
+  | 'block-energy';
 
 export const ICON_IDS: readonly IconId[] = [
   'blade',
@@ -36,9 +40,82 @@ export const ICON_IDS: readonly IconId[] = [
   'shield',
   'heart',
   'spire',
+  'block-scrap',
+  'block-composite',
+  'block-alloy',
+  'block-energy',
 ];
 
 const INK = '#1b1e25';
+
+/**
+ * A building block seen from above and the side, painted in the tier's colors: the light top, the
+ * mid left face and the dark right face, each with the inset panel that stands for the bevel, and
+ * the marks that tell the materials apart.
+ */
+interface BlockPaint {
+  readonly top: string;
+  readonly left: string;
+  readonly right: string;
+  readonly marks: string;
+}
+
+function blockSymbol(name: string, paint: BlockPaint): string {
+  return /* html */ `
+<symbol id="ph-i-block-${name}" viewBox="0 0 48 48">
+  <path d="M6 14 L24 23 L24 43 L6 34 Z" fill="${paint.left}"/>
+  <path d="M24 23 L42 14 L42 34 L24 43 Z" fill="${paint.right}"/>
+  <path d="M24 5 L42 14 L24 23 L6 14 Z" fill="${paint.top}"/>
+  <path d="M24 7 L38 14 L24 21 L10 14 Z M8 17.2 L22 24.2 L22 39.8 L8 32.8 Z M40 17.2 L26 24.2 L26 39.8 L40 32.8 Z" fill="#fff" fill-opacity="0.13" stroke="#000" stroke-opacity="0.3" stroke-width="0.9" stroke-linejoin="round"/>
+  ${paint.marks}
+  <path d="M24 5 L42 14 V34 L24 43 L6 34 V14 Z M6 14 L24 23 L42 14 M24 23 V43" fill="none" stroke="${INK}" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>
+</symbol>`;
+}
+
+const BLOCK_SYMBOLS = [
+  // Scrap: rusted plates with a salvaged teal patch and rivets.
+  blockSymbol('scrap', {
+    top: '#b0724a',
+    left: '#8a523a',
+    right: '#64392a',
+    marks: /* html */ `
+  <path d="M10 20.2 L18 24.2 L18 30.4 L10 26.4 Z" fill="#3f8f8a" stroke="${INK}" stroke-opacity="0.55" stroke-width="0.8" stroke-linejoin="round"/>
+  <path d="M28.5 28 L37.5 23.5 M28.5 33.5 L37.5 29" stroke="#3d2216" stroke-width="1.1" stroke-linecap="round"/>
+  <circle cx="24" cy="9.2" r="1" fill="#2b1912"/><circle cx="35.6" cy="14" r="1" fill="#2b1912"/><circle cx="24" cy="18.8" r="1" fill="#2b1912"/><circle cx="12.4" cy="14" r="1" fill="#2b1912"/>`,
+  }),
+  // Reinforced Composite: grey-green panels with cyan trim.
+  blockSymbol('composite', {
+    top: '#a6b8a8',
+    left: '#7e9484',
+    right: '#5b7064',
+    marks: /* html */ `
+  <path d="M26 27.5 L40 20.5 L40 23.4 L26 30.4 Z" fill="#6ad7e6" stroke="${INK}" stroke-opacity="0.45" stroke-width="0.7" stroke-linejoin="round"/>
+  <path d="M10 24.2 L22 30.2" stroke="#6ad7e6" stroke-opacity="0.85" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M13 14.9 L24 20.2 L35 14.9" fill="none" stroke="#d3f3f7" stroke-opacity="0.7" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>`,
+  }),
+  // Advanced Alloy: bright steel with an amber hazard band.
+  blockSymbol('alloy', {
+    top: '#cfd8e2',
+    left: '#9aa8b8',
+    right: '#6d7b8c',
+    marks: /* html */ `
+  <path d="M8 28.4 L22 35.4 L22 39.8 L8 32.8 Z" fill="#e0a82e"/>
+  <path d="M11 29.9 L13 30.9 L13 35.3 L11 34.3 Z M15.5 32.15 L17.5 33.15 L17.5 37.55 L15.5 36.55 Z M20 34.4 L22 35.4 L22 39.8 L20 38.8 Z" fill="${INK}" fill-opacity="0.78"/>
+  <path d="M26 24.6 L40 17.6" stroke="#f4f8fc" stroke-opacity="0.55" stroke-width="1.2" stroke-linecap="round"/>
+  <circle cx="30" cy="31" r="1" fill="#44505f"/><circle cx="36" cy="28" r="1" fill="#44505f"/>`,
+  }),
+  // Energy-Infused: dark graphite cut with glowing cyan veins.
+  blockSymbol('energy', {
+    top: '#3b434e',
+    left: '#2a3038',
+    right: '#1e232a',
+    marks: /* html */ `
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 14 L21 16.5 L25 12 L33 15 M10.5 22 L14.5 26.5 L12.5 31.5 L16.5 35 M33 24.5 L36.5 20.5 L35 28 L38 30" stroke="#59e6ff" stroke-opacity="0.28" stroke-width="3.2"/>
+    <path d="M14 14 L21 16.5 L25 12 L33 15 M10.5 22 L14.5 26.5 L12.5 31.5 L16.5 35 M33 24.5 L36.5 20.5 L35 28 L38 30" stroke="#8cf0ff" stroke-width="1.2"/>
+  </g>`,
+  }),
+].join('\n');
 
 const SPRITE_BODY = /* html */ `
 <defs>
@@ -161,6 +238,7 @@ const SPRITE_BODY = /* html */ `
   <path d="M3 41 H45" stroke="${INK}" stroke-width="2.4" stroke-linecap="round"/>
   <path d="M17 17 V41 M33 10 V41" stroke="${INK}" stroke-width="1.5" opacity="0.55"/>
 </symbol>
+${BLOCK_SYMBOLS}
 `;
 
 /** The hidden sprite sheet; add it once to the page, before any `iconMarkup`. */

@@ -2,7 +2,7 @@
 
 A browser co-op survivor-builder for two to four players. By day you scavenge the wreckage of a crashed orbital station and build a shared outpost from refined, beveled blocks and modular machines. By night rogue machines attack in waves that grow every night.
 
-> **Status: early development.** You can run, jump and look around the Ashbound Valley: seeded terrain, a lake, trees and a golden-hour sky. Up to four players can share the valley (one hosts a room, the others join with a code) and see each other move. Building and enemies are not in yet (the voxel world they build on is, and `/?demo=outpost` shows blocks drawn in it). The [roadmap](docs/roadmap.md) lists what comes next.
+> **Status: early development.** You can run, jump and look around the Ashbound Valley: seeded terrain, a lake, trees and a golden-hour sky. You can build in it: right click places a beveled block, left click breaks one, and the hotbar holds the four materials. Up to four players can share the valley (one hosts a room, the others join with a code), see each other move and see every block anyone builds. Slabs and roofs, enemies, nights and the economy are not in yet, so blocks cost nothing for now (`/?demo=outpost` raises a finished base to look at). The [roadmap](docs/roadmap.md) lists what comes next.
 
 ## Play
 
@@ -12,15 +12,21 @@ Once the first deploy finishes, the game is served by GitHub Pages at <https://a
 
 Click the page to take the mouse. Esc gives it back.
 
-| Key     | Action                                                              |
-| ------- | ------------------------------------------------------------------- |
-| W A S D | Move                                                                |
-| Space   | Jump (hold it to keep hopping)                                      |
-| Shift   | Sprint                                                              |
-| V or F5 | Switch between first and third person (F5 will not reload mid-game) |
-| P       | Cycle the graphics preset: Low, Balanced, Ultra                     |
-| F3      | Show or hide the frame-time overlay                                 |
-| Esc     | Free the mouse (and stop a running benchmark)                       |
+| Key                 | Action                                                               |
+| ------------------- | -------------------------------------------------------------------- |
+| W A S D             | Move                                                                 |
+| Space               | Jump (hold it to keep hopping)                                       |
+| Shift               | Sprint                                                               |
+| V or F5             | Switch between first and third person (F5 will not reload mid-game)  |
+| Right click         | Place the selected block where the cursor is (hold it to keep going) |
+| Left click          | Break the block under the cursor (hold it to keep going)             |
+| 1 to 8, mouse wheel | Choose a hotbar slot; the first four hold the four materials         |
+| B                   | Build Mode: a ghost of the next block, its name and cost, the keys   |
+| P                   | Cycle the graphics preset: Low, Balanced, Ultra                      |
+| F3                  | Show or hide the frame-time overlay                                  |
+| Esc                 | Free the mouse (and stop a running benchmark)                        |
+
+A block goes on the ground or on another block, within six blocks of you, and never inside a player. The cursor sees a little farther than a click reaches and says "Out of reach" in red there. Build Mode only adds the ghost, the caption and the key list; the clicks work with or without it.
 
 Mouse sensitivity, field of view, inverted look, the graphics preset and the time of day are on the pause panel. All but the time of day are remembered in the browser.
 

@@ -8,6 +8,7 @@ import { SHOTS } from '../terrain/viewpoints';
 import type { VoxelWorld } from '../voxels/world';
 import { BackdropRenderer } from './backdrop-render';
 import { bakeFoliageTextures, type FoliageTextures } from './foliage-textures';
+import { GhostRenderer } from './ghost-render';
 import { bakeGroundMaps, TerrainRenderer } from './terrain-render';
 import { VegetationRenderer } from './vegetation-render';
 import { VoxelRenderer } from './voxel-render';
@@ -34,6 +35,8 @@ export class ValleyView {
   readonly water: WaterRenderer | null;
   readonly vegetation: VegetationRenderer;
   readonly structures: VoxelRenderer;
+  /** The ghost block and the outline of the block a click would break. */
+  readonly ghost: GhostRenderer;
   readonly foliage: FoliageTextures;
   readonly buildMs: ValleyBuildTimings;
   private readonly stopQuality: () => void;
@@ -80,6 +83,7 @@ export class ValleyView {
     );
     this.buildMs = { mesh: this.terrain.stats.meshMs, scatter: performance.now() - t0 };
     this.structures = new VoxelRenderer(stage, voxels);
+    this.ghost = new GhostRenderer(stage);
     this.vegetation.setObstacles(voxels);
 
     // The planar water reflection is drawn from the lake's side of the scene, before the main view.
@@ -118,6 +122,7 @@ export class ValleyView {
     this.stopQuality();
     this.stopRender();
     this.stage.pipeline.beforeScene = null;
+    this.ghost.dispose();
     this.structures.dispose();
     this.vegetation.dispose();
     this.foliage.dispose();

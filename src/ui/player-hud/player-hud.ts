@@ -24,6 +24,17 @@ export interface HotbarSlot {
   readonly blueprint?: boolean;
 }
 
+/** The caption above the hotbar: what is in hand and what it costs, or why a click would do nothing. */
+export interface HudPrompt {
+  readonly title: string;
+  readonly detail: string;
+  /** 'warn' draws the detail in red. */
+  readonly tone: 'info' | 'warn';
+}
+
+/** How the crosshair looks: a plain dot, a cyan ring over a surface a click could build on, a red one over a surface it could not. */
+export type CrosshairState = 'none' | 'place' | 'blocked';
+
 /** A marker on the compass, such as a quest destination. */
 export interface HudWaypoint {
   /** Compass bearing in degrees (0 north, 90 east). */
@@ -50,6 +61,12 @@ export interface PlayerHudState {
   readonly slots: readonly HotbarSlot[];
   /** Index of the selected hotbar slot. */
   readonly selected: number;
+  /** The caption above the hotbar; absent or null for none. */
+  readonly prompt?: HudPrompt | null;
+  /** Absent means a plain dot. */
+  readonly crosshair?: CrosshairState;
+  /** Build Mode is on: the Build hint lights up and the crosshair gets its ring. */
+  readonly buildMode?: boolean;
 }
 
 /** Degrees of compass visible at once. */
@@ -104,6 +121,11 @@ export class PlayerHud {
   private readonly objectivePlace: HTMLElement;
   private readonly objectiveTitle: HTMLElement;
   private readonly slots: SlotRefs[] = [];
+  private readonly prompt: HTMLElement;
+  private readonly promptTitle: HTMLElement;
+  private readonly promptDetail: HTMLElement;
+  private readonly crosshair: HTMLElement;
+  private readonly buildHint: HTMLElement;
   private readonly stopResize: () => void;
 
   private lastHealth = '';
@@ -114,6 +136,9 @@ export class PlayerHud {
   private lastObjective = '';
   private readonly lastSlots: string[] = [];
   private lastSelected = -1;
+  private lastPrompt = '';
+  private lastCrosshair = '';
+  private lastBuildMode: boolean | null = null;
 
   constructor(parent: HTMLElement, segments = 3) {
     this.root = el('div', 'ph');
@@ -170,12 +195,30 @@ export class PlayerHud {
     const bar = el('div', 'ph-hotbar');
     const hint = el('div', 'ph-hotbar-hint');
     hint.append(el('kbd', 'ph-key', 'ALT'));
+    this.buildHint = el('div', 'ph-hotbar-hint ph-build-hint');
+    this.buildHint.append(el('kbd', 'ph-key', 'B'), el('span', undefined, 'Build'));
     const row = el('div', 'ph-hotbar-row');
     for (let i = 0; i < 8; i++) this.slots.push(this.buildSlot(row, i));
-    bar.append(hint, row);
+    bar.append(hint, row, this.buildHint);
 
-    const crosshair = el('div', 'ph-crosshair');
-    this.root.append(vitals, this.statusColumn, this.buff, compass, this.objective, bar, crosshair);
+    // The caption above the hotbar.
+    this.prompt = el('div', 'ph-prompt');
+    this.prompt.hidden = true;
+    this.promptTitle = el('strong', 'ph-prompt-title');
+    this.promptDetail = el('span', 'ph-prompt-detail');
+    this.prompt.append(this.promptTitle, this.promptDetail);
+
+    this.crosshair = el('div', 'ph-crosshair');
+    this.root.append(
+      vitals,
+      this.statusColumn,
+      this.buff,
+      compass,
+      this.objective,
+      this.prompt,
+      bar,
+      this.crosshair,
+    );
     parent.append(this.root);
 
     const rescale = (): void => {
@@ -222,6 +265,7 @@ export class PlayerHud {
     this.updateCompass(state);
     this.updateObjective(state);
     this.updateHotbar(state);
+    this.updateBuild(state);
   }
 
   private updateVitals(state: PlayerHudState): void {
@@ -330,6 +374,32 @@ export class PlayerHud {
       this.slots.forEach((refs, i) =>
         refs.root.toggleAttribute('data-selected', i === state.selected),
       );
+    }
+  }
+
+  private updateBuild(state: PlayerHudState): void {
+    const prompt = state.prompt ?? null;
+    const promptKey = prompt ? `${prompt.title}|${prompt.detail}|${prompt.tone}` : '';
+    if (promptKey !== this.lastPrompt) {
+      this.lastPrompt = promptKey;
+      this.prompt.hidden = prompt === null;
+      if (prompt) {
+        this.promptTitle.textContent = prompt.title;
+        this.promptTitle.hidden = prompt.title === '';
+        this.promptDetail.textContent = prompt.detail;
+        this.prompt.dataset.tone = prompt.tone;
+      }
+    }
+    const crosshair = state.crosshair ?? 'none';
+    if (crosshair !== this.lastCrosshair) {
+      this.lastCrosshair = crosshair;
+      this.crosshair.dataset.state = crosshair;
+    }
+    const buildMode = state.buildMode === true;
+    if (buildMode !== this.lastBuildMode) {
+      this.lastBuildMode = buildMode;
+      this.buildHint.toggleAttribute('data-active', buildMode);
+      this.crosshair.toggleAttribute('data-build', buildMode);
     }
   }
 

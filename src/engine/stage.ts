@@ -1,4 +1,12 @@
-import { Group, PerspectiveCamera, Scene, Vector3, WebGLRenderer, type Mesh } from 'three';
+import {
+  Group,
+  PerspectiveCamera,
+  Scene,
+  Vector3,
+  WebGLRenderer,
+  type Mesh,
+  type Object3D,
+} from 'three';
 import { TIME_PRESETS, skyStateAt, skyStateForPhase, type SkyState } from '../shared/daycycle';
 import { QUALITY_PRESETS, type QualityName, type QualitySettings } from '../shared/quality';
 import { Atmosphere, type MistZones } from './atmosphere';
@@ -147,6 +155,15 @@ export class Stage {
   get structure(): StructureTextures {
     this.structureTiles ??= bakeStructureTextures(this.renderer, this.bakeOptions);
     return this.structureTiles;
+  }
+
+  /**
+   * Compiles the programs that drawing `object` will need, so its first frame does not stall on the
+   * driver. Resolves when they are ready; where the browser compiles in parallel the frame loop
+   * keeps running meanwhile.
+   */
+  precompile(object: Object3D): Promise<void> {
+    return this.pipeline.precompile(object, this.scene, this.camera);
   }
 
   /** Switches the preset: shadows, post, materials, and whatever the world subscribed with `onQuality`. */

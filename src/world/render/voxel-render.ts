@@ -9,7 +9,7 @@ import {
   type ShaderMaterial,
 } from 'three';
 import type { Stage } from '../../engine/stage';
-import { MATERIALS, TILE_LAYOUTS } from '../../shared/blocks';
+import { MATERIAL, MATERIALS, SHAPE, TILE_LAYOUTS, packState } from '../../shared/blocks';
 import { chunkCoords } from '../voxels/chunk';
 import { meshChunk, type ChunkMeshData } from '../voxels/mesher';
 import { RemeshQueue } from '../voxels/remesh-queue';
@@ -62,6 +62,8 @@ export class VoxelRenderer {
   private readonly group: Group;
   private readonly eye = new Vector3();
   private material: ShaderMaterial | null = null;
+  private warming: Promise<void> | null = null;
+  private primer: Mesh | null = null;
 
   constructor(
     private readonly stage: Stage,
@@ -76,9 +78,31 @@ export class VoxelRenderer {
     return this.material !== null;
   }
 
-  /** Bakes the block tiles and builds the material now, so the first block does not wait for them. */
-  warmUp(): void {
-    this.blockMaterial();
+  /**
+   * Bakes the block tiles, builds the material and starts compiling its program now, so the first
+   * block does not wait for any of it. Resolves when the program is ready; calling it again returns
+   * the same promise.
+   */
+  warmUp(): Promise<void> {
+    this.warming ??= this.compile();
+    return this.warming;
+  }
+
+  private compile(): Promise<void> {
+    // One block stands in for a chunk. Which program the driver builds depends on the material, the
+    // scene and the attributes the geometry has (a mesh without normals is another program), so the
+    // stand-in is made the way a chunk is, and flagged the way one is.
+    const cube = packState(SHAPE.cube, MATERIAL.scrap);
+    const data = meshChunk(
+      { getBlock: (x, y, z) => (x === 0 && y === 0 && z === 0 ? cube : 0) },
+      0,
+      0,
+      0,
+    );
+    this.primer = new Mesh(this.toGeometry(data), this.blockMaterial());
+    this.primer.castShadow = true;
+    this.primer.receiveShadow = true;
+    return this.stage.precompile(this.primer);
   }
 
   private blockMaterial(): ShaderMaterial {
@@ -187,6 +211,7 @@ export class VoxelRenderer {
   dispose(): void {
     for (const [key, draw] of [...this.draws]) this.remove(key, draw);
     this.queue.clear();
+    this.primer?.geometry.dispose();
     this.material?.dispose();
   }
 }
