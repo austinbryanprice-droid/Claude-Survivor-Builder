@@ -21,6 +21,12 @@ export const NET = {
   trackLength: 32,
 
   pingIntervalMs: 2000,
+  /**
+   * A session tick that runs this much later than due means the page itself was blocked, and the
+   * silence during the stall is not held against the other side. A background tab's timer, which
+   * a browser slows to one tick a second, is late by less than this and is not a stall.
+   */
+  stallMs: 2000,
   /** The other side has gone quiet for this long, so the link is declared dead. */
   timeoutMs: 10_000,
   /** The host drops a link that has not said hello this long after opening. */

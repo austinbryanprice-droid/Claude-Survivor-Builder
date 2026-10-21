@@ -75,6 +75,17 @@ export class ManualScheduler implements Scheduler {
     this.time = end;
   }
 
+  /**
+   * The page is blocked for `ms`: the clock moves and no timer runs. When it wakes, an interval
+   * that fell due fires once and carries on from there, the way a browser's `setInterval` does.
+   */
+  stall(ms: number): void {
+    this.time += ms;
+    for (const timer of this.timers) {
+      if (timer.every !== null && timer.due < this.time) timer.due = this.time;
+    }
+  }
+
   /** Number of timers waiting, for leak checks in tests. */
   get pending(): number {
     return this.timers.length;

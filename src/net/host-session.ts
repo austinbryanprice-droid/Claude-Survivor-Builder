@@ -32,6 +32,7 @@ import {
 } from '../shared/wire';
 import { Emitter } from './emitter';
 import type { Scheduler } from './scheduler';
+import { StallWatch } from './stall-watch';
 import type {
   Correction,
   GameSession,
@@ -127,6 +128,7 @@ export class HostSession implements GameSession {
   private nextId = HOST_PLAYER_ID + 1;
   private eventSeq = 0;
   private relaySeq = 0;
+  private readonly stall: StallWatch;
   private lastRelay = -Infinity;
   private relayDirty = false;
   private lastPing = 0;
@@ -172,6 +174,7 @@ export class HostSession implements GameSession {
     );
     host.guard.place(spawn.x, spawn.y, spawn.z, now);
     this.members.set(HOST_PLAYER_ID, host);
+    this.stall = new StallWatch(NET.relayIntervalMs, now);
     this.stopTimer = this.scheduler.every(NET.relayIntervalMs, () => this.step());
   }
 
@@ -653,7 +656,15 @@ export class HostSession implements GameSession {
 
   private step(): void {
     const now = this.scheduler.now();
+    const late = this.stall.lateBy(now);
     if (!this.endpoint) return;
+    // Our own page was blocked, so the guests' packets are still waiting to be read: their silence
+    // during the stall is not theirs.
+    if (late > 0) {
+      for (const member of this.members.values()) {
+        member.lastHeard = Math.min(now, member.lastHeard + late);
+      }
+    }
     const since = now - this.lastRelay;
     // Idle rooms still relay once a second, so a quiet host or a hidden tab does not look like a dead one.
     if (since >= NET.relayIntervalMs && (this.relayDirty || since >= 1000)) this.relay(now);

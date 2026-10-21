@@ -23,6 +23,7 @@ import {
 } from '../shared/wire';
 import { Emitter } from './emitter';
 import type { Scheduler } from './scheduler';
+import { StallWatch } from './stall-watch';
 import type {
   Correction,
   GameSession,
@@ -105,6 +106,7 @@ export class GuestSession implements GameSession {
   private readonly pingSent = new Map<number, number>();
   private lastPing = -Infinity;
   private lastHeard = 0;
+  private stall: StallWatch | null = null;
 
   private cancelWelcome: (() => void) | null = null;
   private stopStep: (() => void) | null = null;
@@ -338,6 +340,7 @@ export class GuestSession implements GameSession {
       }),
     );
     this.cancelWelcome = this.scheduler.after(NET.welcomeTimeoutMs, () => this.fail('timed-out'));
+    this.stall = new StallWatch(STEP_MS, this.scheduler.now());
     this.stopStep = this.scheduler.every(STEP_MS, () => this.step());
   }
 
@@ -519,6 +522,10 @@ export class GuestSession implements GameSession {
   private step(): void {
     if (this.phaseValue === 'closed') return;
     const now = this.scheduler.now();
+    // Our own page was blocked, so the host's packets are still waiting to be read: the silence
+    // during the stall is not the host's.
+    const late = this.stall?.lateBy(now) ?? 0;
+    if (late > 0) this.lastHeard = Math.min(now, this.lastHeard + late);
     if (now - this.lastHeard > NET.timeoutMs) {
       this.fail('host-lost');
       return;
