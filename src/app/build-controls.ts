@@ -106,17 +106,20 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
   };
   const forward = new Vector3();
 
+  // The benchmark has no hands: while it flies the valley, the buttons, the number keys, the wheel
+  // and B do nothing, and nothing is prepared for them, so it measures the game alone.
   const stops = [
     input.onPointer((button, down) => {
-      if (down) controller.press(button);
-      else controller.release(button);
+      if (!down) controller.release(button);
+      else if (!game.sweep.active) controller.press(button);
     }),
     input.onHotbar((change) => {
+      if (game.sweep.active) return;
       if ('slot' in change) controller.selectSlot(change.slot);
       else controller.scrollSlot(change.step);
     }),
     input.onAction((action) => {
-      if (action === 'toggleBuild') controller.toggleBuildMode();
+      if (action === 'toggleBuild' && !game.sweep.active) controller.toggleBuildMode();
     }),
   ];
 
@@ -128,7 +131,9 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
       controller.releaseAll();
       return;
     }
-    idleTimer ??= setTimeout(warmUp, IDLE_WARM_UP_MS);
+    idleTimer ??= setTimeout(() => {
+      if (!game.sweep.active) warmUp();
+    }, IDLE_WARM_UP_MS);
   });
 
   const stopFrames = game.onBeforeRender((camera, dt) => {

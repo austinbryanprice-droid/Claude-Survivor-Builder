@@ -446,4 +446,27 @@ test.describe('benchmark', () => {
     expect(await read<number>(page, 'game.look.yaw')).toBe(before);
     expect(await read<number[]>(page, '[game.player.x, game.player.z]')).toEqual(position);
   });
+
+  test('the benchmark has no building hands: B, the number keys and the buttons do nothing', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await open(page, '?bench=1&benchSeconds=120&benchPresets=low&debug');
+    await expect(page.locator('#hud')).toHaveAttribute('data-bench', 'running', {
+      timeout: STATE_TIMEOUT,
+    });
+    await page.mouse.click(480, 270);
+    await expect(page.locator('#hud')).toHaveAttribute('data-pointer', 'locked');
+    await page.keyboard.press('KeyB');
+    await page.keyboard.press('Digit3');
+    await page.evaluate(() => {
+      window.dispatchEvent(new MouseEvent('mousedown', { button: 2, bubbles: true }));
+      window.dispatchEvent(new MouseEvent('mouseup', { button: 2, bubbles: true }));
+    });
+    await page.waitForTimeout(500);
+    const hands = await page.evaluate(() => window.__ashbound?.build?.hands());
+    expect(hands).toMatchObject({ buildMode: false, selected: 0, refusal: null });
+    // Nothing was baked or compiled for blocks the benchmark never draws.
+    expect(await read<boolean>(page, 'game.stage.structureReady')).toBe(false);
+  });
 });
