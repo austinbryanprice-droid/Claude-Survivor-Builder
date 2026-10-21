@@ -106,6 +106,31 @@ export interface KeepClear {
   readonly radius: number;
 }
 
+/** What stands in the way of plants: the blocks players have built. */
+export interface Obstacles {
+  isSolid(x: number, y: number, z: number): boolean;
+  readonly blockCount: number;
+}
+
+/** True when a plant rooted at (x, y, z) sits inside a block or on top of one. */
+export function rootBuried(world: Obstacles, x: number, y: number, z: number): boolean {
+  if (world.blockCount === 0) return false;
+  const cx = Math.floor(x);
+  const cz = Math.floor(z);
+  return world.isSolid(cx, Math.floor(y + 0.05), cz) || world.isSolid(cx, Math.floor(y - 0.05), cz);
+}
+
+/** True when a block stands in the way of a tree trunk, from its foot to the height of a person. */
+export function trunkBlocked(world: Obstacles, x: number, y: number, z: number): boolean {
+  if (world.blockCount === 0) return false;
+  const cx = Math.floor(x);
+  const cz = Math.floor(z);
+  for (let h = -0.05; h < 2.1; h += 1) {
+    if (world.isSolid(cx, Math.floor(y + h), cz)) return true;
+  }
+  return false;
+}
+
 /** Trees for the whole valley, in a stable order. */
 export function scatterTrees(
   seed: number,

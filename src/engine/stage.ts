@@ -7,7 +7,14 @@ import { MaterialRegistry } from './materials';
 import { AdaptiveScale, GpuTimer, MAX_INTERNAL_PIXELS, scaleForPixelBudget } from './perf';
 import { Pipeline, type PipelineStats } from './pipeline';
 import { createSky } from './sky';
-import { bakeTextures, type BakedTextures } from './texture-bake';
+import {
+  bakeStructureTextures,
+  bakeTextures,
+  type BakeOptions,
+  type BakedStructure,
+  type BakedTextures,
+  type StructureTextures,
+} from './texture-bake';
 
 /** Seconds the compressed day-night cycle takes when no fixed moment is chosen. */
 const CLOCK_SECONDS = 120;
@@ -78,6 +85,8 @@ export class Stage {
   private readonly qualityListeners = new Set<QualityListener>();
   private readonly renderListeners = new Set<RenderListener>();
   private readonly skyMesh: Mesh;
+  private readonly bakeOptions: BakeOptions;
+  private structureTiles: BakedStructure | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -103,10 +112,11 @@ export class Stage {
     this.momentName = this.fixedMoment ? options.moment : null;
     this.sky = this.computeSky();
 
-    this.textures = bakeTextures(renderer, {
+    this.bakeOptions = {
       groundSize: quality.name === 'low' ? 256 : 512,
       anisotropy: Math.min(8, renderer.capabilities.getMaxAnisotropy()),
-    });
+    };
+    this.textures = bakeTextures(renderer, this.bakeOptions);
     this.atmosphere = new Atmosphere(this.textures.noise, options.mist);
     const shadowParams = { value: new Vector3(1, 60, 90) };
     this.registry = new MaterialRegistry(this.atmosphere.uniforms, shadowParams);
@@ -122,6 +132,21 @@ export class Stage {
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(canvas);
     this.resize();
+  }
+
+  /** True once the block tiles have been baked. */
+  get structureReady(): boolean {
+    return this.structureTiles !== null;
+  }
+
+  /**
+   * The block tiles, baked the first time they are asked for: a page that never draws a block pays
+   * nothing for them. Call it early (when a player enters Build Mode, or a world with blocks
+   * loads) so that the bake does not land on the frame of the first block.
+   */
+  get structure(): StructureTextures {
+    this.structureTiles ??= bakeStructureTextures(this.renderer, this.bakeOptions);
+    return this.structureTiles;
   }
 
   /** Switches the preset: shadows, post, materials, and whatever the world subscribed with `onQuality`. */
@@ -276,6 +301,7 @@ export class Stage {
     this.pipeline.dispose();
     this.registry.dispose();
     this.textures.dispose();
+    this.structureTiles?.dispose();
     this.renderer.dispose();
   }
 }

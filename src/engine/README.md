@@ -7,6 +7,6 @@ The renderer, camera, input and game loop. This layer may use three.js and the D
 - `input.ts`: keyboard and pointer lock, by physical key, with the F5 rule.
 - `camera-rig.ts`: first and third person, boom clearance against the terrain and the cells, sprint field-of-view kick, landing dip.
 - `bench.ts`, `bench-sweep.ts`: the `?bench=1` state machine (warm-up, a route counted in simulation ticks, a report) and the sweep that runs it once for each quality preset, with the governor off.
-- `atmosphere.ts`, `lighting.ts`, `sky.ts`, `materials.ts`, `lit-material.ts`, `texture-bake.ts`, `pipeline.ts`, `perf.ts`, `glsl/`, `post/`: sky, haze, sun and shadows, the shared lit shaders, procedural textures, the post-processing chain, and the frame governor and GPU timer.
+- `atmosphere.ts`, `lighting.ts`, `sky.ts`, `materials.ts`, `lit-material.ts`, `texture-bake.ts`, `pipeline.ts`, `perf.ts`, `glsl/`, `post/`: sky, haze, sun and shadows, the shared lit shaders, the procedural textures (noise and ground at start-up, the tiles block faces show the first time a block is drawn), the post-processing chain, and the frame governor and GPU timer.
 - `avatar.ts`: the third-person body; it takes an accent colour, so the other players in a room wear their seat's.
 - `remote-players.ts`: the other players in a room: a suit per seat in the seat's colour, walking and turning as its owner does, with a name tag. Poses come already interpolated from the network layer.

@@ -3,7 +3,7 @@
 The composition root: the one place that knows the engine, the world and the interface together. `main.ts` calls `createApp`, which builds the stage, the game loop and the HUD and puts the valley into them. Nothing here is game logic; it is wiring.
 
 - `create-app.ts` reads the URL switches and the saved settings, builds the `Stage`, creates the `Game` with a `createWorld` callback, adds the HUD and starts the loop. With `?debug` it exposes `window.__ashbound` (`{ stage, game }`, and `mp` once multiplayer has loaded). Unless `?bench=1` is on, it then loads `attach-multiplayer.ts` on demand, so the benchmark page and the first paint never pay for the networking code.
-- `valley-world.ts` builds a `ValleyWorld` for a seed: the baked terrain, the empty `VoxelWorld` on top of it (the `BlockWorld` the net layer builds on), the `ValleyView` that draws the terrain, lake, trees and grass, and the collision, spawn and benchmark route the game reads through the engine's `GameWorld` interface. `Game.loadWorld(seed)` calls the same callback again for a new seed.
+- `valley-world.ts` builds a `ValleyWorld` for a seed: the baked terrain, the `VoxelWorld` on top of it (the `BlockWorld` the net layer builds on; empty, unless `?demo=` raises a structure), the `ValleyView` that draws the terrain, lake, trees, grass and blocks, and the collision, spawn and benchmark route the game reads through the engine's `GameWorld` interface. `Game.loadWorld(seed)` calls the same callback again for a new seed.
 - `attach-multiplayer.ts` is the one file that knows both the game and the net glue. It hands `multiplayer.ts` the game's player, world, mouse and scene as narrow views and runs it once a frame (`game.onBeforeRender`). Joining a room calls `game.loadWorld(seed)` (unless the valley with that seed is already up with nothing built on it) and the host's edits are applied to the new world's `BlockWorld`.
 - `multiplayer.ts` builds the lobby, the room panel, the player's movement over the network and the other players' avatars, and leaves the room when the page goes. `createMultiplayer` takes the narrow views and is updated once a frame; it never touches `Game` directly, so it can be driven from tests.
 - `player-sync.ts` sends the local player to the session each frame, flags teleports, and puts the player back where the host says.
@@ -34,6 +34,7 @@ Click the page to take the mouse; Esc gives it back.
 | `shot=<name>`                  | Photo mode: hold the camera at a named viewpoint (see `viewpoints.ts`)       |
 | `time=<moment>`                | Fix the time of day; `clock` runs the day and night cycle instead            |
 | `seed=<n>`                     | Build another valley                                                         |
+| `demo=outpost\|swatch`         | Raise a demo structure before the first frame (`demo` alone: the outpost)    |
 | `terrain=heightfield`          | Mesh the terrain as a smoothed heightfield instead of surface nets           |
 | `scale=<0..1>`                 | Force the internal resolution and switch the adaptive governor off           |
 | `hud=0`                        | Hide the whole HUD (player HUD, panels, overlay, room card), for clean shots |
@@ -42,7 +43,7 @@ Click the page to take the mouse; Esc gives it back.
 | `join=CODE`, `name=Ada`        | Join a room on load; the name to play under                                  |
 | `broker=host:port`, `ice=...`  | Another PeerJS server; STUN and TURN servers (`none` for direct only)        |
 
-The viewpoints are `lake`, `valley`, `canopy`, `crash`, `trail`, `outcrop`, `noon`, `sunset`, `dusk` and `night`. A viewpoint brings its own time of day unless `time=` says otherwise. For example, `/?shot=lake&quality=balanced&hud=0&stats=0&freeze=1` draws the same frame every time.
+The viewpoints are `lake`, `valley`, `canopy`, `crash`, `trail`, `outcrop`, `noon`, `sunset`, `dusk`, `night` and four that look at the demo structures: `outpost` and `gate` for `demo=outpost`, `swatch` and `closeup` for `demo=swatch`. A viewpoint brings its own time of day unless `time=` says otherwise. For example, `/?shot=lake&quality=balanced&hud=0&stats=0&freeze=1` draws the same frame every time.
 
 ## Benchmark
 

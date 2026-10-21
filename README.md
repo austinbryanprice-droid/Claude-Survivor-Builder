@@ -2,7 +2,7 @@
 
 A browser co-op survivor-builder for two to four players. By day you scavenge the wreckage of a crashed orbital station and build a shared outpost from refined, beveled blocks and modular machines. By night rogue machines attack in waves that grow every night.
 
-> **Status: early development.** You can run, jump and look around the Ashbound Valley: seeded terrain, a lake, trees and a golden-hour sky. Up to four players can share the valley (one hosts a room, the others join with a code) and see each other move. Building and enemies are not in yet (the voxel world they build on is). The [roadmap](docs/roadmap.md) lists what comes next.
+> **Status: early development.** You can run, jump and look around the Ashbound Valley: seeded terrain, a lake, trees and a golden-hour sky. Up to four players can share the valley (one hosts a room, the others join with a code) and see each other move. Building and enemies are not in yet (the voxel world they build on is, and `/?demo=outpost` shows blocks drawn in it). The [roadmap](docs/roadmap.md) lists what comes next.
 
 ## Play
 

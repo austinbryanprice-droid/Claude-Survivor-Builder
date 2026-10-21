@@ -24,7 +24,10 @@ import {
   GRASS_CELLS_PER_SIDE,
   TREE_BROADLEAF,
   TREE_PINE,
+  rootBuried,
+  trunkBlocked,
   type GrassField,
+  type Obstacles,
   type TreeSpawn,
 } from '../scatter';
 import { WORLD_HALF } from '../terrain/field';
@@ -371,6 +374,7 @@ export class VegetationRenderer {
   private lastX = Number.POSITIVE_INFINITY;
   private lastZ = Number.POSITIVE_INFINITY;
   private lastY = Number.POSITIVE_INFINITY;
+  private obstacles: Obstacles | null = null;
   stats: VegetationStats = { trees: [0, 0, 0], grass: 0, flowers: 0, triangles: 0 };
 
   constructor(
@@ -525,6 +529,17 @@ export class VegetationRenderer {
     this.refreshStats();
   }
 
+  /** Hides the grass and trees that grow where a block now stands. Null shows them all again. */
+  setObstacles(obstacles: Obstacles | null): void {
+    this.obstacles = obstacles;
+    this.invalidate();
+  }
+
+  /** Re-assembles the instances on the next update, for when the blocks changed. */
+  invalidate(): void {
+    this.lastX = Number.POSITIVE_INFINITY;
+  }
+
   private assembleTrees(cx: number, cy: number, cz: number, q: QualitySettings): void {
     const near = q.treeNearDistance;
     const mid = near * TREE_LOD_MID;
@@ -541,6 +556,7 @@ export class VegetationRenderer {
         const z = d[o + 2] as number;
         const dist = Math.hypot(x - cx, (y - cy) * 0.6, z - cz);
         if (dist > far) continue;
+        if (this.obstacles && trunkBlocked(this.obstacles, x, y, z)) continue;
         const lod = dist < near ? 0 : dist < mid ? 1 : 2;
         const bucket = row[lod] as Bucket;
         const n = bucket.count++;
@@ -599,6 +615,7 @@ export class VegetationRenderer {
             const f = 1 - Math.sqrt(d2) / radius;
             const rank = src[o + 5] as number;
             if (rank >= density * Math.pow(f, falloff)) continue;
+            if (this.obstacles && rootBuried(this.obstacles, x, src[o + 1] as number, z)) continue;
             if (bucket.count >= max) return;
             const n = bucket.count++;
             pos[n * 3] = x;
