@@ -23,6 +23,8 @@ export interface ViewFlags {
   /** Named viewpoint to take photos from (see `world/terrain/viewpoints.ts`); the player walks when absent. */
   readonly shot: string | null;
   readonly terrain: TerrainMode;
+  /** Name of a structure that builds itself on the valley (see `world/voxels/demo.ts`), or null. */
+  readonly demo: string | null;
   /** False hides the whole HUD, for clean screenshots. */
   readonly hud: boolean;
   /** False keeps the frame overlay off even when `?bench` or `?debug` would show it. */
@@ -57,6 +59,7 @@ export function readViewFlags(search: string): ViewFlags {
     clock: p.has('clock') && p.get('clock') !== '0',
     shot: p.get('shot'),
     terrain: p.get('terrain') === 'heightfield' ? 'heightfield' : 'surface-nets',
+    demo: p.get('demo'),
     hud: p.get('hud') !== '0',
     stats: p.get('stats') !== '0',
     freeze: p.has('freeze') && p.get('freeze') !== '0',

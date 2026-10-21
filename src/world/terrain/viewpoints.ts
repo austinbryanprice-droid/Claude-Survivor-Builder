@@ -95,6 +95,55 @@ export const SHOTS: Readonly<Record<string, ShotPose>> = {
     time: 'afternoon',
     note: 'Rock outcrop',
   },
+  // South of the demo outpost, with the lake on the right and the afternoon sun raking its
+  // south face (`?demo=outpost`).
+  outpost: {
+    x: -3,
+    z: 27,
+    height: 5,
+    clear: 8,
+    bearing: 8,
+    pitch: -9,
+    fov: 58,
+    time: 'afternoon',
+    note: 'The demo outpost',
+  },
+  // A few steps east of the outpost, with the golden-hour sun full on its gate (`?demo=outpost`).
+  gate: {
+    x: 14.5,
+    z: 9,
+    height: 3,
+    clear: 7,
+    bearing: 277,
+    pitch: -3,
+    fov: 56,
+    time: 'golden',
+    note: 'The outpost gate at golden hour',
+  },
+  // In front of the four material swatches (`?demo=swatch`): Scrap, Composite, Alloy, Energy.
+  swatch: {
+    x: 8,
+    z: 31,
+    height: 2.6,
+    clear: 9,
+    bearing: 0,
+    pitch: -4,
+    fov: 56,
+    time: 'afternoon',
+    note: 'The four material tiers',
+  },
+  // A few steps from the Alloy swatch, to see its chamfers, grooves and ambient occlusion (`?demo=swatch`).
+  closeup: {
+    x: 9.6,
+    z: 22.5,
+    height: 1.7,
+    clear: 9,
+    bearing: 0,
+    pitch: -3,
+    fov: 56,
+    time: 'afternoon',
+    note: 'Block close-up',
+  },
   noon: {
     x: 0,
     z: 20,

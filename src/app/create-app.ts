@@ -32,6 +32,8 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
   const settings = loadSettings();
   // A named viewpoint brings its own time of day, unless the URL asks for another one.
   const shot = view.shot ? SHOTS[view.shot] : undefined;
+  // A bare `?demo` raises the outpost.
+  const demo = view.demo === '' ? 'outpost' : view.demo;
 
   const stage = createStage({
     canvas,
@@ -48,7 +50,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
     benchPresets: view.benchPresets,
     buildId,
     seed: view.seed,
-    createWorld: (seed) => createValleyWorld(stage, seed, view.terrain),
+    createWorld: (seed) => createValleyWorld(stage, seed, view.terrain, demo),
   });
   if (shot) game.setPhoto(shotPose(shot, game.world.groundAt));
 

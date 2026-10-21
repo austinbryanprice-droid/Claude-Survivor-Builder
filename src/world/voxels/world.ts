@@ -77,6 +77,7 @@ export class VoxelWorld implements BlockWorld {
   private readonly dirtyListeners = new Set<ChunkDirtyListener>();
   private lastChunk: Chunk | null = null;
   private cellCount = 0;
+  private editCount = 0;
 
   constructor(
     readonly seed: number,
@@ -86,6 +87,11 @@ export class VoxelWorld implements BlockWorld {
   /** How many cells hold a block. */
   get blockCount(): number {
     return this.cellCount;
+  }
+
+  /** Counts every change to a cell, so a reader can tell cheaply that something moved. */
+  get revision(): number {
+    return this.editCount;
   }
 
   /** How many chunks hold at least one block. */
@@ -132,6 +138,7 @@ export class VoxelWorld implements BlockWorld {
     }
     chunk.cells[index] = state;
     chunk.version++;
+    this.editCount++;
     const delta = (state !== 0 ? 1 : 0) - (previous !== 0 ? 1 : 0);
     chunk.count += delta;
     this.cellCount += delta;

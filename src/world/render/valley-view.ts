@@ -5,10 +5,12 @@ import type { TerrainMode } from '../../shared/view-flags';
 import { GrassField, createScatterGround, scatterTrees, type KeepClear } from '../scatter';
 import type { Terrain } from '../terrain/terrain';
 import { SHOTS } from '../terrain/viewpoints';
+import type { VoxelWorld } from '../voxels/world';
 import { BackdropRenderer } from './backdrop-render';
 import { bakeFoliageTextures, type FoliageTextures } from './foliage-textures';
 import { bakeGroundMaps, TerrainRenderer } from './terrain-render';
 import { VegetationRenderer } from './vegetation-render';
+import { VoxelRenderer } from './voxel-render';
 import { WaterRenderer } from './water-render';
 
 /** Trees keep this far from a viewpoint unless the viewpoint asks for more. */
@@ -21,25 +23,28 @@ export interface ValleyBuildTimings {
 }
 
 /**
- * The valley as the stage draws it: the terrain mesh, the distant hills, the lake, and the trees
- * and grass scattered over the ground. It follows the stage's quality preset and gets a callback
- * before every frame to hide what is out of range. Everything is built for one terrain, so a new
- * seed means a new view.
+ * The valley as the stage draws it: the terrain mesh, the distant hills, the lake, the trees and
+ * grass scattered over the ground, and the blocks players have built on it. It follows the stage's
+ * quality preset and gets a callback before every frame to hide what is out of range and to mesh
+ * the blocks that changed. Everything is built for one terrain, so a new seed means a new view.
  */
 export class ValleyView {
   readonly terrain: TerrainRenderer;
   readonly backdrop: BackdropRenderer;
   readonly water: WaterRenderer | null;
   readonly vegetation: VegetationRenderer;
+  readonly structures: VoxelRenderer;
   readonly foliage: FoliageTextures;
   readonly buildMs: ValleyBuildTimings;
   private readonly stopQuality: () => void;
   private readonly stopRender: () => void;
+  private seenRevision = 0;
 
   constructor(
     private readonly stage: Stage,
     data: Terrain,
     mode: TerrainMode,
+    private readonly voxels: VoxelWorld,
     /** Places where no tree may grow, beside the viewpoints that always stay clear. */
     keepClear: readonly KeepClear[] = [],
   ) {
@@ -74,6 +79,8 @@ export class ValleyView {
       registry,
     );
     this.buildMs = { mesh: this.terrain.stats.meshMs, scatter: performance.now() - t0 };
+    this.structures = new VoxelRenderer(stage, voxels);
+    this.vegetation.setObstacles(voxels);
 
     // The planar water reflection is drawn from the lake's side of the scene, before the main view.
     stage.pipeline.beforeScene = (camera) =>
@@ -99,13 +106,19 @@ export class ValleyView {
   /** Hides what is out of range and moves the grass and trees that follow the camera. */
   update(camera: Camera): void {
     this.terrain.update(camera);
+    if (this.voxels.revision !== this.seenRevision) {
+      this.seenRevision = this.voxels.revision;
+      this.vegetation.invalidate();
+    }
     this.vegetation.update(camera);
+    this.structures.update(camera);
   }
 
   dispose(): void {
     this.stopQuality();
     this.stopRender();
     this.stage.pipeline.beforeScene = null;
+    this.structures.dispose();
     this.vegetation.dispose();
     this.foliage.dispose();
     this.backdrop.dispose();

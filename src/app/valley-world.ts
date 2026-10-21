@@ -7,6 +7,7 @@ import { createTerrainGround } from '../world/terrain/collision';
 import { CRASH, LAKE, WATER_LEVEL, WORLD_HALF } from '../world/terrain/field';
 import { bakeTerrain, type Terrain } from '../world/terrain/terrain';
 import { SHOTS, SPAWN_SHOT, createFlyRoute, yawFromBearing } from '../world/terrain/viewpoints';
+import { buildDemo, isDemoName } from '../world/voxels/demo';
 import { createWorld, type VoxelWorld } from '../world/voxels/world';
 
 /** The colored mist pockets sit over the lake and the crash site, wherever the seed puts the hills. */
@@ -30,13 +31,22 @@ export interface ValleyWorld extends GameWorld {
 /**
  * Builds the valley for a seed and draws it on the stage. The terrain answers collision as smooth
  * ground and the voxel world answers it as cells, so a player stands on both. The seed alone makes
- * the terrain, so a joining player builds the same hills from the host's number.
+ * the terrain, so a joining player builds the same hills from the host's number. `demo` names a
+ * structure from `world/voxels/demo.ts` to raise before the first frame, for looking at the blocks.
  */
-export function createValleyWorld(stage: Stage, seed: number, mode: TerrainMode): ValleyWorld {
+export function createValleyWorld(
+  stage: Stage,
+  seed: number,
+  mode: TerrainMode,
+  demo: string | null = null,
+): ValleyWorld {
   const started = performance.now();
   const terrain = bakeTerrain(seed);
   const voxels = createWorld(seed, terrain);
-  const view = new ValleyView(stage, terrain, mode);
+  const built = isDemoName(demo) ? buildDemo(voxels, demo) : null;
+  const view = new ValleyView(stage, terrain, mode, voxels, built ? [built.clearing] : []);
+  // A demo is on screen from the first frame; blocks that arrive in play go through the remesh budget.
+  if (built) view.structures.meshAll();
   const { grid } = terrain;
   const groundAt = (x: number, z: number): number => grid.groundAt(x, z);
 

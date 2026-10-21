@@ -2,7 +2,8 @@
  * One-time GPU bake of the tileable procedural textures: a shared noise atlas, water ripple
  * normals and the ground layers (grass, rock, dirt, ash, beach). Baking on the GPU takes
  * milliseconds where the same patterns on the CPU would take seconds. All noise is periodic so
- * every texture tiles.
+ * every texture tiles. The hash, noise and color helpers are exported as `BAKE_COMMON` so the
+ * structure tiles (`structure-bake.glsl.ts`) bake with the same ones.
  */
 
 export const BAKE_VERTEX = /* glsl */ `
@@ -13,12 +14,11 @@ void main() {
 }
 `;
 
-export const BAKE_FRAGMENT = /* glsl */ `
+/** Hash, periodic noise, Worley and color helpers shared by every bake shader. */
+export const BAKE_COMMON = /* glsl */ `
 precision highp float;
 precision highp int;
 varying vec2 vUv;
-uniform int uLayer;
-uniform float uSeed;
 
 uvec2 pcg2d(uvec2 v) {
   v = v * 1664525u + 1013904223u;
@@ -110,6 +110,12 @@ float worleyId(vec2 p, int period, int seed) {
 
 vec3 toLinear(vec3 c) { return pow(c, vec3(2.2)); }
 vec3 hex(float r, float g, float b) { return toLinear(vec3(r, g, b) / 255.0); }
+`;
+
+export const BAKE_FRAGMENT = /* glsl */ `
+${BAKE_COMMON}
+uniform int uLayer;
+uniform float uSeed;
 
 // Layer 0: tileable noise atlas. R, G, B: fbm at three scales; A: Worley F1.
 vec4 bakeNoise(vec2 uv) {
