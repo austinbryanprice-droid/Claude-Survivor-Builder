@@ -9,3 +9,4 @@ The renderer, camera, input and game loop. This layer may use three.js and the D
 - `proving-ground-layout.ts`, `proving-ground.ts`: the Phase 1 test deck, as pure data and as meshes.
 - `environment.ts`, `textures.ts`, `avatar.ts`: sun, sky, fog and shadows; procedural textures; the third-person body.
 - `stage.ts`: the renderer, scene and camera, and the render loop.
+- `remote-players.ts`: the other players in a room: a suit per seat in the seat's colour, walking and turning as its owner does, with a name tag. Poses come already interpolated from the network layer.

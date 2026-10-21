@@ -8,3 +8,7 @@ Pure TypeScript with no DOM, no three.js and no imports from other layers: hashi
 - `settings.ts`: player preferences and their limits.
 - `frame-stats.ts`, `bench-report.ts`: frame-time statistics and the benchmark report.
 - `hash.ts`, `flags.ts`: integer hashing and seeded random numbers; URL switches.
+- `protocol.ts`, `wire.ts`, `net-config.ts`: the multiplayer message shapes (commands, events, control frames, why a room ended and what to tell the player), the codec that turns them into bytes and back (everything from the other side is untrusted and checked), and every network number in one table.
+- `clock-sync.ts`, `interpolation.ts`, `move-guard.ts`: the clock offset between host and guest, how other players are drawn smoothly from late and lost samples, and the host's sanity check of a guest's own movement.
+- `room-code.ts`, `names.ts`, `net-flags.ts`, `player-colors.ts`: room codes and what players type, names and tokens, the `?join=`, `?broker=` and `?ice=` switches and invite links, and one colour per seat.
+- `block-digest.ts`: a fingerprint of every player-made block, to compare worlds.

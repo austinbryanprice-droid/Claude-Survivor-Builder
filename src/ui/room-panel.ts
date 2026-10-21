@@ -497,7 +497,7 @@ export function createRoomPanel(options: RoomPanelOptions): RoomPanel {
       if (document.activeElement !== linkField) linkField.value = link;
       roster.update(state.roster, state.localId);
       roomHint.textContent = hosting
-        ? 'Friends type the code on this screen, or open the invite link. Keep this tab open: if you leave, the session ends for everyone. There is no host migration yet.'
+        ? 'Friends type the code on this screen, or open the invite link. Keep this tab open and visible: if you leave, the session ends for everyone. There is no host migration yet.'
         : 'If the host leaves, the session ends for everyone. There is no host migration yet.';
       offline.hidden = !(hosting && !state.roomOnline);
       leaveButton.textContent = hosting ? 'Close room' : 'Leave room';
