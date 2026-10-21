@@ -47,9 +47,28 @@ body {
   user-select: none;
 }
 
+#loading {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(232 238 245 / 70%);
+  background: radial-gradient(ellipse at 50% 60%, #1c2a38 0%, var(--bg) 70%);
+  pointer-events: none;
+}
+
+body.no-hud #build-tag {
+  display: none;
+}
+
 #fatal {
   position: fixed;
   inset: 0;
+  z-index: 20;
   display: grid;
   place-items: center;
   padding: 24px;

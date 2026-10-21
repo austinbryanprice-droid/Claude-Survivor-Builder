@@ -1,13 +1,16 @@
 import { PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { createCameraRig, type RigFrame } from '../../src/engine/camera-rig';
-import { buildProvingGround } from '../../src/engine/proving-ground-layout';
+import { buildProvingGround } from './helpers/proving-ground';
 import { overlapsSolid } from '../../src/shared/collision';
 import { createRng } from '../../src/shared/hash';
-import { MOVEMENT, PLAYER, createPlayerState } from '../../src/shared/movement';
+import { GROUND_SPHERES, MOVEMENT, PLAYER, createPlayerState } from '../../src/shared/movement';
 import { DEFAULT_SETTINGS } from '../../src/shared/settings';
-import type { SparseCells, SolidQuery } from '../../src/shared/solid';
+import type { CollisionWorld } from '../../src/shared/ground';
+import type { SparseCells } from '../../src/shared/solid';
 import { flatWorld } from './helpers';
+import { groundWorld, tiltedPlane } from './helpers/ground';
+import { valley } from './helpers/valley';
 
 const DT = 1 / 60;
 
@@ -30,7 +33,7 @@ function settle(rig: ReturnType<typeof createCameraRig>, f: RigFrame, seconds = 
   for (let i = 0; i < Math.round(seconds / DT); i++) rig.update(f);
 }
 
-function setup(world: SolidQuery = flatWorld()) {
+function setup(world: CollisionWorld = flatWorld()) {
   const camera = new PerspectiveCamera(70, 16 / 9, 0.05, 500);
   const rig = createCameraRig(camera, world);
   return { camera, rig, world };
@@ -207,6 +210,67 @@ describe('third person near walls', () => {
       checked++;
     }
     expect(checked).toBeGreaterThan(2500);
+  });
+});
+
+describe('third person near terrain', () => {
+  /** How far a point is from the plane the ground tilts about, for ground that rises toward +x. */
+  const gap = (angle: number, p: { x: number; y: number; z: number }): number =>
+    p.x * -Math.sin(angle) + p.y * Math.cos(angle);
+
+  it('stays above flat ground when the view looks up and the boom would go through it', () => {
+    const { camera, rig } = setup(groundWorld(tiltedPlane(0)));
+    rig.setMode('third', true);
+    const at = { x: 0, y: 0, z: 0 };
+    settle(rig, frame({ previous: at, current: at, look: { yaw: 0, pitch: 0.9 } }), 2);
+    expect(rig.boomLength).toBeLessThan(3.4);
+    expect(camera.position.y).toBeGreaterThanOrEqual(0.32 - 1e-6);
+  });
+
+  it('keeps clear of a hillside behind the player', () => {
+    const angle = 0.6;
+    const { camera, rig } = setup(groundWorld(tiltedPlane(angle)));
+    rig.setMode('third', true);
+    // Yaw pi/2 faces -x, so the camera sits on the uphill side, behind the player.
+    const at = { x: 0, y: 0, z: 0 };
+    settle(rig, frame({ previous: at, current: at, look: { yaw: Math.PI / 2, pitch: 0 } }), 2);
+    expect(gap(angle, camera.position)).toBeGreaterThanOrEqual(0.32 - 1e-6);
+    expect(rig.boomLength).toBeLessThan(3.4);
+  });
+
+  it('is not pulled in where there is nothing in the way', () => {
+    const { rig } = setup(groundWorld(tiltedPlane(0)));
+    rig.setMode('third', true);
+    const at = { x: 0, y: 3, z: 0 };
+    settle(rig, frame({ previous: at, current: at, look: { yaw: 0, pitch: -0.2 } }), 2);
+    expect(rig.boomLength).toBeCloseTo(3.4, 2);
+  });
+
+  it('never puts the camera inside the real terrain', () => {
+    const { grid } = valley();
+    const world = groundWorld(grid, 95);
+    const rng = createRng(77);
+    const { camera, rig } = setup(world);
+    rig.setMode('third', true);
+    let checked = 0;
+    for (let i = 0; i < 900; i++) {
+      const x = (rng() - 0.5) * 180;
+      const z = (rng() - 0.5) * 180;
+      const at = { x, y: grid.groundAt(x, z), z };
+      // The player cannot stand inside rock, so a spot that puts the body in it is not a case.
+      if (GROUND_SPHERES.heights.some((h) => grid.sample(x, at.y + h, z) < GROUND_SPHERES.radius)) {
+        continue;
+      }
+      const look = { yaw: rng() * Math.PI * 2, pitch: (rng() - 0.5) * 2.4 };
+      rig.update(frame({ dt: 1, previous: at, current: at, look }));
+      const { x: cx, y: cy, z: cz } = camera.position;
+      expect(
+        grid.sample(cx, cy, cz),
+        `player ${x.toFixed(1)}, ${z.toFixed(1)} yaw ${look.yaw}`,
+      ).toBeGreaterThan(0.2);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(300);
   });
 });
 

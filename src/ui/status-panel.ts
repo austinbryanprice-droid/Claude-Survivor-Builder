@@ -8,11 +8,11 @@ import { el, keycap } from './dom';
 
 export interface StatusPanel {
   readonly element: HTMLElement;
-  /** Brings the camera hint in line with the current view. Call whenever the view switches. */
+  /** Brings the camera and graphics hints in line with the game. Call whenever either changes. */
   refresh(): void;
 }
 
-const AREA_NAME = 'Proving ground';
+const AREA_NAME = 'Ashbound Valley';
 
 export function createStatusPanel(game: Game): StatusPanel {
   const root = el('aside', 'hud-panel status-panel');
@@ -29,12 +29,15 @@ export function createStatusPanel(game: Game): StatusPanel {
     return text;
   };
   const cameraHint = hint('V', '');
+  const qualityHint = hint('P', '');
   hint('F3', 'Frame times');
   hint('Esc', 'Free the mouse');
   root.append(hints);
 
   const refresh = (): void => {
     cameraHint.textContent = game.rig.mode === 'first' ? 'First person' : 'Third person';
+    const { name } = game.stage.quality;
+    qualityHint.textContent = `Graphics: ${name.charAt(0).toUpperCase()}${name.slice(1)}`;
   };
   refresh();
 

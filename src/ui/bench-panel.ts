@@ -1,8 +1,12 @@
 import type { Game } from '../engine/game';
-import { TARGET_FPS, formatBenchReport, holdsTarget } from '../shared/bench-report';
+import { TARGET_FPS, holdsTarget } from '../shared/bench-report';
+import { formatSweepReport, type PresetRun } from '../shared/sweep-report';
 import { el } from './dom';
 
-/** The benchmark's progress banner and its results card. */
+/**
+ * The benchmark's progress banner and its results card. `?bench=1` flies the valley once for each
+ * preset; the card shows how each one did and the report to paste back into the thread.
+ */
 
 export interface BenchPanel {
   /** Progress banner shown while the run takes over the controls. */
@@ -15,8 +19,10 @@ export interface BenchPanel {
   refresh(): void;
 }
 
+const capitalized = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
+
 export function createBenchPanel(game: Game, onChange: () => void): BenchPanel {
-  const bench = game.bench;
+  const sweep = game.sweep;
 
   const banner = el('div', 'hud-panel bench-banner');
   banner.setAttribute('role', 'status');
@@ -44,7 +50,7 @@ export function createBenchPanel(game: Game, onChange: () => void): BenchPanel {
   };
   const rerun = (): void => {
     dismissed = false;
-    bench.start();
+    sweep.start();
   };
 
   const button = (label: string, primary: boolean, onClick: () => void): HTMLButtonElement => {
@@ -60,45 +66,92 @@ export function createBenchPanel(game: Game, onChange: () => void): BenchPanel {
     return tile;
   };
 
+  const table = (runs: readonly PresetRun[]): HTMLElement => {
+    const grid = el('table', 'bench-table');
+    const head = el('tr');
+    for (const name of ['Preset', 'Size', 'FPS', 'p95 ms', 'GPU ms', `Holds ${TARGET_FPS}`]) {
+      head.append(el('th', undefined, name));
+    }
+    grid.append(head);
+    for (const run of runs) {
+      const frames = run.report.frames;
+      const holds = holdsTarget(frames);
+      const row = el('tr');
+      row.dataset.preset = run.preset;
+      row.dataset.holds = holds ? 'yes' : 'no';
+      for (const text of [
+        capitalized(run.preset),
+        `${run.width}×${run.height}`,
+        frames.fps.toFixed(1),
+        frames.p95Ms.toFixed(1),
+        run.gpu ? run.gpu.avgMs.toFixed(1) : '-',
+        holds ? 'yes' : 'no',
+      ]) {
+        row.append(el('td', undefined, text));
+      }
+      grid.append(row);
+    }
+    return grid;
+  };
+
   const drawResults = (): void => {
     card.replaceChildren();
     card.append(el('p', 'kicker', 'Benchmark'));
-    const { report } = bench;
-    if (bench.state === 'cancelled' || !report) {
-      card.append(el('h1', undefined, 'Run stopped'));
-      card.append(el('p', 'lede', bench.note || 'The run did not finish.'));
+    const runs = sweep.runs;
+    // Balanced is the preset that has to hold 60; it speaks for the sweep when it ran.
+    const headline = runs.find((run) => run.preset === 'balanced') ?? runs[0];
+    const stopped = sweep.state === 'cancelled';
+    const rerunRow = (...extra: HTMLElement[]): HTMLElement => {
       const row = el('div', 'button-row');
-      row.append(button('Run again', true, rerun), button('Back to game', false, dismiss));
-      card.append(row);
+      row.append(
+        ...extra,
+        button('Run again', !headline, rerun),
+        button('Back to game', false, dismiss),
+      );
+      return row;
+    };
+
+    if (stopped) {
+      card.append(el('h1', undefined, 'Run stopped'));
+      const finished =
+        runs.length > 0 ? ` ${runs.length} of ${sweep.presetCount} presets finished.` : '';
+      card.append(el('p', 'lede', `${sweep.note || 'The run did not finish.'}${finished}`));
+    } else if (headline) {
+      const holds = holdsTarget(headline.report.frames);
+      card.append(
+        el(
+          'h1',
+          holds ? 'good' : 'warn',
+          holds
+            ? `${capitalized(headline.preset)} holds ${TARGET_FPS} FPS`
+            : `${capitalized(headline.preset)} is below ${TARGET_FPS} FPS`,
+        ),
+      );
+      card.append(
+        el(
+          'p',
+          'lede',
+          `${runs.length} presets, ${sweep.seconds} s of valley each, on a display of about ${headline.report.refreshHz} Hz.`,
+        ),
+      );
+    }
+    if (!headline) {
+      card.append(rerunRow());
       return;
     }
 
-    const holds = holdsTarget(report.frames);
-    card.append(
-      el(
-        'h1',
-        holds ? 'good' : 'warn',
-        holds ? `Holds ${TARGET_FPS} FPS` : `Below ${TARGET_FPS} FPS`,
-      ),
-    );
-    card.append(
-      el(
-        'p',
-        'lede',
-        `${report.frames.frames} frames over ${report.wallSeconds.toFixed(1)} s on a display of about ${report.refreshHz} Hz.`,
-      ),
-    );
+    const frames = headline.report.frames;
     const stats = el('div', 'stats');
     stats.append(
-      stat(report.frames.fps.toFixed(1), 'average FPS'),
-      stat(`${report.frames.p95Ms.toFixed(1)} ms`, '95th percentile'),
-      stat(report.frames.low1PctFps.toFixed(0), 'slowest 1% FPS'),
-      stat(String(report.frames.slowFrames), 'frames over 33 ms'),
+      stat(frames.fps.toFixed(1), `average FPS, ${headline.preset}`),
+      stat(`${frames.p95Ms.toFixed(1)} ms`, '95th percentile'),
+      stat(frames.low1PctFps.toFixed(0), 'slowest 1% FPS'),
+      stat(String(frames.slowFrames), 'frames over 33 ms'),
     );
-    card.append(stats);
-    card.append(el('p', 'gpu-line', `GPU: ${report.environment.gpu}`));
+    card.append(stats, table(runs));
+    card.append(el('p', 'gpu-line', `GPU: ${headline.report.environment.gpu}`));
 
-    const text = formatBenchReport(report);
+    const text = formatSweepReport(runs, game.sweepExtras());
     const pre = el('pre', 'report-text', text);
     pre.tabIndex = 0;
     card.append(pre);
@@ -125,13 +178,8 @@ export function createBenchPanel(game: Game, onChange: () => void): BenchPanel {
         })
         .catch(selectText);
     });
-    const row = el('div', 'button-row');
-    row.append(
-      copy,
-      button('Run again', false, rerun),
-      button('Back to game', false, dismiss),
-      status,
-    );
+    const row = rerunRow(copy);
+    row.append(status);
     card.append(row);
   };
 
@@ -139,21 +187,22 @@ export function createBenchPanel(game: Game, onChange: () => void): BenchPanel {
     banner,
     results,
     get showingResults() {
-      return (bench.state === 'done' || bench.state === 'cancelled') && !dismissed;
+      return (sweep.state === 'done' || sweep.state === 'cancelled') && !dismissed;
     },
     refresh() {
-      const state = bench.state;
-      banner.hidden = !bench.takesOver;
-      if (bench.takesOver) {
-        bannerText.textContent =
-          state === 'warmup'
-            ? 'Benchmark: warming up'
-            : `Benchmark: ${Math.round(bench.progress * bench.scriptSeconds)} of ${bench.scriptSeconds} s`;
-        fill.style.width = `${Math.round(bench.progress * 100)}%`;
+      banner.hidden = !sweep.active;
+      if (sweep.active) {
+        const preset = capitalized(sweep.preset ?? '');
+        const where = `${preset} (${sweep.presetNumber + 1} of ${sweep.presetCount})`;
+        bannerText.textContent = sweep.warmingUp
+          ? `Benchmark: ${where}, warming up`
+          : `Benchmark: ${where}, ${Math.round(sweep.progress * 100)}%`;
+        const overall = (sweep.presetNumber + sweep.progress) / Math.max(1, sweep.presetCount);
+        fill.style.width = `${Math.round(overall * 100)}%`;
       }
-      if (state === 'done' || state === 'cancelled') {
-        // Draw the card once per finished run, not on every refresh.
-        const key = `${state}:${bench.report?.finishedAt ?? bench.note}`;
+      if (sweep.state === 'done' || sweep.state === 'cancelled') {
+        // Draw the card once per finished sweep, not on every refresh.
+        const key = `${sweep.state}:${sweep.runs.length}:${sweep.runs.at(-1)?.report.finishedAt ?? sweep.note}`;
         if (key !== drawnFor) {
           drawnFor = key;
           dismissed = false;

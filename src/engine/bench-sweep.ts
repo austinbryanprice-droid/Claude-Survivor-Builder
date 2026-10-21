@@ -1,11 +1,11 @@
-import { createBenchmark, type Benchmark } from '../engine/bench';
+import { createBenchmark, type Benchmark } from './bench';
 import type { BenchEnvironment, BenchReport } from '../shared/bench-report';
 import { TICK_SECONDS, createFixedStepper } from '../shared/fixed-step';
 import { summarizeFrames } from '../shared/frame-stats';
 import type { QualityName } from '../shared/quality';
-import type { PresetRun } from './bench-report';
+import type { PresetRun } from '../shared/sweep-report';
 
-/** What the sweep needs from the look scene, so tests can stand in for it. */
+/** What the sweep needs from the game, so tests can stand in for it. */
 export interface SweepTarget {
   readonly quality: { readonly name: QualityName };
   /** Size and counts of the latest frame, all passes included. */
@@ -34,11 +34,11 @@ export interface SweepTarget {
 export type SweepState = 'idle' | 'running' | 'done' | 'cancelled';
 
 /**
- * The game page's `?bench=1`, flown through the valley once per preset. Each flight is one run
- * of the shared benchmark (`src/engine/bench.ts`): the same warm-up, the same route counted in
- * simulation ticks so every machine sees the same views, and the same report and pass mark. The
- * sweep adds what only this page has: it switches presets between runs with the adaptive
- * resolution governor off, and it keeps GPU time and draw counts for each one.
+ * The game's `?bench=1`, flown through the valley once per preset. Each flight is one run of the
+ * benchmark state machine (`bench.ts`): the same warm-up, the same route counted in simulation
+ * ticks so every machine sees the same views, and the same report and pass mark. The sweep
+ * switches presets between runs with the adaptive resolution governor off, and it keeps GPU time
+ * and draw counts for each one.
  */
 export class PresetSweep {
   state: SweepState = 'idle';

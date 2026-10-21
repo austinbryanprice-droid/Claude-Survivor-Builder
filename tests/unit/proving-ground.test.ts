@@ -7,7 +7,7 @@ import {
   WALL_HEIGHT,
   buildProvingGround,
   type ProvingGround,
-} from '../../src/engine/proving-ground-layout';
+} from './helpers/proving-ground';
 import { overlapsSolid } from '../../src/shared/collision';
 import { TICK_SECONDS } from '../../src/shared/fixed-step';
 import {

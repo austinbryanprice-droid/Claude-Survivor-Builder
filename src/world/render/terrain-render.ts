@@ -22,13 +22,11 @@ import {
 } from '../../engine/glsl/lighting.glsl';
 import type { MaterialRegistry } from '../../engine/materials';
 import type { BakedTextures } from '../../engine/texture-bake';
+import type { TerrainMode } from '../../shared/view-flags';
 import { WATER_LEVEL, WORLD_HALF, WORLD_SIZE, type TerrainField } from '../terrain/field';
 import { GRID_MARGIN, type SdfGrid } from '../terrain/grid';
 import { meshHeightfield } from '../terrain/heightfield';
 import { meshRegion, surfaceHeightRange, type TerrainMeshData } from '../terrain/surface-nets';
-
-/** How the terrain mesh is built: the real mesher, or the smoothed heightfield it is measured against. */
-export type TerrainMode = 'surface-nets' | 'heightfield';
 
 /** Horizontal size of one terrain chunk in meters (a block of 2 by 2 view-distance chunks). */
 export const CHUNK_SIZE = 32;

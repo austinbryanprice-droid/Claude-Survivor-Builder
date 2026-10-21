@@ -1,13 +1,13 @@
-import { createRng } from '../shared/hash';
-import { SparseCells, type SolidQuery } from '../shared/solid';
+import { createRng } from '../../../src/shared/hash';
+import { SparseCells, type SolidQuery } from '../../../src/shared/solid';
 
 /**
- * The Phase 1 test scene: a walled deck with the things movement has to get right (stairs,
- * jumping gaps, doorways, tunnels, slalom pillars). It is a stand-in until Phase 2 brings real
- * terrain and blocks. This file is pure data so unit tests can walk the same layout the player sees.
+ * A walled deck with the things cell-based movement has to get right (stairs, jumping gaps,
+ * doorways, tunnels, slalom pillars). It began as the Phase 1 test scene the player walked on; the
+ * valley replaced it in Phase 2, and the movement and camera tests keep using it as a fixture.
  *
  * The floor's top is y = 0 and a cell is one block. The middle of the deck, out to 12 blocks in
- * every direction, is kept empty: the benchmark flythrough circles there.
+ * every direction, is kept empty.
  */
 
 /** Outermost cell coordinate of the deck on each side; the wall ring stands on the edge cells. */

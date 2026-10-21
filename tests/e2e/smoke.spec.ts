@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('boots to a lit scene with the pause panel up and no console errors', async ({
+test('boots to the valley with the pause panel up and no console errors', async ({
   page,
 }, testInfo) => {
   const problems: string[] = [];
@@ -9,7 +9,7 @@ test('boots to a lit scene with the pause panel up and no console errors', async
   });
   page.on('pageerror', (error) => problems.push(`page error: ${error.message}`));
 
-  await page.goto('./?debug');
+  await page.goto('./?debug&quality=low');
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'true');
 
   const box = await page.locator('canvas#game').boundingBox();
@@ -19,17 +19,21 @@ test('boots to a lit scene with the pause panel up and no console errors', async
   // Render once more and read pixels in the same task, before the browser composites the frame.
   // That proves the canvas itself holds the scene (a sky above, ground below), not just the page.
   const pixels = await page.evaluate(() => {
-    const stage = window.__ashbound?.stage;
-    if (!stage) throw new Error('window.__ashbound is missing; is the ?debug switch on?');
-    stage.renderer.render(stage.scene, stage.camera);
-    const gl = stage.renderer.getContext();
+    const app = window.__ashbound;
+    if (!app) throw new Error('window.__ashbound is missing; is the ?debug switch on?');
+    app.game.renderNow();
+    const gl = app.stage.renderer.getContext();
     const read = (x: number, y: number): number[] => {
       const out = new Uint8Array(4);
       gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, out);
       return Array.from(out);
     };
     const { width, height } = gl.canvas;
-    return { sky: read(width >> 1, height - 8), ground: read(width >> 1, 8) };
+    return {
+      sky: read(width >> 1, height - 8),
+      middle: read(width >> 1, height >> 1),
+      ground: read(width >> 1, 8),
+    };
   });
   const [skyR = 0, , skyB = 0] = pixels.sky;
   const [groundR = 0, groundG = 0, groundB = 0] = pixels.ground;
@@ -37,8 +41,11 @@ test('boots to a lit scene with the pause panel up and no console errors', async
   expect(skyB).toBeGreaterThan(80);
   expect(groundR + groundG + groundB).toBeGreaterThan(60);
   expect(pixels.sky).not.toEqual(pixels.ground);
+  expect(pixels.middle).not.toEqual(pixels.sky);
 
   await expect(page.locator('#build-tag')).toContainText('Ashbound Outpost');
+  // The loading text is gone once the valley is built.
+  await expect(page.locator('#loading')).toHaveCount(0);
   await expect(page.locator('.pause')).toBeVisible();
   await expect(page.locator('#hud')).toHaveAttribute('data-pointer', 'free');
   await expect(page.locator('#fatal')).toBeHidden();

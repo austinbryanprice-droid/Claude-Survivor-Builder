@@ -50,35 +50,6 @@
   text-transform: uppercase;
 }
 
-/* Crosshair: a ring with a dot, readable on both bright and dark ground. */
-
-.crosshair {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 18px;
-  height: 18px;
-  margin: -9px 0 0 -9px;
-  border: 1px solid rgb(244 234 210 / 60%);
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 1px rgb(0 0 0 / 35%),
-    inset 0 0 0 1px rgb(0 0 0 / 25%);
-}
-
-.crosshair::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 4px;
-  height: 4px;
-  margin: -2px 0 0 -2px;
-  border-radius: 50%;
-  background: var(--ink);
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 45%);
-}
-
 /* Buttons and key caps. */
 
 .key {
@@ -133,6 +104,7 @@
 .play-button:focus-visible,
 .quiet-button:focus-visible,
 .setting input:focus-visible,
+.setting select:focus-visible,
 .report-text:focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
@@ -144,6 +116,7 @@
 .bench-results {
   position: absolute;
   inset: 0;
+  z-index: 5;
   display: grid;
   place-items: center;
   padding: 16px;
@@ -263,6 +236,26 @@
   accent-color: var(--amber);
 }
 
+.setting.choice {
+  grid-template-columns: 150px 1fr;
+}
+
+.setting select {
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 7%);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.setting select option {
+  background: #161c25;
+  color: var(--ink);
+}
+
 .footnote {
   margin-top: 18px;
   color: rgb(244 234 210 / 38%);
@@ -274,6 +267,7 @@
 
 .status-panel {
   position: absolute;
+  z-index: 4;
   right: 16px;
   bottom: 16px;
   min-width: 190px;
@@ -309,7 +303,8 @@
 
 .frame-overlay {
   position: absolute;
-  top: 12px;
+  z-index: 4;
+  bottom: 34px;
   left: 12px;
   width: 320px;
   padding: 10px 12px 11px;
@@ -385,7 +380,8 @@
 
 .bench-banner {
   position: absolute;
-  top: 14px;
+  z-index: 4;
+  top: 96px;
   left: 50%;
   display: flex;
   align-items: center;
@@ -481,6 +477,66 @@
   font-size: 12px;
 }
 
+.bench-table {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font:
+    12px/1.5 ui-monospace,
+    'SF Mono',
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.bench-table th,
+.bench-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.bench-table th {
+  color: var(--ink-dim);
+  font-weight: 600;
+}
+
+.bench-table th:first-child,
+.bench-table td:first-child {
+  text-align: left;
+}
+
+.bench-table tr[data-holds='yes'] td:last-child {
+  color: var(--cyan);
+}
+
+.bench-table tr[data-holds='no'] td:last-child {
+  color: var(--amber);
+}
+
+/* A short message after a key press, such as the new graphics preset. */
+
+.toast {
+  position: absolute;
+  z-index: 6;
+  top: 22%;
+  left: 50%;
+  padding: 7px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgb(14 20 27 / 72%);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  transform: translateX(-50%);
+  transition: opacity 0.25s ease;
+}
+
+.toast.on {
+  opacity: 1;
+}
+
 @media (max-width: 560px) {
   .controls {
     grid-template-columns: 1fr;
@@ -492,5 +548,9 @@
 
   .setting {
     grid-template-columns: 110px 1fr 48px;
+  }
+
+  .setting.choice {
+    grid-template-columns: 110px 1fr;
   }
 }

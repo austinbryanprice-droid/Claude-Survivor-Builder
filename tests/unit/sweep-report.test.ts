@@ -8,7 +8,7 @@ import {
 } from '../../src/shared/bench-report';
 import { summarizeFrames } from '../../src/shared/frame-stats';
 import type { QualityName } from '../../src/shared/quality';
-import { formatSweepReport, type PresetRun, type SweepExtras } from '../../src/spike/bench-report';
+import { formatSweepReport, type PresetRun, type SweepExtras } from '../../src/shared/sweep-report';
 
 function reportFor(samples: readonly number[]): BenchReport {
   const frames = summarizeFrames(samples);
@@ -58,7 +58,7 @@ describe('formatSweepReport', () => {
   );
 
   it('leads with a verdict for each preset, using the game page pass mark', () => {
-    expect(text).toContain('look benchmark, build abc1234');
+    expect(text).toContain('Ashbound Outpost benchmark, build abc1234');
     expect(text).toContain(
       'Result: Low holds 60 FPS, Balanced holds 60 FPS, Ultra is below 60 FPS',
     );
@@ -104,7 +104,7 @@ describe('formatSweepReport', () => {
 
   it('copes with a sweep that stopped before any preset finished', () => {
     const empty = formatSweepReport([], EXTRAS);
-    expect(empty).toContain('look benchmark');
+    expect(empty).toContain('Ashbound Outpost benchmark');
     expect(empty).not.toContain('Result:');
   });
 });
