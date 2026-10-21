@@ -1,11 +1,16 @@
 import type { BlockWorld } from '../../shared/block-world';
-import { TILE_LAYOUTS, stateMaterial } from '../../shared/blocks';
+import { SHAPE, TILE_LAYOUTS, stateMaterial } from '../../shared/blocks';
+import { rectContains, shapeGeometry, type ShapeGeometry } from '../../shared/shapes';
 import { CHUNK_SIZE } from './chunk';
+import { PIECE, buildTemplate, type ShapeTemplate, type TemplatePiece } from './shape-template';
 
 /**
  * Turns a chunk of cells into a triangle mesh. Every block is a cube with chamfered edges and
  * corners, so a wall of blocks shows the seam between them as a small groove and nothing is ever
- * merged into a bigger face. A block is made of up to four kinds of piece:
+ * merged into a bigger face. Slabs and wedges get the same bevel from a template worked out once
+ * per shape (`shape-template.ts`); each is a closed skin of its own, so it sits beside cubes and
+ * other shapes without any of them needing to know its outline. A cube is made of up to four
+ * kinds of piece:
  *
  *  - panels, the six faces pulled in by the bevel width, drawn only where the cell across is empty;
  *  - strips, the 45 degree chamfers along the twelve edges;
@@ -13,7 +18,8 @@ import { CHUNK_SIZE } from './chunk';
  *  - caps, which close the small shaft that opens where four blocks meet along an edge.
  *
  * What is drawn depends only on the 26 cells around a block, which is why a changed cell dirties
- * the chunks next to it. The union of the pieces is a closed surface wherever blocks are placed,
+ * the chunks next to it. Only whole cubes count as neighbors for the bevels and the corner shading;
+ * a face is hidden when the cell across fills it entirely, whatever shape that cell is. The union of the pieces is a closed surface wherever blocks are placed,
  * which `tests/unit/voxel-mesher.test.ts` checks over random worlds.
  *
  * This module is pure: it reads cells through `getBlock` and returns typed arrays, so it runs
@@ -30,7 +36,12 @@ export const AO_BRIGHTNESS = [0.46, 0.64, 0.82, 1] as const;
 export const GROOVE_BRIGHTNESS = 0.58;
 
 /** What a vertex belongs to, so the shader can tell a bevel from a face. */
-export const PRIMITIVE = { panel: 0, strip: 1, corner: 2, cap: 3 } as const;
+export const PRIMITIVE = {
+  panel: PIECE.panel,
+  strip: PIECE.strip,
+  corner: PIECE.corner,
+  cap: 3,
+} as const;
 
 /** The mesh of one chunk, ready to become a geometry. Positions are in world coordinates. */
 export interface ChunkMeshData {
@@ -184,11 +195,37 @@ const AO_BITS: readonly (readonly [number, number, number])[] = (() => {
   return table;
 })();
 
+/**
+ * The same three cells for a face that sits inside its cell, such as the top of a slab: the ones
+ * level with the shape rather than across the cell's boundary, since a wall beside a slab rises
+ * past its top.
+ */
+const AO_BITS_MID: readonly (readonly [number, number, number])[] = (() => {
+  const table: [number, number, number][] = [];
+  for (const face of FACES) {
+    for (let c = 0; c < 4; c++) {
+      const d1: [number, number, number] = [0, 0, 0];
+      const d2: [number, number, number] = [0, 0, 0];
+      d1[face.t1] = c & 1 ? 1 : -1;
+      d2[face.t2] = c & 2 ? 1 : -1;
+      table.push([
+        bit(d1[0], d1[1], d1[2]),
+        bit(d2[0], d2[1], d2[2]),
+        bit(d1[0] + d2[0], d1[1] + d2[1], d1[2] + d2[2]),
+      ]);
+    }
+  }
+  return table;
+})();
+
 /** Around a panel the corners go low-low, high-low, high-high, low-high; corner c is `c & 1` along t1 and `c & 2` along t2. */
 const PANEL_ORDER = [0, 1, 3, 2] as const;
 /** The four corners of a cap's diamond, as offsets from the edge's middle along the two other axes. */
 const CAP_DJ = [-BEVEL, 0, BEVEL, 0] as const;
 const CAP_DK = [0, -BEVEL, 0, BEVEL] as const;
+
+/** Every face neighbor of a block, for telling that cubes shut it in on all six sides. */
+const FACE_NEIGHBORS = FACES.reduce((all, face) => all | face.bit, 0);
 
 const AO_BYTES = AO_BRIGHTNESS.map((v) => Math.round(v * 255));
 const GROOVE_BYTE = Math.round(GROOVE_BRIGHTNESS * 255);
@@ -356,6 +393,8 @@ class MeshBuilder {
 
 const PAD = CHUNK_SIZE + 2;
 const PAD_AREA = PAD * PAD;
+/** How far the neighbor across each side is in the padded cell array. */
+const SIDE_STEP: readonly number[] = [1, -1, PAD_AREA, -PAD_AREA, PAD, -PAD];
 
 /**
  * The mesher. It holds scratch buffers between chunks, so make one and reuse it; `meshChunk`
@@ -366,10 +405,15 @@ export class ChunkMesher {
   private readonly builder = new MeshBuilder();
   /** The occlusion byte of each corner of each exposed face; unused for a hidden face. */
   private readonly faceAo = new Uint8Array(24);
+  /** The same for a face inside a cell, such as the top of a slab. */
+  private readonly faceAoMid = new Uint8Array(24);
   private readonly local = new Float64Array(3);
   /** The vertices of the piece being built, kept here so a piece costs no allocation. */
-  private readonly ids = new Int32Array(4);
+  private readonly ids = new Int32Array(8);
+  /** The cubes among the 27 cells around the block being meshed, one bit each. */
   private mask = 0;
+  /** Which sides of the block are hidden because the cell across fills them, one bit per side. */
+  private hidden = 0;
   private x = 0;
   private y = 0;
   private z = 0;
@@ -399,23 +443,30 @@ export class ChunkMesher {
           const at = (ly + 1) * PAD_AREA + (lz + 1) * PAD + (lx + 1);
           const state = cells[at] as number;
           if (state === 0) continue;
+          const shape = state & 0xff;
+          const geometry = shapeGeometry(shape);
+          if (!geometry) continue;
           const mask = this.neighbourhood(at);
-          // A block with solid cells all round it has nothing to show.
-          if (mask === FULL) continue;
+          const whole = shape === SHAPE.cube;
+          // A block with whole cubes all round it has nothing to show.
+          if (whole ? mask === FULL : (mask & FACE_NEIGHBORS) === FACE_NEIGHBORS) continue;
           this.mask = mask;
+          this.hidden = this.hiddenSides(at, geometry);
           this.x = x0 + lx;
           this.y = y0 + ly;
           this.z = z0 + lz;
           this.hash = cellHash(this.x, this.y, this.z);
           this.layoutHash = Math.imul(this.hash ^ (this.hash >>> 16), 0x85ebca6b) >>> 0;
           this.material = stateMaterial(state);
-          this.emitCell();
+          if (whole) this.emitCell();
+          else this.emitShape(templateOf(geometry));
         }
       }
     }
     return this.builder.finish();
   }
 
+  /** The whole cubes among the cell and the 26 around it. */
   private neighbourhood(at: number): number {
     const cells = this.cells;
     let mask = 0;
@@ -424,7 +475,7 @@ export class ChunkMesher {
       for (let dy = -1; dy <= 1; dy++) {
         const row = at + dy * PAD_AREA + dz * PAD;
         for (let dx = -1; dx <= 1; dx++) {
-          if (cells[row + dx] !== 0) mask |= 1 << b;
+          if (((cells[row + dx] as number) & 0xff) === SHAPE.cube) mask |= 1 << b;
           b++;
         }
       }
@@ -432,10 +483,33 @@ export class ChunkMesher {
     return mask;
   }
 
+  /**
+   * The sides of the block that another cell fills right up against: a whole cube across hides
+   * any face, and a slab, a wedge's wall or floor hides a face it covers entirely.
+   */
+  private hiddenSides(at: number, geometry: ShapeGeometry): number {
+    const cells = this.cells;
+    let hidden = 0;
+    for (let side = 0; side < 6; side++) {
+      const own = geometry.reach[side];
+      if (!own) continue;
+      const across = cells[at + (SIDE_STEP[side] as number)] as number;
+      if (across === 0) continue;
+      const shape = across & 0xff;
+      if (shape === SHAPE.cube) {
+        hidden |= 1 << side;
+        continue;
+      }
+      const cover = shapeGeometry(shape)?.cover[side ^ 1];
+      if (cover && rectContains(cover, own)) hidden |= 1 << side;
+    }
+    return hidden;
+  }
+
   private emitCell(): void {
     const mask = this.mask;
     for (let f = 0; f < 6; f++) {
-      if ((mask & (FACES[f] as FaceDef).bit) === 0) {
+      if ((this.hidden & (1 << f)) === 0) {
         this.computeFaceAo(f);
         this.emitPanel(f);
       }
@@ -467,10 +541,24 @@ export class ChunkMesher {
     }
   }
 
+  /** The occlusion of the corners of a face inside the cell, at the same level as the shape. */
+  private computeFaceAoMid(f: number): void {
+    const mask = this.mask;
+    for (let c = 0; c < 4; c++) {
+      const [s1, s2, corner] = AO_BITS[f * 4 + c] as readonly [number, number, number];
+      const [m1, m2, mcorner] = AO_BITS_MID[f * 4 + c] as readonly [number, number, number];
+      const a = (mask & (s1 | m1)) !== 0;
+      const b = (mask & (s2 | m2)) !== 0;
+      const diagonal = (mask & (corner | mcorner)) !== 0;
+      const level = a && b ? 0 : 3 - (a ? 1 : 0) - (b ? 1 : 0) - (diagonal ? 1 : 0);
+      this.faceAoMid[f * 4 + c] = AO_BYTES[level] as number;
+    }
+  }
+
   /** Occlusion of a vertex that lies on face `f`: the face's own table, or the groove if it is hidden. */
   private aoOn(f: number): number {
     const face = FACES[f] as FaceDef;
-    if ((this.mask & face.bit) !== 0) return GROOVE_BYTE;
+    if ((this.hidden & (1 << f)) !== 0) return GROOVE_BYTE;
     const l = this.local;
     const c = ((l[face.t1] as number) > 0.5 ? 1 : 0) + ((l[face.t2] as number) > 0.5 ? 2 : 0);
     return this.faceAo[f * 4 + c] as number;
@@ -518,6 +606,78 @@ export class ChunkMesher {
     );
   }
 
+  /** Draws a slab or a wedge from its template: every piece, except a face the cell across hides. */
+  private emitShape(template: ShapeTemplate): void {
+    for (let f = 0; f < 6; f++) {
+      this.computeFaceAo(f);
+      this.computeFaceAoMid(f);
+    }
+    const faces = template.geometry.faces;
+    for (const piece of template.pieces) {
+      if (piece.kind === PIECE.panel) {
+        const side = (faces[piece.face] as ShapeGeometry['faces'][number]).side;
+        if (side >= 0 && (this.hidden & (1 << side)) !== 0) continue;
+      }
+      this.emitPiece(piece);
+    }
+  }
+
+  private emitPiece(piece: TemplatePiece): void {
+    const owner = piece.face;
+    // The owning face turns its tile one of eight ways and picks one of the material's layouts.
+    const variant = (this.hash >>> (8 + 3 * owner)) & 7;
+    const layout = (this.layoutHash >>> (2 * owner)) % TILE_LAYOUTS;
+    const kind = piece.kind | (layout << 2);
+    const [nx, ny, nz] = piece.normal;
+    const ids = this.ids;
+    for (let i = 0; i < piece.count; i++) {
+      let u = piece.uv[i * 2] as number;
+      let v = piece.uv[i * 2 + 1] as number;
+      u = u < 0 ? 0 : u > 1 ? 1 : u;
+      v = v < 0 ? 0 : v > 1 ? 1 : v;
+      if (variant & 1) u = 1 - u;
+      if (variant & 2) v = 1 - v;
+      if (variant & 4) {
+        const t = u;
+        u = v;
+        v = t;
+      }
+      const key = piece.ao[i] as number;
+      let ao = 255;
+      if (key >= 0) {
+        const side = key >> 3;
+        const corner = (key >> 1) & 3;
+        if (key & 1) ao = this.faceAoMid[side * 4 + corner] as number;
+        else if ((this.hidden & (1 << side)) !== 0) ao = GROOVE_BYTE;
+        else ao = this.faceAo[side * 4 + corner] as number;
+      }
+      ids[i] = this.builder.vertex(
+        this.x + (piece.position[i * 3] as number),
+        this.y + (piece.position[i * 3 + 1] as number),
+        this.z + (piece.position[i * 3 + 2] as number),
+        nx,
+        ny,
+        nz,
+        u,
+        v,
+        ao,
+        this.material,
+        kind,
+        this.hash & 255,
+      );
+    }
+    const a = ids[0] as number;
+    if (piece.count === 3) {
+      this.builder.triangle(a, ids[1] as number, ids[2] as number, nx, ny, nz);
+    } else if (piece.count === 4) {
+      this.builder.quad(a, ids[1] as number, ids[2] as number, ids[3] as number, nx, ny, nz);
+    } else {
+      for (let i = 1; i + 1 < piece.count; i++) {
+        this.builder.triangle(a, ids[i] as number, ids[i + 1] as number, nx, ny, nz);
+      }
+    }
+  }
+
   private emitPanel(f: number): void {
     const face = FACES[f] as FaceDef;
     const l = this.local;
@@ -561,7 +721,10 @@ export class ChunkMesher {
     const ny = (a.dir[1] + b.dir[1]) * SQRT1_2;
     const nz = (a.dir[2] + b.dir[2]) * SQRT1_2;
     // The strip takes its texture from the face that is visible, so it continues that face's tile.
-    const owner = (this.mask & a.bit) === 0 || (this.mask & b.bit) !== 0 ? edge.fa : edge.fb;
+    const owner =
+      (this.hidden & (1 << edge.fa)) === 0 || (this.hidden & (1 << edge.fb)) !== 0
+        ? edge.fa
+        : edge.fb;
     const l = this.local;
     const ids = this.ids;
     // Around the strip: the low and high end on face A's panel border, then back along face B's.
@@ -599,7 +762,7 @@ export class ChunkMesher {
     let owner = corner.faces[0];
     for (let i = 0; i < 3; i++) {
       const f = corner.faces[i] as number;
-      if ((this.mask & (FACES[f] as FaceDef).bit) === 0) {
+      if ((this.hidden & (1 << f)) === 0) {
         owner = f;
         break;
       }
@@ -656,6 +819,13 @@ function cellHash(x: number, y: number, z: number): number {
   h = Math.imul(h, 0x5bd1e995);
   h ^= h >>> 15;
   return h >>> 0;
+}
+
+const templates: (ShapeTemplate | undefined)[] = [];
+
+/** The beveled surface of a shape that is not a cube, built the first time a cell needs it. */
+function templateOf(geometry: ShapeGeometry): ShapeTemplate {
+  return (templates[geometry.id] ??= buildTemplate(geometry, BEVEL));
 }
 
 const shared = new ChunkMesher();

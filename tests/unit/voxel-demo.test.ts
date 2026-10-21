@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { MATERIAL, stateMaterial } from '../../src/shared/blocks';
+import {
+  MATERIAL,
+  isUpsideDown,
+  shapeKind,
+  stateMaterial,
+  stateShape,
+  wedgeFacing,
+} from '../../src/shared/blocks';
 import { DEMO_NAMES, buildDemo, isDemoName } from '../../src/world/voxels/demo';
 import { inBuildBounds, createWorld, type VoxelWorld } from '../../src/world/voxels/world';
 import { TEST_SEED, terrain } from './helpers/valley';
@@ -10,9 +17,10 @@ function newWorld(): VoxelWorld {
 
 describe('demo structures', () => {
   it('names the demos it can build', () => {
-    expect(DEMO_NAMES).toEqual(['outpost', 'swatch']);
+    expect(DEMO_NAMES).toEqual(['outpost', 'swatch', 'hall']);
     expect(isDemoName('outpost')).toBe(true);
     expect(isDemoName('swatch')).toBe(true);
+    expect(isDemoName('hall')).toBe(true);
     expect(isDemoName('castle')).toBe(false);
     expect(isDemoName('')).toBe(false);
     expect(isDemoName(null)).toBe(false);
@@ -83,6 +91,24 @@ describe('demo structures', () => {
         expect(used.has(material)).toBe(true);
       }
     }
+  });
+
+  it('shows slabs and wedges in the hall, upside-down wedges and several facings included', () => {
+    const { edits } = buildDemo(newWorld(), 'hall');
+    const shapes = edits.map((e) => stateShape(e.state));
+    expect(new Set(shapes.map((s) => shapeKind(s)))).toEqual(new Set(['cube', 'slab', 'wedge']));
+    const wedges = shapes.filter((s) => shapeKind(s) === 'wedge');
+    expect(wedges.some((s) => isUpsideDown(s))).toBe(true);
+    expect(new Set(wedges.map((s) => wedgeFacing(s))).size).toBeGreaterThanOrEqual(3);
+  });
+
+  it('tops the hall with a row of wedges seven blocks above its floor', () => {
+    const { edits, floorY } = buildDemo(newWorld(), 'hall');
+    const top = Math.max(...edits.map((e) => e.y));
+    expect(top).toBe(floorY + 7);
+    const ridge = edits.filter((e) => e.y === top);
+    expect(ridge.length).toBeGreaterThan(0);
+    expect(ridge.every((e) => shapeKind(stateShape(e.state)) === 'wedge')).toBe(true);
   });
 
   it('puts the floor of the outpost at one height with a foundation under the low side', () => {

@@ -120,6 +120,42 @@ export const SHOTS: Readonly<Record<string, ShotPose>> = {
     time: 'golden',
     note: 'The outpost gate at golden hour',
   },
+  // South of the gabled hall, a little to the west so the low sun rakes its front (`?demo=hall`).
+  hall: {
+    x: -2,
+    z: 25,
+    height: 3.2,
+    clear: 9,
+    bearing: 4,
+    pitch: -4,
+    fov: 58,
+    time: 'golden',
+    note: 'The gabled hall',
+  },
+  // From the south-west, the whole hall with its roof, eaves and lamp posts (`?demo=hall`).
+  hallside: {
+    x: -11,
+    z: 22,
+    height: 3.6,
+    clear: 9,
+    bearing: 39,
+    pitch: -6,
+    fov: 58,
+    time: 'golden',
+    note: 'The hall from the south-west',
+  },
+  // Close to the south-east corner of the roof, looking along the eaves and the wedges (`?demo=hall`).
+  eaves: {
+    x: 8.5,
+    z: 16.5,
+    height: 4.2,
+    clear: 9,
+    bearing: 315,
+    pitch: -12,
+    fov: 60,
+    time: 'golden',
+    note: 'The roof and eaves of the hall',
+  },
   // In front of the four material swatches (`?demo=swatch`): Scrap, Composite, Alloy, Energy.
   swatch: {
     x: 8,

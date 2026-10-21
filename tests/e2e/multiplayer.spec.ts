@@ -27,22 +27,35 @@ const ALLOY = packState(SHAPE.cube, MATERIAL.alloy);
 const SMALL = { width: 480, height: 270 };
 const FRAME_GAP_MS = 1500;
 
-/** Runs inside each page before the game does: delays every animation frame request by `gap` milliseconds. */
+/**
+ * Runs inside each page before the game does: delays every animation frame request by `gap`
+ * milliseconds. `window.__holdFrames(true)` stops the page drawing at all until
+ * `window.__holdFrames(false)`, for a moment when another page needs the graphics process to itself.
+ */
 function slowFrames(gap: number): void {
   const request = window.requestAnimationFrame.bind(window);
   const cancel = window.cancelAnimationFrame.bind(window);
-  const waiting = new Map<number, { timer: number; frame: number | null }>();
+  interface Waiting {
+    callback: FrameRequestCallback;
+    timer: number;
+    frame: number | null;
+  }
+  const waiting = new Map<number, Waiting>();
+  let held = false;
   let next = 1;
-  window.requestAnimationFrame = (callback) => {
-    const id = next++;
-    const entry: { timer: number; frame: number | null } = { timer: 0, frame: null };
+  const schedule = (id: number, entry: Waiting): void => {
     entry.timer = window.setTimeout(() => {
       entry.frame = request((time) => {
         waiting.delete(id);
-        callback(time);
+        entry.callback(time);
       });
     }, gap);
+  };
+  window.requestAnimationFrame = (callback) => {
+    const id = next++;
+    const entry: Waiting = { callback, timer: 0, frame: null };
     waiting.set(id, entry);
+    if (!held) schedule(id, entry);
     return id;
   };
   window.cancelAnimationFrame = (id) => {
@@ -51,6 +64,19 @@ function slowFrames(gap: number): void {
     window.clearTimeout(entry.timer);
     if (entry.frame !== null) cancel(entry.frame);
     waiting.delete(id);
+  };
+  (window as unknown as { __holdFrames: (hold: boolean) => void }).__holdFrames = (hold) => {
+    if (hold === held) return;
+    held = hold;
+    for (const [id, entry] of waiting) {
+      if (hold) {
+        window.clearTimeout(entry.timer);
+        if (entry.frame !== null) cancel(entry.frame);
+        entry.frame = null;
+      } else {
+        schedule(id, entry);
+      }
+    }
   };
 }
 
@@ -120,6 +146,21 @@ const lobby = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.lobby(
 const session = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.session());
 const remotes = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.remotes());
 const digest = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.blocks());
+
+/**
+ * Stops these pages drawing, or lets them draw again (see `slowFrames`). Their frame loop waits;
+ * their network and timers carry on, so a held host still answers a guest that joins.
+ */
+const holdFrames = (players: readonly Player[], hold: boolean) =>
+  Promise.all(
+    players.map((p) =>
+      p.page.evaluate(
+        (value) =>
+          (window as unknown as { __holdFrames: (hold: boolean) => void }).__holdFrames(value),
+        hold,
+      ),
+    ),
+  );
 
 /** Waits for the page's room status; when it never comes, the failure says what the page was told instead. */
 async function expectStatus(p: Player, status: string, timeout = 60_000): Promise<void> {
@@ -303,13 +344,30 @@ test.describe('multiplayer', () => {
       await eve.context.close();
       everyone.pop();
 
-      // A guest reloads the page and gets the same seat back, with the same world.
+      // A guest reloads the page and gets the same seat back, with the same world. The new page
+      // draws its first block (bakes the tiles, compiles the shader) while it is already in the
+      // room, which takes seconds under software rendering and longer when four other pages draw
+      // too, and a guest that is silent for ten seconds is dropped. So the others stop drawing
+      // until it has, as every page did before it first joined.
       const seat = (await lobby(cy)).roster.find((r) => r.name === 'Cy');
+      const others = everyone.filter((p) => p !== cy);
+      await holdFrames(others, true);
       await cy.page.reload();
       await expect(cy.page.locator('html')).toHaveAttribute('data-ready', 'true', {
         timeout: 90_000,
       });
       await expectStatus(cy, 'joined');
+      await expect
+        .poll(
+          () =>
+            cy.page.evaluate<number>('window.__ashbound.game.world.view.structures.stats.chunks'),
+          {
+            timeout: 90_000,
+            message: "Cy has drawn the room's blocks",
+          },
+        )
+        .toBeGreaterThan(0);
+      await holdFrames(others, false);
       const seatAgain = (await lobby(cy)).roster.find((r) => r.name === 'Cy');
       expect(seatAgain?.slot).toBe(seat?.slot);
       expect(seatAgain?.id).toBe(seat?.id);
@@ -357,8 +415,12 @@ test.describe('multiplayer', () => {
       await host.page.evaluate(() => window.__ashbound!.mp!.placeNear(4, 0, 257));
       await expectSameWorld([host, ...guests], 1);
 
-      // The host's tab goes away without ceremony.
-      await host.page.close();
+      // The host's tab is closed. The browser tells the page (`pagehide`) as it goes, and the page
+      // says goodbye then, but a tab that is torn down at once may not get the goodbye out (in one
+      // run of about ten it did not), and the guests then find out from ten seconds of silence, with
+      // another message. So the test sends that event itself, lets the guests hear it, and then
+      // closes the tab.
+      await host.page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
       for (const guest of guests) {
         await expectStatus(guest, 'ended');
         const dialog = guest.page.getByRole('alertdialog');
@@ -366,6 +428,7 @@ test.describe('multiplayer', () => {
         await expect(dialog).toContainText('The host left the game');
         await expect(dialog).toContainText('no host migration');
       }
+      await host.page.close();
 
       // Playing alone keeps the world as it was, and building works again.
       await ada.page.getByRole('button', { name: 'Play alone' }).click();

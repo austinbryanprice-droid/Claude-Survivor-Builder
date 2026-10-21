@@ -5,13 +5,29 @@ import type { CellState } from './block-world';
  * can be made of. A cell state packs the two into 16 bits, the shape in the low byte and the
  * material in the high byte, so an upgrade is a new material on the same shape and the world can
  * be re-meshed in place. Ids are stored in saves and sent over the wire, so they never change
- * once shipped; add new ones at the end.
+ * once shipped; add new ones at the end of their group.
+ *
+ * A shape id names a kind and, where the kind has them, an orientation, so a placed piece is one
+ * number and nothing else has to travel with it:
+ *
+ *  - `SHAPE.cube`: the whole cell.
+ *  - `SHAPE.slab` + 0 is a slab filling the lower half of the cell, + 1 the upper half.
+ *  - `SHAPE.wedge` + facing is a wedge that rises toward +x (facing 0), +z (1), -x (2) or -z (3),
+ *    and + 4 turns it upside down: the sloped face then looks down and the flat one is on top.
+ *    A wedge is half a cube cut along the diagonal, so its slope is 45 degrees and rises one block.
  */
 
 export const SHAPE = {
   empty: 0,
   cube: 1,
+  slab: 8,
+  wedge: 16,
 } as const;
+
+export type ShapeKind = 'cube' | 'slab' | 'wedge';
+
+/** The kinds a player chooses between, in the order the shape key cycles through them. */
+export const SHAPE_KINDS: readonly ShapeKind[] = ['cube', 'slab', 'wedge'];
 
 export const MATERIAL = {
   none: 0,
@@ -23,7 +39,9 @@ export const MATERIAL = {
 
 export interface ShapeDef {
   readonly id: number;
+  /** What a player calls it; every orientation of a kind shares one name. */
   readonly name: string;
+  readonly kind: ShapeKind;
 }
 
 export interface MaterialDef {
@@ -39,7 +57,47 @@ export interface MaterialDef {
   readonly cost: number;
 }
 
-export const SHAPES: readonly ShapeDef[] = [{ id: SHAPE.cube, name: 'Block' }];
+export const SHAPES: readonly ShapeDef[] = [
+  { id: SHAPE.cube, name: 'Block', kind: 'cube' },
+  ...[0, 1].map((half): ShapeDef => ({ id: SHAPE.slab + half, name: 'Slab', kind: 'slab' })),
+  ...[0, 1, 2, 3, 4, 5, 6, 7].map((turn): ShapeDef => ({
+    id: SHAPE.wedge + turn,
+    name: 'Wedge',
+    kind: 'wedge',
+  })),
+];
+
+/** The four directions a wedge can rise toward: +x, +z, -x, -z. */
+export const WEDGE_FACINGS = 4;
+
+/** The id of a slab in the lower or the upper half of its cell. */
+export function slabShape(upper: boolean): number {
+  return SHAPE.slab + (upper ? 1 : 0);
+}
+
+/** The id of a wedge rising toward `facing` (0 is +x, 1 is +z, 2 is -x, 3 is -z), optionally upside down. */
+export function wedgeShape(facing: number, upsideDown = false): number {
+  const turn = ((Math.round(facing) % WEDGE_FACINGS) + WEDGE_FACINGS) % WEDGE_FACINGS;
+  return SHAPE.wedge + turn + (upsideDown ? WEDGE_FACINGS : 0);
+}
+
+/** What kind of shape an id names, or undefined for an id the table does not define. */
+export function shapeKind(shape: number): ShapeKind | undefined {
+  return SHAPES.find((s) => s.id === shape)?.kind;
+}
+
+/** The direction a wedge rises toward, 0 to 3, or -1 when the shape is not a wedge. */
+export function wedgeFacing(shape: number): number {
+  return shapeKind(shape) === 'wedge' ? (shape - SHAPE.wedge) % WEDGE_FACINGS : -1;
+}
+
+/** True for a slab in the upper half of its cell and for a wedge turned upside down. */
+export function isUpsideDown(shape: number): boolean {
+  const kind = shapeKind(shape);
+  if (kind === 'slab') return shape === SHAPE.slab + 1;
+  if (kind === 'wedge') return shape - SHAPE.wedge >= WEDGE_FACINGS;
+  return false;
+}
 
 export const MATERIALS: readonly MaterialDef[] = [
   { id: MATERIAL.scrap, name: 'Scrap', tier: 1, cost: 1 },
