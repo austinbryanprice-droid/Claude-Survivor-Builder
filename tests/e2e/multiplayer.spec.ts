@@ -61,12 +61,45 @@ interface Player {
   readonly problems: string[];
 }
 
+/**
+ * Draws one block and takes it away again. A page's first block bakes the block textures and
+ * compiles their shader, seconds of work under software rendering, and while it runs every other
+ * page waits for the same graphics process (and a page that waits ten seconds is dropped from the
+ * room). So each page does it alone, before it joins anyone.
+ */
+async function warmUpBlocks(page: Page): Promise<void> {
+  const blocks = () => page.evaluate(() => window.__ashbound!.mp!.blocks().count);
+  const draw = () =>
+    page.evaluate(() => {
+      const { game, stage } = window.__ashbound!;
+      game.renderNow();
+      stage.renderer.getContext().finish();
+    });
+  const cell = await page.evaluate(([state]) => window.__ashbound!.mp!.placeNear(4, 0, state!), [
+    SCRAP,
+  ] as const);
+  await expect.poll(blocks).toBe(1);
+  await draw();
+  await page.evaluate(([x, y, z]) => window.__ashbound!.mp!.breakBlock(x!, y!, z!), [
+    cell.x,
+    cell.y,
+    cell.z,
+  ] as const);
+  await expect.poll(blocks).toBe(0);
+  await draw();
+}
+
 /** Opens the game as one player in a browser of their own (so own storage, own player token). */
 async function openPlayer(
   browser: Browser,
   baseURL: string | undefined,
   name: string,
-  options: { size?: { width: number; height: number }; network?: string } = {},
+  options: {
+    size?: { width: number; height: number };
+    network?: string;
+    /** False for a page that has already drawn blocks (a `?demo=` page) or must not touch its world. */
+    warm?: boolean;
+  } = {},
 ): Promise<Player> {
   const context = await browser.newContext({ baseURL, viewport: options.size ?? SMALL });
   await context.addInitScript(slowFrames, FRAME_GAP_MS);
@@ -79,6 +112,7 @@ async function openPlayer(
   await page.goto(`./?debug&quality=low&${options.network ?? NETWORK}&name=${name}`);
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'true', { timeout: 90_000 });
   await page.waitForFunction(() => Boolean(window.__ashbound?.mp));
+  if (options.warm !== false) await warmUpBlocks(page);
   return { name, context, page, problems };
 }
 
@@ -445,5 +479,33 @@ test.describe('multiplayer', () => {
       timeout: 90_000,
     });
     expect(glue(ordinaryUrls)).not.toEqual([]);
+  });
+
+  test("a page opened with a demo structure joins with the host's world, not its own", async ({
+    browser,
+    baseURL,
+  }) => {
+    const host = await openPlayer(browser, baseURL, 'Host');
+    const guest = await openPlayer(browser, baseURL, 'Ada', {
+      network: `${NETWORK}&demo=swatch`,
+      warm: false,
+    });
+    try {
+      // The demo is raised on the guest's own valley, so it starts with blocks the host lacks.
+      expect((await digest(guest)).count).toBeGreaterThan(0);
+      expect((await digest(host)).count).toBe(0);
+
+      await joinRoom(guest, await hostRoom(host));
+      await expectSameWorld([host, guest], 0);
+
+      // From then on the guest holds what the host builds, and nothing else.
+      await host.page.evaluate(([state]) => window.__ashbound!.mp!.placeNear(4, 0, state!), [
+        SCRAP,
+      ] as const);
+      await expectSameWorld([host, guest], 1);
+      expectNoProblems([host, guest]);
+    } finally {
+      await closeAll([host, guest]);
+    }
   });
 });

@@ -54,10 +54,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
     benchPresets: view.benchPresets,
     buildId,
     seed: view.seed,
-    // Only the first valley raises the demo. A valley swapped in later is a room's, and it gets
-    // its blocks from the host, so a demo there would be blocks the host does not have.
-    createWorld: (seed) =>
-      (valley = createValleyWorld(stage, seed, view.terrain, valley ? null : demo)),
+    createWorld: (seed) => (valley = createValleyWorld(stage, seed, view.terrain, demo)),
   });
   if (shot) game.setPhoto(shotPose(shot, game.world.groundAt));
 

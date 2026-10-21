@@ -20,6 +20,13 @@ export interface AttachOptions {
   buildId: string;
 }
 
+/** The cells players have built in a world. */
+function editsOf(world: BlockWorld): { x: number; y: number; z: number }[] {
+  const cells: { x: number; y: number; z: number }[] = [];
+  world.forEachEdit((x, y, z) => cells.push({ x, y, z }));
+  return cells;
+}
+
 export function attachMultiplayer({ game, voxels, flags, buildId }: AttachOptions): Multiplayer {
   const multiplayer = createMultiplayer({
     flags,
@@ -45,11 +52,13 @@ export function attachMultiplayer({ game, voxels, flags, buildId }: AttachOption
       loadWorld(seed) {
         // The same valley with nothing built on it is already what the host's snapshot builds on.
         const current = voxels();
-        let built = false;
-        current.forEachEdit(() => {
-          built = true;
-        });
-        if (current.seed !== seed || built) game.loadWorld(seed);
+        if (current.seed !== seed || editsOf(current).length > 0) {
+          game.loadWorld(seed);
+          // A page opened with `?demo=` raises its structure in every valley it builds. A room's
+          // world is the host's blocks alone, so the demo goes before the snapshot arrives.
+          const fresh = voxels();
+          for (const { x, y, z } of editsOf(fresh)) fresh.setBlock(x, y, z, 0);
+        }
         return Promise.resolve(voxels());
       },
       spawnPoint: (slot) => seatSpawn(game.world, voxels(), slot),
