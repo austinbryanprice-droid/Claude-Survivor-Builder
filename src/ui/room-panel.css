@@ -29,6 +29,13 @@
   pointer-events: none;
 }
 
+.mp,
+.mp *,
+.mp *::before,
+.mp *::after {
+  box-sizing: border-box;
+}
+
 .mp [hidden] {
   display: none !important;
 }

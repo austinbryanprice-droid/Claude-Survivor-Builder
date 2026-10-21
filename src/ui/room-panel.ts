@@ -403,7 +403,27 @@ export function createRoomPanel(options: RoomPanelOptions): RoomPanel {
     fold.hidden = mustShow;
   }
 
+  let rendering = false;
+  let again = false;
+
   function render(): void {
+    // Giving the mouse back can report a change straight away: draw once more when this one is done.
+    if (rendering) {
+      again = true;
+      return;
+    }
+    rendering = true;
+    try {
+      do {
+        again = false;
+        draw();
+      } while (again);
+    } finally {
+      rendering = false;
+    }
+  }
+
+  function draw(): void {
     const state = lobby.state;
     const playing = options.isPlaying();
     const inRoom = state.status === 'hosting' || state.status === 'joined';
@@ -496,16 +516,16 @@ export function createRoomPanel(options: RoomPanelOptions): RoomPanel {
     if (state.ended && state.notice) {
       endedNotice.textContent = `${state.notice.title}. ${state.notice.detail}`;
     }
-    if (state.status === 'ended' && lastStatus !== 'ended') {
-      options.releaseMouse();
-      later(0, () => endedAlone.focus());
-    }
-
     announce(state);
     renderFold();
 
+    const justEnded = state.status === 'ended' && lastStatus !== 'ended';
     lastStatus = state.status;
     lastNotice = state.notice;
+    if (justEnded) {
+      options.releaseMouse();
+      later(0, () => endedAlone.focus());
+    }
   }
 
   fold.addEventListener('click', () => {
