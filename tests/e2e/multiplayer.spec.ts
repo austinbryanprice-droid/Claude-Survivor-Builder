@@ -7,9 +7,17 @@ import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
  * in sync, and learn what happened when the host goes away. The tests drive the room panel like
  * a player would and read the state back through `window.__ashbound.mp` (the `?debug` switch).
  *
- * Software WebGL runs a few frames a second, so everything here waits on state, never on time.
+ * Software WebGL draws about two frames a second, and five pages drawing at once starve each
+ * other (and the network) on a four-core machine, so each page here draws one frame every
+ * `FRAME_GAP_MS` instead. The game loop, the network and the timers run as they always do; only
+ * the drawing is slower. Everything waits on state, never on time.
+ *
  * The network is the real one: PeerJS, WebRTC data channels, and a real signalling server.
  * Local connections only (`ice=none`): STUN, TURN and strict firewalls are not exercised here.
+ *
+ * These tests are a Playwright project of their own that runs after the other browser tests
+ * (`playwright.config.ts`), because a page starved by a test next to it looks like a host or a
+ * guest that has gone. To run just these: `npx playwright test --project=multiplayer --no-deps`.
  */
 
 const BROKER = '127.0.0.1:9000';
@@ -17,6 +25,34 @@ const NETWORK = `broker=${BROKER}&ice=none`;
 const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
 const ALLOY = packState(SHAPE.cube, MATERIAL.alloy);
 const SMALL = { width: 480, height: 270 };
+const FRAME_GAP_MS = 1500;
+
+/** Runs inside each page before the game does: delays every animation frame request by `gap` milliseconds. */
+function slowFrames(gap: number): void {
+  const request = window.requestAnimationFrame.bind(window);
+  const cancel = window.cancelAnimationFrame.bind(window);
+  const waiting = new Map<number, { timer: number; frame: number | null }>();
+  let next = 1;
+  window.requestAnimationFrame = (callback) => {
+    const id = next++;
+    const entry: { timer: number; frame: number | null } = { timer: 0, frame: null };
+    entry.timer = window.setTimeout(() => {
+      entry.frame = request((time) => {
+        waiting.delete(id);
+        callback(time);
+      });
+    }, gap);
+    waiting.set(id, entry);
+    return id;
+  };
+  window.cancelAnimationFrame = (id) => {
+    const entry = waiting.get(id);
+    if (!entry) return;
+    window.clearTimeout(entry.timer);
+    if (entry.frame !== null) cancel(entry.frame);
+    waiting.delete(id);
+  };
+}
 
 interface Player {
   readonly name: string;
@@ -33,13 +69,14 @@ async function openPlayer(
   options: { size?: { width: number; height: number }; network?: string } = {},
 ): Promise<Player> {
   const context = await browser.newContext({ baseURL, viewport: options.size ?? SMALL });
+  await context.addInitScript(slowFrames, FRAME_GAP_MS);
   const page = await context.newPage();
   const problems: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error') problems.push(`console: ${message.text()}`);
   });
   page.on('pageerror', (error) => problems.push(`page error: ${error.message}`));
-  await page.goto(`./?debug&${options.network ?? NETWORK}&name=${name}`);
+  await page.goto(`./?debug&quality=low&${options.network ?? NETWORK}&name=${name}`);
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'true', { timeout: 90_000 });
   await page.waitForFunction(() => Boolean(window.__ashbound?.mp));
   return { name, context, page, problems };
@@ -50,9 +87,18 @@ const session = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.sess
 const remotes = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.remotes());
 const digest = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.blocks());
 
+/** Waits for the page's room status; when it never comes, the failure says what the page was told instead. */
 async function expectStatus(p: Player, status: string, timeout = 60_000): Promise<void> {
   await expect
-    .poll(async () => (await lobby(p)).status, { timeout, message: `${p.name}'s room status` })
+    .poll(
+      async () => {
+        const now = await lobby(p);
+        if (now.status === status) return status;
+        const why = now.ended ?? now.notice;
+        return why ? `${now.status}: ${why.reason}, "${why.title}"` : now.status;
+      },
+      { timeout, message: `${p.name}'s room status` },
+    )
     .toBe(status);
 }
 
@@ -124,7 +170,7 @@ test.describe('multiplayer', () => {
     browser,
     baseURL,
   }, testInfo) => {
-    const host = await openPlayer(browser, baseURL, 'Host', { size: { width: 1280, height: 720 } });
+    const host = await openPlayer(browser, baseURL, 'Host');
     const everyone: Player[] = [host];
     try {
       // The start screen offers a room, and the room panel explains what hosting means.
@@ -153,12 +199,29 @@ test.describe('multiplayer', () => {
       // A guest's world is the host's: same seed, no blocks yet.
       expect(await digest(ada)).toEqual({ count: 0, hash: (await digest(host)).hash });
 
-      // Everyone builds next to where they stand; every world ends up identical.
+      // A click inside the room card does not start the game (a click on the backdrop would);
+      // Play does, and while playing a small list of who is in stays on the screen.
+      const hud = host.page.locator('#hud');
+      await expect(hud).toHaveAttribute('data-pointer', 'free');
+      await expect(host.page.locator('.mp-mini')).toBeHidden();
+      await host.page.locator('.mp-code').click();
+      await host.page.waitForTimeout(500); // a click that wrongly took the pointer shows by now
+      await expect(hud).toHaveAttribute('data-pointer', 'free');
+      await host.page.locator('.play-button').click();
+      await expect(hud).toHaveAttribute('data-pointer', 'locked');
+      await expect(host.page.locator('.mp-card')).toBeHidden();
+      await expect(host.page.locator('.mp-mini .mp-name')).toHaveText(['Host', 'Ada', 'Bo', 'Cy']);
+      await host.page.evaluate(() => document.exitPointerLock());
+      await expect(hud).toHaveAttribute('data-pointer', 'free');
+      await expect(host.page.locator('.mp-card')).toBeVisible();
+
+      // Everyone builds next to where they stand, four cells off to the side of the row the seats
+      // stand in (so nobody is in the way of anybody else's block); every world ends up identical.
       const cells: { x: number; y: number; z: number }[] = [];
       for (const [index, p] of everyone.entries()) {
         const cell = await p.page.evaluate(
-          ([state, dz]) => window.__ashbound!.mp!.placeNear(0, dz!, state!),
-          [index % 2 === 0 ? SCRAP : ALLOY, 3] as const,
+          ([state, dx]) => window.__ashbound!.mp!.placeNear(dx!, 0, state!),
+          [index % 2 === 0 ? SCRAP : ALLOY, 4] as const,
         );
         cells.push(cell);
       }
@@ -257,7 +320,7 @@ test.describe('multiplayer', () => {
       await expectSeeEachOther([host, ...guests]);
 
       // Something worth keeping: built together before the host goes.
-      await host.page.evaluate(() => window.__ashbound!.mp!.placeNear(0, 3, 257));
+      await host.page.evaluate(() => window.__ashbound!.mp!.placeNear(4, 0, 257));
       await expectSameWorld([host, ...guests], 1);
 
       // The host's tab goes away without ceremony.
@@ -275,7 +338,7 @@ test.describe('multiplayer', () => {
       await expectStatus(ada, 'alone');
       expect((await session(ada)).role).toBe('solo');
       expect(await digest(ada)).toMatchObject({ count: 1 });
-      await ada.page.evaluate(() => window.__ashbound!.mp!.placeNear(2, 3, 257));
+      await ada.page.evaluate(() => window.__ashbound!.mp!.placeNear(6, 0, 257));
       await expect.poll(async () => (await digest(ada)).count).toBe(2);
 
       // The others are still on the message until they choose.
@@ -350,5 +413,37 @@ test.describe('multiplayer', () => {
     } finally {
       await closeAll([offline]);
     }
+  });
+
+  test('the benchmark page loads no multiplayer code, so it measures the game alone', async ({
+    context,
+    page,
+  }) => {
+    const watch = (target: Page): string[] => {
+      const urls: string[] = [];
+      target.on('request', (request) => urls.push(request.url()));
+      return urls;
+    };
+    const glue = (urls: readonly string[]) => urls.filter((url) => /attach-multiplayer/.test(url));
+
+    const benchUrls = watch(page);
+    await page.goto('./?bench=1&benchSeconds=2&benchPresets=low&debug');
+    await expect(page.locator('#hud')).toHaveAttribute('data-bench', 'running', {
+      timeout: 90_000,
+    });
+    await page.waitForLoadState('networkidle');
+    expect(glue(benchUrls)).toEqual([]);
+    expect(await page.evaluate(() => Boolean(window.__ashbound?.mp))).toBe(false);
+    await expect(page.locator('#mp')).toHaveCount(0);
+    await page.close();
+
+    // The same check does see the code on an ordinary page, so it is not looking for the wrong name.
+    const ordinary = await context.newPage();
+    const ordinaryUrls = watch(ordinary);
+    await ordinary.goto('./?debug&quality=low');
+    await ordinary.waitForFunction(() => Boolean(window.__ashbound?.mp), null, {
+      timeout: 90_000,
+    });
+    expect(glue(ordinaryUrls)).not.toEqual([]);
   });
 });

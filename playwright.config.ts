@@ -5,6 +5,9 @@ const port = 4173;
 // CI and in the cloud sandbox). The tests pass it to the game with `?broker=`.
 const peerPort = 9000;
 
+const multiplayerTests = '**/multiplayer.spec.ts';
+const desktop = { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 720 } };
+
 export default defineConfig({
   testDir: 'tests/e2e',
   fullyParallel: true,
@@ -33,7 +36,18 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 720 } },
+      testIgnore: multiplayerTests,
+      use: desktop,
+    },
+    {
+      // Five pages talk to each other here, and a page that gets no turn for ten seconds looks
+      // like a host or a guest that has gone. Next to the other tests on a four-core machine,
+      // loading a page did exactly that, so these wait until the rest are done and have the
+      // machine to themselves.
+      name: 'multiplayer',
+      testMatch: multiplayerTests,
+      dependencies: ['chromium'],
+      use: desktop,
     },
   ],
   // Tests run against the production build; `npm run test:e2e` builds first.

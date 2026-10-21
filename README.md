@@ -2,7 +2,7 @@
 
 A browser co-op survivor-builder for two to four players. By day you scavenge the wreckage of a crashed orbital station and build a shared outpost from refined, beveled blocks and modular machines. By night rogue machines attack in waves that grow every night.
 
-> **Status: early development.** You can run, jump and look around the Ashbound Valley: seeded terrain, a lake, trees and a golden-hour sky. Building, multiplayer and enemies are not in yet (the voxel world they build on is). The [roadmap](docs/roadmap.md) lists what comes next.
+> **Status: early development.** You can run, jump and look around the Ashbound Valley: seeded terrain, a lake, trees and a golden-hour sky. Up to four players can share the valley (one hosts a room, the others join with a code) and see each other move. Building and enemies are not in yet (the voxel world they build on is). The [roadmap](docs/roadmap.md) lists what comes next.
 
 ## Play
 
@@ -50,7 +50,7 @@ Two to four players share one world. Open the game and use the **Play together**
 
 **The host must keep the game tab open, and visible.** The host's browser is the authority for the world, so if the host leaves or closes the tab, the session ends for everyone. Guests see a message saying so and can keep playing alone in the world as it was. There are no accounts and no host migration or automatic reconnection in version 1 (spec sections 6 and 14). The host will be able to save to the browser (IndexedDB) and later resume with a fresh code when saves arrive in Phase 6.
 
-Rooms are set up through the free public PeerJS server and connect directly between browsers over WebRTC. Strict firewalls and some mobile networks block direct connections; if a friend cannot join, try again or let them host. To try it yourself, open the game in two browser windows side by side: host in one, join from the other with the code.
+Rooms are set up through the free public PeerJS server and connect directly between browsers over WebRTC. On strict networks the connection falls back to PeerJS's free shared relay, which is best effort; if a friend still cannot join, try again or let them host. To try it yourself, open the game in two browser windows side by side: host in one, join from the other with the code.
 
 For testing or a private server, the address takes a few switches: `?join=CODE`, `?name=Ada`, `?broker=host:port` (another PeerJS server) and `?ice=none` or `?ice=stun:host:3478,turn:host:3478` (relay servers). [docs/multiplayer.md](docs/multiplayer.md) has the details, what the tests prove, and what they cannot.
 
