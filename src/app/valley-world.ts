@@ -66,6 +66,7 @@ export function createValleyWorld(
     view,
     collision: {
       isSolid: (x, y, z) => voxels.isSolid(x, y, z),
+      boxesAt: (x, y, z) => voxels.boxesAt(x, y, z),
       ground: createTerrainGround(grid, EDGE_WALL),
     },
     spawn,

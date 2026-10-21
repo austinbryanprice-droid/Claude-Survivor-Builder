@@ -31,7 +31,7 @@ export const SIDE_TANGENTS: readonly (readonly [number, number])[] = [
 export const oppositeSide = (side: number): number => side ^ 1;
 
 /** How many boxes a wedge is cut into for movement; each is a step of 1 / WEDGE_SLICES blocks high. */
-export const WEDGE_SLICES = 16;
+export const WEDGE_SLICES = 32;
 
 export interface ShapeFace {
   /** Indices into `vertices`, going counter-clockwise when seen from outside. */
