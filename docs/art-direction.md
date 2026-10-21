@@ -170,7 +170,7 @@ All three presets pass the game page's mark (at least 57 FPS on average, 95th pe
 
 ## Phase 2c: the blocks
 
-Phase 2c draws the voxel world: beveled blocks with ambient occlusion in four material tiers, and a time budget for re-meshing (how it works is in [decisions](decisions.md#phase-2c-block-meshing-and-materials)). Nothing placed a block yet, so the screenshots show the demo structures that `?demo=outpost` and `?demo=swatch` raise. They are taken the same way as the look spike's: headless Chromium on software GL, 1280 by 720, Balanced, `freeze=1`.
+Phase 2c draws the voxel world: beveled blocks with ambient occlusion in four material tiers, and a time budget for re-meshing (how it works is in [decisions](decisions.md#phase-2c-block-meshing-and-materials)). Nothing placed a block yet, so the screenshots show the demo structures that `?demo=outpost` and `?demo=swatch` raise. They are taken the same way as the look spike's: headless Chromium on software GL, 1280 by 720, Balanced, `freeze=1`. Phase 2e's lighting pass retook them (the same views as before it are in [the lighting pass](#lighting-pass-against-references-04-and-05)).
 
 ![The demo outpost from the south in the afternoon, Balanced](phase-2/blocks-outpost.jpg)
 
@@ -199,10 +199,10 @@ Meshing a chunk on the sandbox CPU takes 0.3 to 1.3 ms for the demo's chunks and
 
 ### Known gaps in the blocks
 
-- Slabs and wedges are drawn, can be walked on (a player steps up a slab or a ramp of wedges) and are placed by hand with Q and R. A slab's side shows a whole tile squeezed to half its height and a roof slope shows it stretched, which may read as a smear next to the cubes; the look pass decides.
+- Slabs and wedges are drawn, can be walked on (a player steps up a slab or a ramp of wedges) and are placed by hand with Q and R. A slab's side shows a whole tile squeezed to half its height and a roof slope shows it stretched, The lighting pass looked at both in the Balanced shots and left them: they read as long panels on a roof and thin plates on a sill.
 - One piece to a cell: a block put on a lower slab goes in the cell above, half a block over the slab, and two stacked slabs leave a gap a block cannot fill. A stair is a row of slabs one cell apart. The decisions page says why, and what would change it.
-- The lighting pass against references 04 and 05 is Phase 2e's. At golden hour Composite reads olive and a lit Scrap wall reads orange; whether that suits the references is what the pass decides.
-- The tiles are small sci-fi panels. Reference 04's pieces are thicker and rougher (stone courses, timber); ours show the grid more. The pass compares and adjusts.
+- The lighting pass against references 04 and 05 is done ([below](#lighting-pass-against-references-04-and-05)). A lit Scrap wall still reads orange at golden hour: its tiles are rust, and the low sun warms them.
+- The tiles are small sci-fi panels. Reference 04's pieces are thicker and rougher (stone courses, timber); ours show the grid more. The lighting pass compared and left the tile art alone: how busy the tiles are is a decision about the art, and it is Austin's.
 - A player standing in the grass sees blocks low in the frame through blades up to a meter tall (see the gate); that is the grass, not a gap in the blocks.
 
 ## Phase 2d: building by hand
@@ -227,17 +227,17 @@ The ghost and the outline are four objects (the block, its edges, the wash over 
 
 ## Phase 2e: slabs and wedges
 
-Phase 2e adds the two pieces that make roofs (how they are built and drawn is in [decisions](decisions.md#phase-2e-slabs-and-wedges)). They can be walked on and placed by hand (Q chooses the kind of piece, R turns it). The first screenshots show the gabled hall that `?demo=hall` raises: a platform with a ramp of wedges, composite walls with an arched door and slab sills, two lamp posts, and a roof of alloy wedges four rows deep with eaves and gable overhangs. Headless Chromium on software GL, 1280 by 720, Balanced, golden hour, `freeze=1`.
+Phase 2e adds the two pieces that make roofs (how they are built and drawn is in [decisions](decisions.md#phase-2e-slabs-and-wedges)). They can be walked on and placed by hand (Q chooses the kind of piece, R turns it). The first screenshots show the gabled hall that `?demo=hall` raises: a platform with a ramp of wedges, composite walls with an arched door and slab sills, two lamp posts, and a roof of alloy wedges four rows deep with eaves and gable overhangs. Headless Chromium on software GL, 1280 by 720, Balanced, golden hour, `freeze=1`; retaken after the lighting pass at the end of this section.
 
 ![The gabled hall from the south-west, Balanced](phase-2/shapes-hallside.jpg)
 
 ![The roof and eaves up close, Balanced](phase-2/shapes-eaves.jpg)
 
-| Image                                          | URL on the game page                                            | What to look at                                                                                                                                                                                                                                                                          |
-| ---------------------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [shapes-hall](phase-2/shapes-hall.jpg)         | `/?demo=hall&shot=hall&quality=balanced&hud=0&stats=0&freeze=1` | The gable end: the roof is a stair of wedges whose slope is 45 degrees, the arched door has its top corners cut by upside-down wedges, and the eaves hang one block past the wall. Compare with the sloped roofs of 05.                                                                  |
-| [shapes-hallside](phase-2/shapes-hallside.jpg) | the same with `shot=hallside`                                   | The whole hall: wedge rows read as shingle courses with the same dark groove as the cubes, the slab sills sit half-way up the windows, and the ramp climbs to the platform.                                                                                                              |
-| [shapes-eaves](phase-2/shapes-eaves.jpg)       | the same with `shot=eaves`                                      | The corner of the roof close up: chamfers on slopes and on the slanted ends of wedges, the groove between rows, and the closed surface where a wedge meets a cube. The tile on a slope is stretched along it by the diagonal (1.41 times); the look pass judges whether that reads well. |
+| Image                                          | URL on the game page                                            | What to look at                                                                                                                                                                                                                                                                                               |
+| ---------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [shapes-hall](phase-2/shapes-hall.jpg)         | `/?demo=hall&shot=hall&quality=balanced&hud=0&stats=0&freeze=1` | The gable end: the roof is a stair of wedges whose slope is 45 degrees, the arched door has its top corners cut by upside-down wedges, and the eaves hang one block past the wall. Compare with the sloped roofs of 05.                                                                                       |
+| [shapes-hallside](phase-2/shapes-hallside.jpg) | the same with `shot=hallside`                                   | The whole hall: wedge rows read as shingle courses with the same dark groove as the cubes, the slab sills sit half-way up the windows, and the ramp climbs to the platform.                                                                                                                                   |
+| [shapes-eaves](phase-2/shapes-eaves.jpg)       | the same with `shot=eaves`                                      | The corner of the roof close up: chamfers on slopes and on the slanted ends of wedges, the groove between rows, and the closed surface where a wedge meets a cube. The tile on a slope is stretched along it by the diagonal (1.41 times); the lighting pass judged that it reads as long panels and left it. |
 
 ### Building with them
 
@@ -257,3 +257,44 @@ The next screenshots are taken in Build Mode with a slab or a wedge in hand. The
 ### Frame cost of the shapes
 
 The hall is four chunks and 12 thousand triangles (the outpost's 338 blocks make 10 thousand). Counted like the tables above, Balanced, every pass, on software GL: `shot=hall` 109 draws and 860k triangles, `hallside` 102 and 828k, `eaves` 104 and 795k, against the valley's own 111 draws and 855k. Alone, a cube and a slab are 44 triangles each and a wedge 32 (its slope and ends are panels, strips and corners like any face), so a roof is no heavier to draw than a wall. Build Mode costs the same with a slab or a wedge in hand as with a block: the ghost and the outline swap their geometry for the shape's own, made once and kept, and stay four objects.
+
+### Lighting pass against references 04 and 05
+
+Phase 2e-4 compares our structures with the construction references and adjusts the light that falls on them. It leaves the terrain, the sky and the tile art alone: the look spike's light was approved, and how busy the tiles are is Austin's decision.
+
+**Measured first.** The crops are structure only (no sky, no grass). The numbers are on the displayed values: the median and the darkest 5 percent of the brightness (Rec. 709 luma, 0 to 1) and the mean saturation (largest channel minus smallest, over the largest). The references are not in the repository, so their rows can be reproduced only with the images; ours are the screenshots in this folder (golden hour, Balanced), and each pair is before then after.
+
+| Crop                              | Median      | Darkest 5 % | Saturation  |
+| --------------------------------- | ----------- | ----------- | ----------- |
+| Reference 04, roofs and walls     | 0.16        | 0.08        | 0.40        |
+| Reference 04, stone wall in shade | 0.17        | 0.12        | 0.20        |
+| Reference 05, stone wall          | 0.28        | 0.12        | 0.39        |
+| Reference 05, sloped roof         | 0.45        | 0.21        | 0.34        |
+| Ours, the hall from the gable     | 0.23 → 0.24 | 0.06 → 0.07 | 0.49 → 0.44 |
+| Ours, the hall from the side      | 0.14 → 0.17 | 0.06 → 0.08 | 0.57 → 0.52 |
+| Ours, the roof and eaves          | 0.30 → 0.32 | 0.08 → 0.09 | 0.45 → 0.43 |
+| Ours, the gate                    | 0.34 → 0.36 | 0.09 → 0.11 | 0.46 → 0.40 |
+
+The references are single frames in their own light, so this is a check of range and not a match test. It showed that the brightness of a structure was already inside the references' range (a median of 0.14 to 0.34 against 0.16 to 0.45), so the pass does not brighten structures. Two things were outside it. Our shade was darker (the darkest 5 percent at 0.06 to 0.09 against 0.08 to 0.21) and violet, because the fill in shade is the golden-hour sky and it turned dark steel to plum, where the stone and timber of the references stay neutral. And Composite went yellow-olive in the low sun. Ours stays more saturated than the references' stone (0.40 to 0.52 against 0.20 to 0.40) on purpose: the amber marks, the cyan trim and the rust of Scrap are the spec's accents, and what the pass takes out is the tint the light adds, not the colour of the paint.
+
+**What changed.** Three things in the structure shader and one in the mesher (the values and the reasons are in [decisions](decisions.md#phase-2e-slabs-and-wedges)):
+
+- The sky's fill on a structure is cooler and a little stronger, so shade is a blue-grey and not a violet.
+- The low sun's orange is pulled part of the way toward grey on every surface (it already was on metal), so Composite stays grey-green.
+- A polished surface shows more of the sky face on, so a steel roof reads as steel and not as a dark slab.
+- Where a wall meets the ground the corner shading now knows the terrain: each vertex is darkened by how high it is above the ground under it, half as bright on the ground and easing to nothing at a meter, so a wall sits in the ground and not on a table.
+
+![The gabled hall from the side, before (left) and after (right)](phase-2/lighting-hallside.jpg)
+
+![The gate at golden hour, before (left) and after (right)](phase-2/lighting-gate.jpg)
+
+| Image                                              | What to look at                                                                                                                                                                                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [lighting-hallside](phase-2/lighting-hallside.jpg) | The roof in shade is a little lighter and less purple; the amber marks keep their colour. The deepest shade, under the eaves and at the foot of the platform, is still dark and no longer plum.                                             |
+| [lighting-eaves](phase-2/lighting-eaves.jpg)       | The same on the eaves, close up: the slopes keep their groove between rows and the shade between them has depth without going black.                                                                                                        |
+| [lighting-gate](phase-2/lighting-gate.jpg)         | The Composite blocks along the top: yellow-olive before, grey-green after. The rows at the foot of the walls are darker where they meet the ground and the shade fades up the wall within a block; the Scrap floor blocks are less glaring. |
+| [lighting-swatch](phase-2/lighting-swatch.jpg)     | Noon. It barely changes, as intended: the pass is about the low sun and the shade, and the mean brightness of the swatch goes from 0.504 to 0.510.                                                                                          |
+
+**Cost.** Nothing is added to the scene and the geometry is the same, so the draw and triangle counts above stand. The shader has a handful more arithmetic operations per pixel. The contact shade is made when a chunk is meshed (the terrain never changes, so nothing is meshed again for it) and costs meshing time: a chunk of 29 thousand triangles (a hollow room) took 13.5 ms without it and 15.1 ms with it, and a checkerboard of 90 thousand triangles 46.7 and 50.2 ms, about 7 to 12 percent, in a Vitest run on the idle sandbox CPU (compare the pair: the 7 ms quoted above for a dense chunk was measured in the browser). The demo's chunks take 0.3 to 1.3 ms, so for them it is a tenth of a millisecond. The remesh queue still spends 3 ms of a frame and always meshes one chunk.
+
+**Not checked.** Low and Ultra draw structures with the same shader and rendered the hall and the gate with no console error, but only Balanced's pictures were retaken. Nothing here has been seen on a real GPU: the light is judged on software-rendered screenshots, so the first look on Austin's machine is the one that counts.

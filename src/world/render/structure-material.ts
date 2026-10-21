@@ -50,6 +50,16 @@ uniform highp sampler2DArray uData;
 uniform float uTiers;
 uniform float uLayouts;
 
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+// How far the key light is pulled toward grey on a plain surface, before metal pulls it further.
+const float KEY_NEUTRAL = 0.3;
+// How far the sky's fill is pulled toward a cool grey, how cool, and how much stronger it is than the terrain's.
+const float FILL_NEUTRAL = 0.45;
+const vec3 FILL_TINT = vec3(0.97, 1.0, 1.06);
+const float FILL_GAIN = 1.3;
+// How much of a polished surface's sky reflection shows face on; the rest comes in at a grazing angle.
+const float ENV_BASE = 0.55;
+
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying vec2 vUv;
@@ -100,15 +110,20 @@ void main() {
   vec3 env = mix(envRough, envSharp, gloss * gloss);
 
   float aoDirect = mix(1.0, ao, 0.45);
-  // Metal has little diffuse color of its own: it shows what it reflects, so a low orange sun tints
-  // it only part of the way and it stays steel rather than turning to tan. Glints keep the full color.
-  float keyLuma = dot(uKeyColor, vec3(0.2126, 0.7152, 0.0722));
-  vec3 keyDiffuse = mix(uKeyColor, vec3(keyLuma), 0.6 * metal);
+  // A low orange sun tints a plain surface only part of the way, so grey-green Composite does not
+  // turn to olive, and metal, which has little diffuse color of its own and shows what it reflects,
+  // stays steel rather than tan. Glints keep the full color.
+  float keyLuma = dot(uKeyColor, LUMA);
+  vec3 keyDiffuse = mix(uKeyColor, vec3(keyLuma), KEY_NEUTRAL + 0.45 * metal);
   vec3 direct = keyDiffuse * diff * shadow * aoDirect;
-  vec3 ambient = ambientLight(N) * ao;
+  // Shade is the sky's fill. A structure takes it cooler and a little stronger than the terrain
+  // does: the violet of a golden-hour sky would turn dark steel to plum, and the stone and timber
+  // of the references still read as themselves in shade.
+  vec3 fill = ambientLight(N);
+  vec3 ambient = mix(fill, vec3(dot(fill, LUMA)) * FILL_TINT, FILL_NEUTRAL) * FILL_GAIN * ao;
   vec3 lit = albedo * (direct + ambient);
   lit += uKeyColor * specColor * shine * shadow * aoDirect;
-  lit += env * mix(vec3(1.0), col, metal) * mix(0.05, 0.85, metal) * gloss * (0.3 + 0.7 * fresnel) * ao;
+  lit += env * mix(vec3(1.0), col, metal) * mix(0.05, 1.0, metal) * gloss * (ENV_BASE + (1.0 - ENV_BASE) * fresnel) * ao;
 
   // Energy-Infused blocks pulse; other tiers' trims glow steadily.
   float pulse = 0.78 + 0.22 * sin(uSkyParams.z * 2.2 + seed * 40.0 + P.x * 0.7 + P.z * 0.9);

@@ -35,6 +35,27 @@ export const AO_BRIGHTNESS = [0.46, 0.64, 0.82, 1] as const;
 /** Brightness of the groove between blocks and the shafts at their corners. */
 export const GROOVE_BRIGHTNESS = 0.58;
 
+/** How far up a block's foot the shade of the ground reaches, in meters. */
+export const CONTACT_HEIGHT = 1.0;
+
+/** Brightness of a point on the ground itself, where a wall meets the terrain. */
+export const CONTACT_BRIGHTNESS = 0.5;
+
+/** The height of the terrain at a point in the world, which the foot of a block is shaded by. */
+export type GroundHeight = (x: number, z: number) => number;
+
+/**
+ * How bright a point `height` above the terrain is, from the shade the ground throws on the foot
+ * of a wall: darkest at the ground, easing to nothing at `CONTACT_HEIGHT`. The corner shading
+ * between blocks cannot see the terrain, so without this a wall meets the ground like a toy on a
+ * table.
+ */
+export function groundContact(height: number): number {
+  if (height >= CONTACT_HEIGHT) return 1;
+  const t = height <= 0 ? 0 : height / CONTACT_HEIGHT;
+  return CONTACT_BRIGHTNESS + (1 - CONTACT_BRIGHTNESS) * t * t * (3 - 2 * t);
+}
+
 /** What a vertex belongs to, so the shader can tell a bevel from a face. */
 export const PRIMITIVE = {
   panel: PIECE.panel,
@@ -243,6 +264,8 @@ class MeshBuilder {
   private indices = new Uint32Array(this.indexCapacity);
   vertexCount = 0;
   indexCount = 0;
+  /** When set, the occlusion of every vertex is darkened by its height above the terrain. */
+  ground: GroundHeight | null = null;
   private minX = Infinity;
   private minY = Infinity;
   private minZ = Infinity;
@@ -285,6 +308,7 @@ class MeshBuilder {
     seed: number,
   ): number {
     if (this.vertexCount === this.vertexCapacity) this.growVertices();
+    if (this.ground !== null) ao = Math.round(ao * groundContact(y - this.ground(x, z)));
     const i = this.vertexCount++;
     const p = this.positions;
     p[i * 3] = x;
@@ -421,8 +445,18 @@ export class ChunkMesher {
   private layoutHash = 0;
   private material = 0;
 
-  /** Meshes the chunk at chunk coordinates (cx, cy, cz). The world's cells outside it are read for context. */
-  mesh(world: Pick<BlockWorld, 'getBlock'>, cx: number, cy: number, cz: number): ChunkMeshData {
+  /**
+   * Meshes the chunk at chunk coordinates (cx, cy, cz). The world's cells outside it are read for
+   * context. With `ground`, the foot of every wall is shaded by the terrain it stands on.
+   */
+  mesh(
+    world: Pick<BlockWorld, 'getBlock'>,
+    cx: number,
+    cy: number,
+    cz: number,
+    ground?: GroundHeight,
+  ): ChunkMeshData {
+    this.builder.ground = ground ?? null;
     const x0 = cx * CHUNK_SIZE;
     const y0 = cy * CHUNK_SIZE;
     const z0 = cz * CHUNK_SIZE;
@@ -836,6 +870,7 @@ export function meshChunk(
   cx: number,
   cy: number,
   cz: number,
+  ground?: GroundHeight,
 ): ChunkMeshData {
-  return shared.mesh(world, cx, cy, cz);
+  return shared.mesh(world, cx, cy, cz, ground);
 }
