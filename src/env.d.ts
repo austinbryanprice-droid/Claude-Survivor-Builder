@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+import type { MultiplayerDebug } from './app/multiplayer';
 import type { Game } from './engine/game';
 import type { Stage } from './engine/stage';
 
@@ -9,6 +10,6 @@ declare global {
 
   interface Window {
     /** Present only with the `?debug` URL switch. */
-    __ashbound?: { stage: Stage; game: Game };
+    __ashbound?: { stage: Stage; game: Game; mp?: MultiplayerDebug };
   }
 }

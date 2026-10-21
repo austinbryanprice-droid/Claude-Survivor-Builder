@@ -13,4 +13,4 @@ PeerServer({
   corsOptions: { origin: true },
 });
 
-console.log(`PeerServer listening on http://127.0.0.1:${port}`);
+console.warn(`PeerServer listening on http://127.0.0.1:${port}`);

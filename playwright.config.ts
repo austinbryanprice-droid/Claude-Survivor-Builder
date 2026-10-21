@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const port = 4173;
+// A local PeerJS signalling server for the multiplayer tests (the public one is out of reach in
+// CI and in the cloud sandbox). The tests pass it to the game with `?broker=`.
+const peerPort = 9000;
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -21,6 +24,9 @@ export default defineConfig({
         '--enable-unsafe-swiftshader',
         '--ignore-gpu-blocklist',
         '--use-gl=angle',
+        // Keep real local addresses in WebRTC offers: browsers on one machine find each other
+        // directly (the tests turn STUN and TURN off), instead of through .local names.
+        '--disable-features=WebRtcHideLocalIpsWithMdns',
       ],
     },
   },
@@ -31,10 +37,19 @@ export default defineConfig({
     },
   ],
   // Tests run against the production build; `npm run test:e2e` builds first.
-  webServer: {
-    command: `npm run preview -- --host 127.0.0.1 --port ${port} --strictPort`,
-    url: `http://127.0.0.1:${port}`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-  },
+  webServer: [
+    {
+      command: `npm run preview -- --host 127.0.0.1 --port ${port} --strictPort`,
+      url: `http://127.0.0.1:${port}`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+    {
+      command: 'node tests/e2e/support/peer-server.mjs',
+      url: `http://127.0.0.1:${peerPort}/`,
+      env: { PEER_PORT: String(peerPort) },
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+  ],
 });

@@ -171,7 +171,17 @@ export function createRoomPanel(options: RoomPanelOptions): RoomPanel {
   codeInput.setAttribute('autocapitalize', 'characters');
   const joinButton = button('Join', 'mp-secondary', () => lobby.join(codeInput.value));
   joinRow.append(codeInput, joinButton);
-  alone.append(nameRow, hostButton, divider, joinRow);
+  alone.append(
+    nameRow,
+    hostButton,
+    divider,
+    joinRow,
+    el(
+      'p',
+      'mp-fine',
+      "If the host leaves, the session ends for everyone: this version has no host migration. Joining a room replaces the world on this page with the host's.",
+    ),
+  );
 
   // Busy: asking for a room, or dialling one.
   const busy = el('div', 'mp-busy');

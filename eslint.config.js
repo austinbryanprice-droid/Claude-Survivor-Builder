@@ -32,7 +32,7 @@ export default defineConfig(
     languageOptions: { globals: globals.browser },
   },
   {
-    files: ['*.js', '*.ts', 'tests/**/*.ts'],
+    files: ['*.js', '*.ts', 'tests/**/*.ts', 'tests/**/*.mjs'],
     languageOptions: { globals: globals.node },
   },
   {

@@ -13,7 +13,7 @@ import {
   withJoinParam,
   type NetFlags,
 } from '../shared/net-flags';
-import type { PlayerId } from '../shared/protocol';
+import { createPlayerSample, type PlayerId, type PlayerSample } from '../shared/protocol';
 import { createRoomPanel } from '../ui/room-panel';
 import { browserStore } from './browser-storage';
 import { PlayerSync, type LocalPlayer } from './player-sync';
@@ -32,6 +32,8 @@ export interface MultiplayerOptions {
   player: LocalPlayer;
   /** The world being played, its replacement when a room's world arrives, and where a seat starts. */
   world: LobbyGame;
+  /** Height of the ground at a point, for the debug hook's "build next to me". */
+  groundAt(x: number, z: number): number;
   /** The scene node the other players' avatars are added to. */
   scene: Object3D;
   /** The mouse capture: the panel shows its card while the mouse is free. */
@@ -59,6 +61,18 @@ export interface MultiplayerDebug {
   block(x: number, y: number, z: number): CellState;
   place(x: number, y: number, z: number, state: CellState): void;
   breakBlock(x: number, y: number, z: number): void;
+  /** Where the local player stands. */
+  position(): { x: number; y: number; z: number };
+  /**
+   * Asks the host for a block `dx` and `dz` cells from the one the player stands in, resting on
+   * the ground there and `up` cells above it. Returns the cell, so a test can break it later.
+   */
+  placeNear(
+    dx: number,
+    dz: number,
+    state: CellState,
+    up?: number,
+  ): { x: number; y: number; z: number };
   /** Refusals the host sent back, newest last. */
   rejections(): Rejection[];
   /** World events applied since the page loaded. */
@@ -152,6 +166,12 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     events++;
   });
 
+  const probe = createPlayerSample();
+  const here = (): PlayerSample => {
+    options.player.read(probe);
+    return probe;
+  };
+
   const debug: MultiplayerDebug = {
     lobby: () => lobby.state,
     session: () => ({
@@ -166,6 +186,18 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     block: (x, y, z) => options.world.world().getBlock(x, y, z),
     place: (x, y, z, state) => hub.sendCommand({ type: 'place', x, y, z, state }),
     breakBlock: (x, y, z) => hub.sendCommand({ type: 'break', x, y, z }),
+    position: () => {
+      const { x, y, z } = here();
+      return { x, y, z };
+    },
+    placeNear: (dx, dz, state, up = 0) => {
+      const me = here();
+      const x = Math.floor(me.x) + dx;
+      const z = Math.floor(me.z) + dz;
+      const y = Math.floor(options.groundAt(x + 0.5, z + 0.5)) + up;
+      hub.sendCommand({ type: 'place', x, y, z, state });
+      return { x, y, z };
+    },
     rejections: () => [...refusals],
     eventCount: () => events,
   };
