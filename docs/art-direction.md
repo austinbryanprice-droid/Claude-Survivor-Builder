@@ -199,7 +199,7 @@ Meshing a chunk on the sandbox CPU takes 0.3 to 1.3 ms for the demo's chunks and
 
 ### Known gaps in the blocks
 
-- Slabs and wedges are drawn but cannot be walked on or placed by hand yet; those are the next 2e steps. A slab's side shows a whole tile squeezed to half its height and a roof slope shows it stretched, which may read as a smear next to the cubes; the look pass decides.
+- Slabs and wedges are drawn and can be walked on (a player steps up a slab or a ramp of wedges) but cannot be placed by hand yet; that is the next 2e step. A slab's side shows a whole tile squeezed to half its height and a roof slope shows it stretched, which may read as a smear next to the cubes; the look pass decides.
 - The lighting pass against references 04 and 05 is Phase 2e's. At golden hour Composite reads olive and a lit Scrap wall reads orange; whether that suits the references is what the pass decides.
 - The tiles are small sci-fi panels. Reference 04's pieces are thicker and rougher (stone courses, timber); ours show the grid more. The pass compares and adjusts.
 - A player standing in the grass sees blocks low in the frame through blades up to a meter tall (see the gate); that is the grass, not a gap in the blocks.
@@ -226,7 +226,7 @@ The ghost and the outline are four objects (the block, its edges, the wash over 
 
 ## Phase 2e: slabs and wedges
 
-Phase 2e adds the two pieces that make roofs (how they are built and drawn is in [decisions](decisions.md#phase-2e-slabs-and-wedges)). Nothing places them by hand yet, so the screenshots show the gabled hall that `?demo=hall` raises: a platform with a ramp of wedges, composite walls with an arched door and slab sills, two lamp posts, and a roof of alloy wedges four rows deep with eaves and gable overhangs. Headless Chromium on software GL, 1280 by 720, Balanced, golden hour, `freeze=1`.
+Phase 2e adds the two pieces that make roofs (how they are built and drawn is in [decisions](decisions.md#phase-2e-slabs-and-wedges)). They can be walked on but not yet placed by hand, so the screenshots show the gabled hall that `?demo=hall` raises: a platform with a ramp of wedges, composite walls with an arched door and slab sills, two lamp posts, and a roof of alloy wedges four rows deep with eaves and gable overhangs. Headless Chromium on software GL, 1280 by 720, Balanced, golden hour, `freeze=1`.
 
 ![The gabled hall from the south-west, Balanced](phase-2/shapes-hallside.jpg)
 

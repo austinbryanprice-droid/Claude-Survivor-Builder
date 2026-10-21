@@ -1,5 +1,6 @@
 import type { BlockWorld, CellState } from '../../shared/block-world';
-import { isCellState, isKnownState } from '../../shared/blocks';
+import { isCellState, isKnownState, stateShape } from '../../shared/blocks';
+import { shapeBoxes, type CellBox } from '../../shared/shapes';
 import { WORLD_HALF } from '../terrain/field';
 import { bakeTerrain, type Terrain } from '../terrain/terrain';
 import {
@@ -116,6 +117,11 @@ export class VoxelWorld implements BlockWorld {
   /** True when the cell holds a block, which is what movement and the camera ask. */
   isSolid(x: number, y: number, z: number): boolean {
     return this.getBlock(x, y, z) !== 0;
+  }
+
+  /** The part of a slab or wedge cell that is solid, as boxes; null for a whole cube or an empty cell. */
+  boxesAt(x: number, y: number, z: number): readonly CellBox[] | null {
+    return shapeBoxes(stateShape(this.getBlock(x, y, z)));
   }
 
   setBlock(x: number, y: number, z: number, state: CellState): boolean {

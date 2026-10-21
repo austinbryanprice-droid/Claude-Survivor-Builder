@@ -1,7 +1,7 @@
 import { NET } from './net-config';
 import { MOVEMENT, PLAYER, jumpSpeed } from './movement';
 import type { PlayerSample } from './protocol';
-import type { SolidQuery } from './solid';
+import { pointSolid, type SolidQuery } from './solid';
 
 /**
  * The host's sanity check of a guest's own movement. Guests drive their own controller, so the
@@ -99,8 +99,8 @@ export class MoveGuard {
     if (-dy > this.down + EPSILON) return { ok: false, reason: 'fall' };
 
     if (solid) {
-      const centre = sample.y + PLAYER.height / 2;
-      const buried = solid.isSolid(Math.floor(sample.x), Math.floor(centre), Math.floor(sample.z));
+      // The middle of the body is inside a block; for a slab or a wedge that means inside the part it fills.
+      const buried = pointSolid(solid, sample.x, sample.y + PLAYER.height / 2, sample.z);
       if (buried) {
         this.insideSince ??= now;
         if (now - this.insideSince >= NET.move.insideSolidMs) {

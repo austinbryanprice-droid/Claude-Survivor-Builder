@@ -43,6 +43,32 @@ async function moveMouse(page: Page, dx: number, dy: number, times = 3): Promise
   );
 }
 
+/**
+ * Holds the view where it is for the rest of the test. Playwright's mouse sends stray movements a
+ * second or so after the lock starts (see the look test below), and a walk turns with the view and
+ * misses its ramp. So the page stops listening to the mouse, and the view is set once the game has
+ * used any movement it had already counted.
+ */
+async function holdTheView(page: Page, yaw: number): Promise<void> {
+  await page.evaluate(
+    (yaw) =>
+      new Promise<void>((resolve) => {
+        window.addEventListener('mousemove', (event) => event.stopImmediatePropagation(), true);
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const look = window.__ashbound?.game.look;
+            if (look) {
+              look.yaw = yaw;
+              look.pitch = 0;
+            }
+            resolve();
+          }),
+        );
+      }),
+    yaw,
+  );
+}
+
 /** Reads a value off the running game, e.g. `read<number>(page, 'game.player.z')`. Needs `?debug`. */
 const read = <T>(page: Page, expression: string): Promise<T> =>
   page.evaluate<T>(`(() => {
@@ -160,6 +186,92 @@ test.describe('playing', () => {
       feet,
       { timeout: STATE_TIMEOUT },
     );
+  });
+
+  test('walks up a ramp of wedges onto a platform and back down, without jumping', async ({
+    page,
+  }) => {
+    const { problems } = await open(page);
+    // A floor of cubes over the crash clearing, a ramp of wedges rising toward +x (shape 16), and a
+    // platform one block higher, so the test does not depend on the shape of the ground.
+    const ramp = await read<{ floor: number; x: number; z: number }>(
+      page,
+      `(() => {
+        const voxels = game.world.voxels;
+        const x0 = 8;
+        const z0 = -4;
+        let ground = 0;
+        for (let dx = -4; dx < 7; dx++) {
+          for (let dz = -1; dz < 4; dz++) {
+            ground = Math.max(ground, game.world.groundAt(x0 + dx + 0.5, z0 + dz + 0.5));
+          }
+        }
+        const y = Math.ceil(ground);
+        for (let dx = -4; dx < 7; dx++) {
+          for (let dz = -1; dz < 4; dz++) voxels.setBlock(x0 + dx, y, z0 + dz, 0x0201);
+        }
+        for (let dz = 0; dz < 3; dz++) {
+          voxels.setBlock(x0, y + 1, z0 + dz, 0x0210);
+          for (let dx = 1; dx < 6; dx++) voxels.setBlock(x0 + dx, y + 1, z0 + dz, 0x0201);
+        }
+        return { floor: y + 1, x: x0, z: z0 + 1.5 };
+      })()`,
+    );
+    // Stand on the floor west of the ramp, looking east (yaw -pi/2 walks toward +x).
+    await page.evaluate(({ floor, x, z }) => {
+      window.__ashbound?.game.teleport(x - 2.5, floor + 0.05, z, -Math.PI / 2);
+    }, ramp);
+    await takeThePointer(page);
+    await holdTheView(page, -Math.PI / 2);
+    await page.waitForFunction(() => window.__ashbound?.game.player.onGround === true, null, {
+      timeout: STATE_TIMEOUT,
+    });
+    expect(await read<number>(page, 'game.player.y')).toBeCloseTo(ramp.floor, 1);
+
+    // Count the frames off the ground and note the highest point while walking.
+    await page.evaluate(() => {
+      const game = window.__ashbound?.game;
+      if (!game) return;
+      const watch = { airborne: 0, peak: game.player.y };
+      Object.assign(window, { __walk: watch });
+      const sample = (): void => {
+        if (!game.player.onGround) watch.airborne++;
+        watch.peak = Math.max(watch.peak, game.player.y);
+        requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    await page.keyboard.down('KeyW');
+    await page.waitForFunction(
+      (top) => {
+        const player = window.__ashbound?.game.player;
+        return !!player && player.onGround && player.y > top - 0.05 && player.x > 11;
+      },
+      ramp.floor + 1,
+      { timeout: STATE_TIMEOUT },
+    );
+    await page.keyboard.up('KeyW');
+    expect(await read<number>(page, 'game.player.y')).toBeCloseTo(ramp.floor + 1, 1);
+
+    // Back down: S walks backward along the ramp.
+    await page.keyboard.down('KeyS');
+    await page.waitForFunction(
+      ({ floor, x }) => {
+        const player = window.__ashbound?.game.player;
+        return !!player && player.onGround && player.y < floor + 0.05 && player.x < x;
+      },
+      ramp,
+      { timeout: STATE_TIMEOUT },
+    );
+    await page.keyboard.up('KeyS');
+
+    const walk = await page.evaluate(
+      () => (window as unknown as { __walk: { airborne: number; peak: number } }).__walk,
+    );
+    // Up and down without a jump: the highest point was the platform, and the feet never left the ground.
+    expect(walk.peak).toBeLessThan(ramp.floor + 1.1);
+    expect(walk.airborne).toBe(0);
+    expect(problems).toEqual([]);
   });
 
   test('keys do nothing until the pointer is taken, and stop when it is released', async ({

@@ -1,10 +1,38 @@
+import type { CellBox } from './shapes';
+
 /**
  * What the movement code asks of the world. Cell (x, y, z) is the unit cube that spans
- * [x, x + 1] × [y, y + 1] × [z, z + 1]; arguments are integers. Phase 2's voxel world will
- * implement this interface, and tests and the proving ground use `SparseCells`.
+ * [x, x + 1] × [y, y + 1] × [z, z + 1]; arguments are integers. The voxel world implements this
+ * interface, and tests and the proving ground use `SparseCells`.
  */
 export interface SolidQuery {
+  /** True when the cell holds anything solid: a whole cube, or a slab or wedge that fills part of it. */
   isSolid(x: number, y: number, z: number): boolean;
+
+  /**
+   * The solid parts of a cell that is not a whole cube, as boxes in cell coordinates (0 to 1), or
+   * null when the cell is a whole cube or empty. A world that has only whole cubes leaves it out.
+   */
+  boxesAt?(x: number, y: number, z: number): readonly CellBox[] | null;
+}
+
+/** True when the point lies inside something solid: a whole cube, or one of the boxes of a partial cell. */
+export function pointSolid(world: SolidQuery, x: number, y: number, z: number): boolean {
+  const cx = Math.floor(x);
+  const cy = Math.floor(y);
+  const cz = Math.floor(z);
+  if (!world.isSolid(cx, cy, cz)) return false;
+  const boxes = world.boxesAt?.(cx, cy, cz);
+  if (!boxes) return true;
+  const lx = x - cx;
+  const ly = y - cy;
+  const lz = z - cz;
+  for (const b of boxes) {
+    if (lx >= b[0] && lx <= b[3] && ly >= b[1] && ly <= b[4] && lz >= b[2] && lz <= b[5]) {
+      return true;
+    }
+  }
+  return false;
 }
 
 const X_RANGE = 4096;

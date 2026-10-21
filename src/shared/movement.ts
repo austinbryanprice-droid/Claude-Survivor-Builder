@@ -1,4 +1,4 @@
-import { createContacts, moveBody, type Body } from './collision';
+import { createContacts, moveBody, snapToFloor, type Body } from './collision';
 import type { CollisionWorld } from './ground';
 
 /** The player's collision box and eye height, in blocks (1 block = 1 meter). */
@@ -37,10 +37,16 @@ export interface MovementTuning {
   /** How long before landing a jump press is remembered. */
   jumpBufferTime: number;
   /**
-   * How far a body that stood on the terrain is pulled down to keep standing on it. Without it,
-   * walking down a slope would be a string of tiny falls, with air steering and no friction.
+   * How far a body that stood on the terrain, or on cells, is pulled down to keep standing on it.
+   * Without it, walking down a slope (or down a roof of wedges) would be a string of tiny falls,
+   * with air steering and no friction.
    */
   groundSnap: number;
+  /**
+   * How high a ledge of cells a grounded body walks up without jumping: a slab (half a block) and
+   * every step of a wedge's slope, but not a whole block.
+   */
+  stepHeight: number;
 }
 
 export const MOVEMENT: MovementTuning = {
@@ -56,6 +62,7 @@ export const MOVEMENT: MovementTuning = {
   coyoteTime: 0.1,
   jumpBufferTime: 0.12,
   groundSnap: 0.4,
+  stepHeight: 0.6,
 };
 
 /** What the player is asking for during one tick. */
@@ -213,8 +220,17 @@ export function stepPlayer(
   state.vy = Math.max(-tuning.maxFallSpeed, state.vy - tuning.gravity * dt);
   const dy = (startVy + state.vy) * 0.5 * dt;
 
+  // A body on the ground walks up a ledge of cells; one in the air has to jump onto it.
   const wasOnGround = state.onGround;
-  moveBody(state, state.vx * dt, dy, state.vz * dt, world, contacts);
+  moveBody(
+    state,
+    state.vx * dt,
+    dy,
+    state.vz * dt,
+    world,
+    contacts,
+    wasOnGround ? tuning.stepHeight : 0,
+  );
 
   if (contacts.x) state.vx = 0;
   if (contacts.z) state.vz = 0;
@@ -224,11 +240,18 @@ export function stepPlayer(
   let supported = contacts.y && dy < 0;
   if (contacts.y) state.vy = 0;
 
-  // Smooth ground pushes the body out of slopes and rock. A body that is still rising (a jump
-  // that just started, or one skimming a slope) is not standing on it, and is not pulled down to it.
+  // A body that is still rising (a jump that just started, or one skimming a slope) is not
+  // standing on anything, and is not pulled down to it.
+  const rising = state.vy > 0;
+  // Walking down a roof of wedges or a flight of slabs: the floor falls away faster than gravity
+  // pulls, so a body that stood on cells a moment ago comes down to the next one. This runs even
+  // when the body was resting on a cell at the start of the tick (`supported`), because the sideways
+  // move that followed may have carried it past the edge of that cell.
+  if (wasOnGround && !rising && snapToFloor(state, tuning.groundSnap, world)) supported = true;
+
+  // Smooth ground pushes the body out of slopes and rock.
   const ground = world.ground;
   if (ground) {
-    const rising = state.vy > 0;
     const touching = ground.pushOut(state, GROUND_SPHERES.radius, GROUND_SPHERES.heights);
     if (!rising) {
       if (touching) supported = true;

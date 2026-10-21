@@ -152,6 +152,7 @@ export function createGame({
   // The player and the camera ask this, so a world swap needs no rewiring.
   const collision: CollisionWorld = {
     isSolid: (x, y, z) => world.collision.isSolid(x, y, z),
+    boxesAt: (x, y, z) => world.collision.boxesAt?.(x, y, z) ?? null,
     get ground() {
       return world.collision.ground;
     },
