@@ -28,11 +28,19 @@ export interface Avatar {
   dispose(): void;
 }
 
+export interface AvatarOptions {
+  /** The suit's accent (shoulder pad and chest light), as a CSS color. Amber when left out. */
+  accent?: string;
+}
+
 const WALK_SPEED_FOR_FULL_SWING = 4.4;
 /** Radians of gait phase per block walked. */
 const STRIDE = 3.4;
 
-export function createAvatar(registry: MaterialRegistry): Avatar {
+export function createAvatar(
+  registry: MaterialRegistry,
+  { accent = '#f2a43a' }: AvatarOptions = {},
+): Avatar {
   const geometries: BufferGeometry[] = [];
   const materials: ShaderMaterial[] = [];
 
@@ -57,7 +65,7 @@ export function createAvatar(registry: MaterialRegistry): Avatar {
   const dark = material('#262d35', 0.85, 0.15);
   const helmet = material('#b4bfcb', 0.45, 0.35);
   const visor = material('#0d1c22', 0.18, 0.7, '#2bb8c8');
-  const amber = material('#f2a43a', 0.5, 0.2, '#f2a43a', 0.35);
+  const accentTrim = material(accent, 0.5, 0.2, accent, 0.35);
 
   const box = (w: number, h: number, d: number, mat: ShaderMaterial, x = 0, y = 0, z = 0): Mesh => {
     const radius = Math.min(w, h, d) * 0.32;
@@ -77,7 +85,7 @@ export function createAvatar(registry: MaterialRegistry): Avatar {
   // Torso, chest light and backpack. The body faces -Z.
   rig.add(box(0.46, 0.58, 0.28, suit, 0, 1.17, 0));
   rig.add(box(0.3, 0.2, 0.04, panel, 0, 1.24, -0.15));
-  rig.add(box(0.1, 0.04, 0.03, amber, 0.08, 1.3, -0.175));
+  rig.add(box(0.1, 0.04, 0.03, accentTrim, 0.08, 1.3, -0.175));
   rig.add(box(0.34, 0.46, 0.16, panel, 0, 1.2, 0.22));
   rig.add(box(0.06, 0.3, 0.03, visor, 0, 1.2, 0.305));
 
@@ -97,7 +105,7 @@ export function createAvatar(registry: MaterialRegistry): Avatar {
   };
 
   const armL = limb(-0.31, 1.42, [
-    box(0.17, 0.12, 0.17, amber, 0, 0.0, 0),
+    box(0.17, 0.12, 0.17, accentTrim, 0, 0.0, 0),
     box(0.13, 0.5, 0.13, suit, 0, -0.27, 0),
     box(0.12, 0.12, 0.12, dark, 0, -0.56, 0),
   ]);
@@ -147,9 +155,9 @@ export function createAvatar(registry: MaterialRegistry): Avatar {
     },
     dispose() {
       geometries.forEach((g) => g.dispose());
-      // The materials belong to the registry, which disposes them with the stage; these only
-      // stop being drawn.
-      materials.forEach((m) => m.dispose());
+      // The registry made these materials; handing them back lets it forget them, so players
+      // who come and go do not pile up in it.
+      materials.forEach((m) => registry.release(m));
     },
   };
 }

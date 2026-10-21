@@ -64,6 +64,11 @@ export class MaterialRegistry {
     return material;
   }
 
+  /** Forgets a material this registry made and frees it, for things that come and go (another player's suit). */
+  release(material: ShaderMaterial): void {
+    if (this.materials.delete(material)) material.dispose();
+  }
+
   setSwitches(next: MaterialSwitches): void {
     this.switches = next;
     for (const material of this.materials) {

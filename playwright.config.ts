@@ -1,6 +1,12 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const port = 4173;
+// A local PeerJS signalling server for the multiplayer tests (the public one is out of reach in
+// CI and in the cloud sandbox). The tests pass it to the game with `?broker=`.
+const peerPort = 9000;
+
+const multiplayerTests = '**/multiplayer.spec.ts';
+const desktop = { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 720 } };
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -21,20 +27,43 @@ export default defineConfig({
         '--enable-unsafe-swiftshader',
         '--ignore-gpu-blocklist',
         '--use-gl=angle',
+        // Keep real local addresses in WebRTC offers: browsers on one machine find each other
+        // directly (the tests turn STUN and TURN off), instead of through .local names.
+        '--disable-features=WebRtcHideLocalIpsWithMdns',
       ],
     },
   },
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 720 } },
+      testIgnore: multiplayerTests,
+      use: desktop,
+    },
+    {
+      // Five pages talk to each other here, and a page that gets no turn for ten seconds looks
+      // like a host or a guest that has gone. Next to the other tests on a four-core machine,
+      // loading a page did exactly that, so these wait until the rest are done and have the
+      // machine to themselves.
+      name: 'multiplayer',
+      testMatch: multiplayerTests,
+      dependencies: ['chromium'],
+      use: desktop,
     },
   ],
   // Tests run against the production build; `npm run test:e2e` builds first.
-  webServer: {
-    command: `npm run preview -- --host 127.0.0.1 --port ${port} --strictPort`,
-    url: `http://127.0.0.1:${port}`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-  },
+  webServer: [
+    {
+      command: `npm run preview -- --host 127.0.0.1 --port ${port} --strictPort`,
+      url: `http://127.0.0.1:${port}`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+    {
+      command: 'node tests/e2e/support/peer-server.mjs',
+      url: `http://127.0.0.1:${peerPort}/`,
+      env: { PEER_PORT: String(peerPort) },
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+  ],
 });
