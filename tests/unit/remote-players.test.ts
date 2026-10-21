@@ -1,8 +1,9 @@
 import { Texture } from 'three';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createRemotePlayers } from '../../src/engine/remote-players';
 import { PLAYER_COLORS } from '../../src/shared/player-colors';
 import type { RemotePose } from '../../src/shared/protocol';
+import { createTestRegistry } from './helpers/registry';
 
 function pose(id: number, extra: Partial<RemotePose> = {}): RemotePose {
   return {
@@ -22,13 +23,15 @@ function pose(id: number, extra: Partial<RemotePose> = {}): RemotePose {
 
 function setup() {
   const drawn: { name: string; color: string }[] = [];
+  const registry = createTestRegistry();
   const players = createRemotePlayers({
+    registry,
     drawTag: (name, color) => {
       drawn.push({ name, color });
       return new Texture();
     },
   });
-  return { players, drawn };
+  return { players, drawn, registry };
 }
 
 describe('remote players', () => {
@@ -92,6 +95,21 @@ describe('remote players', () => {
     expect(Math.abs(Math.abs(after) - Math.PI)).toBeLessThan(0.2);
     for (let i = 0; i < 40; i++) players.update(0.05, [pose(2, { yaw: -3.0 })]);
     expect(suit?.rotation.y).toBeCloseTo(-3.0, 3);
+  });
+
+  it("gives a leaving player's materials back to the registry, so joins and leaves do not pile up", () => {
+    const { players, registry } = setup();
+    const release = vi.spyOn(registry, 'release');
+    players.update(0.016, [pose(2), pose(3)]);
+    expect(release).not.toHaveBeenCalled();
+    players.update(0.016, [pose(3)]);
+    const released = release.mock.calls.length;
+    expect(released).toBeGreaterThan(0);
+    // The one who stayed still has all of theirs.
+    players.update(0.016, [pose(3)]);
+    expect(release).toHaveBeenCalledTimes(released);
+    players.dispose();
+    expect(release.mock.calls.length).toBe(released * 2);
   });
 
   it('cleans up after itself', () => {

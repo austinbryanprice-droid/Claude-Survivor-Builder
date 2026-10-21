@@ -555,3 +555,11 @@
     animation: none;
   }
 }
+
+/* ?hud=0 is for clean screenshots: the card and the roster stay out of them, but a room ending still shows. */
+
+body.no-hud .mp-card,
+body.no-hud .mp-mini,
+body.no-hud .mp-toasts {
+  display: none;
+}

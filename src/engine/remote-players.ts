@@ -3,6 +3,7 @@ import { angleDelta, wrapAngle } from '../shared/look';
 import { colorForSlot } from '../shared/player-colors';
 import type { PlayerId, RemotePose } from '../shared/protocol';
 import { createAvatar, type Avatar } from './avatar';
+import type { MaterialRegistry } from './materials';
 
 /**
  * The other players in the world: one suit per seat in that seat's color, walking and turning as
@@ -28,6 +29,8 @@ export interface RemotePlayers {
 }
 
 export interface RemotePlayersOptions {
+  /** The stage's material registry: the suits are lit by the same sun, shadows and haze as the world. */
+  registry: MaterialRegistry;
   /** Draws a name tag. Defaults to a canvas texture; tests pass a stand-in because they have no canvas. */
   drawTag?: (name: string, color: string) => Texture;
 }
@@ -67,8 +70,9 @@ function drawTagWithCanvas(name: string, color: string): Texture {
 }
 
 export function createRemotePlayers({
+  registry,
   drawTag = drawTagWithCanvas,
-}: RemotePlayersOptions = {}): RemotePlayers {
+}: RemotePlayersOptions): RemotePlayers {
   const object = new Group();
   object.name = 'remote-players';
   const entries = new Map<PlayerId, Entry>();
@@ -82,7 +86,7 @@ export function createRemotePlayers({
   };
 
   const create = (pose: RemotePose): Entry => {
-    const avatar = createAvatar({ accent: colorForSlot(pose.slot).hex });
+    const avatar = createAvatar(registry, { accent: colorForSlot(pose.slot).hex });
     const tagMaterial = new SpriteMaterial({
       transparent: true,
       depthTest: false,

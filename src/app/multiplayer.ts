@@ -1,4 +1,5 @@
 import type { Object3D } from 'three';
+import type { MaterialRegistry } from '../engine/materials';
 import { createRemotePlayers } from '../engine/remote-players';
 import { Lobby, type LobbyGame, type LobbyState } from '../net/lobby';
 import { PeerTransport } from '../net/peer-transport';
@@ -34,8 +35,9 @@ export interface MultiplayerOptions {
   world: LobbyGame;
   /** Height of the ground at a point, for the debug hook's "build next to me". */
   groundAt(x: number, z: number): number;
-  /** The scene node the other players' avatars are added to. */
+  /** The scene node the other players' avatars are added to, and the materials they are lit with. */
   scene: Object3D;
+  registry: MaterialRegistry;
   /** The mouse capture: the panel shows its card while the mouse is free. */
   input: {
     readonly locked: boolean;
@@ -110,7 +112,7 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
   const hub = lobby.hub;
 
   const sync = new PlayerSync(hub, options.player);
-  const remotes = createRemotePlayers();
+  const remotes = createRemotePlayers({ registry: options.registry });
   options.scene.add(remotes.object);
 
   const panel = createRoomPanel({

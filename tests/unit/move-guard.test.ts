@@ -122,6 +122,24 @@ describe('move guard', () => {
     });
   });
 
+  it('believes the respawn from where the game really puts it, a little under the world and a little above', () => {
+    // The game returns a player to the start once they fall below -10; the last report the host
+    // took can be several blocks above that.
+    for (const y of [-10.4, -7.5, -2]) {
+      const guard = new MoveGuard();
+      guard.place(10, y, 10, 0);
+      expect(guard.check(at(60.5, 3, 0.5, { reset: true }), 50, null).ok, `from y=${y}`).toBe(true);
+    }
+    // Anywhere with ground under it, the same flag is a teleport.
+    for (const y of [0, 2.9, 12]) {
+      const guard = new MoveGuard();
+      guard.place(10, y, 10, 0);
+      expect(guard.check(at(60.5, 3, 0.5, { reset: true }), 50, null).ok, `from y=${y}`).toBe(
+        false,
+      );
+    }
+  });
+
   it('moves a player back who stays inside a wall, but not one who clips a corner for a moment', () => {
     const world = new SparseCells();
     world.fillBox(5, 0, -2, 5, 3, 2);

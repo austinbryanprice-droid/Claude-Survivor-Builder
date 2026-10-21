@@ -70,8 +70,13 @@ export const NET = {
     burstSeconds: 1.5,
     /** A guest whose body centre sits inside a solid block for this long is moved back. */
     insideSolidMs: 600,
-    /** Below this height a reset (the fall-out-of-the-world respawn) is believed. */
-    resetBelowY: -20,
+    /**
+     * A reset (the fall-out-of-the-world respawn) is believed when the last accepted position was
+     * below this height. No ground in any valley is lower than about 2, and the game puts a player
+     * back at the start once they fall below -10, but the report before that can be a few blocks
+     * higher, so this sits just under the lowest ground.
+     */
+    resetBelowY: -1,
     /** Beyond this the position is nonsense and the report is dropped. */
     limit: 4000,
   },
