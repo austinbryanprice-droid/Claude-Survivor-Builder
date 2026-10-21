@@ -159,12 +159,20 @@ export type HostFrame =
     }
   | { readonly t: 'pong'; readonly n: number }
   /**
-   * Where the survival clock stands: the host's step count (20 a second) and whether the clock is
-   * running. Sent about twice a second while it runs, whenever it stops or starts, and to every
-   * newcomer, so a guest can show the time and move the sky between frames.
+   * Where the run stands: the host's step count (20 a second), whether the clock is running, the
+   * Outpost Core's health and full health in whole points, and whether the Core has fallen. Sent
+   * about twice a second while the clock runs, whenever it stops or starts, within a fifth of a
+   * second of the Core's health changing, and to every newcomer, so a guest can show the time and
+   * the Core and move the sky between frames.
    */
-  | { readonly t: 'sv'; readonly tick: number; readonly run: boolean }
-  /** Something the survival loop announces as it happens (nightfall, dawn). */
+  | {
+      readonly t: 'sv';
+      readonly tick: number;
+      readonly run: boolean;
+      readonly core: readonly [health: number, max: number];
+      readonly over: boolean;
+    }
+  /** Something the survival loop announces as it happens (nightfall, dawn, the Core falling). */
   | { readonly t: 'se'; readonly e: SurvivalEvent }
   /** Every guest's ping, so the room list can show them. */
   | { readonly t: 'pings'; readonly p: readonly (readonly [PlayerId, number])[] }

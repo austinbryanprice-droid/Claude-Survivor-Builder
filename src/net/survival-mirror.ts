@@ -23,16 +23,22 @@ export class SurvivalMirror implements SurvivalView {
   private base = 0;
   private at = 0;
   private running = false;
+  private coreHealth = 0;
+  private coreMax = 0;
+  private over = false;
   private shown = 0;
   private readonly events = new Emitter<SurvivalEvent>();
 
   constructor(private readonly scheduler: Scheduler) {}
 
-  /** The host's step count and whether its clock runs, as of now. */
-  apply(tick: number, running: boolean): void {
+  /** The host's step count, whether its clock runs, and the Core's health and fall, as of now. */
+  apply(tick: number, running: boolean, coreHealth: number, coreMax: number, over: boolean): void {
     this.base = tick / SIM_HZ;
     this.at = this.scheduler.now();
     this.running = running;
+    this.coreHealth = coreHealth;
+    this.coreMax = coreMax;
+    this.over = over;
   }
 
   announce(event: SurvivalEvent): void {
@@ -53,6 +59,9 @@ export class SurvivalMirror implements SurvivalView {
     this.shown = elapsed;
     readClock(elapsed, out);
     out.running = this.running;
+    out.coreHealth = this.coreHealth;
+    out.coreMax = this.coreMax;
+    out.over = this.over;
     return out;
   }
 

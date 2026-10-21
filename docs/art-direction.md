@@ -75,6 +75,7 @@ Reference images 04 and 07 are the model. The look spike built it (`src/ui/playe
 - **Center.** A small dot for a crosshair. Over a surface a block can go on it gets a thin cyan ring; in Build Mode a faint white ring is always there, and it turns red where a click would be refused.
 - **Build Mode.** A translucent copy of the piece in hand, a block, a slab or a wedge, turned the way a click would place it, on the cell a click would fill (cyan when it works, red when it does not, with a bright rim and a slow breath) and a white outline, in the shape of the piece, on the block a click would break. The status panel at the bottom right lists the keys of the mode while it is on, Q for the kind of piece and R to turn it among them.
 - **The day and night clock.** A small dark pill under the compass: the sun or the moon as a flat painted icon, the day or night with its number in letter-spaced capitals ("DAY 2", "NIGHT 2"), the time left until the light changes ("5:12"), and a thin bar along its bottom edge for how far through the day or night it is. It is amber by day and pale blue by night, and for the last 30 seconds before the light changes it breathes in its own colour. It is the spec's "subtle day/night or wave indicator", so it stays small. The waves join it when they exist.
+- **The Outpost Core's gauge.** A second, slimmer pill under the clock: a small crystal icon, "CORE" in letter-spaced capitals, a thin bar and the points left. It is cyan while the Core is sound, amber below half, red below a quarter (and then it breathes) and flat grey at 0 once the Core has fallen; a hit flashes it. By night it is always up, even for a whole Core; by day it comes up only once the Core is hurt, so a morning with nothing wrong has nothing extra on the screen.
 - **Still to come.** The wave count by the clock, the held item's name for tools above the hotbar, a powered-area panel at the bottom right, and the inventory and research overlays (spec section 10) arrive with their phases and reuse the same frames and type.
 
 ## Quality presets
@@ -161,7 +162,7 @@ All three presets pass the game page's mark (at least 57 FPS on average, 95th pe
 ### Known gaps
 
 - No mid-range dedicated GPU has been measured: the only real run so far was on a high-end laptop at its display's frame-rate cap.
-- The crash site is still an empty ash clearing. Blocks are drawn since Phase 2c, but the wreck, the Outpost Core and the lanterns wait for the survival and economy phases, and references 01, 04 and 05 are mostly about buildings (see [the blocks](#phase-2c-the-blocks)).
+- The crash site is an ash clearing with the Outpost Core in the middle of it (since Phase 4b, see [below](#phase-4b-the-outpost-core)); the wreck and the lanterns are still to come. Blocks are drawn since Phase 2c, and references 01, 04 and 05 are mostly about buildings (see [the blocks](#phase-2c-the-blocks)).
 - Textures are detailed and smooth. References 01, 02, 03 and 08 use pixel cubes, and Austin chose smooth, detailed textures over them on 2026-10-20 (see [decisions](decisions.md#look-spike-2026-10-20)).
 - Low has no shadows yet; blob shadows under trees are the planned stand-in.
 - Balanced reflects the far shore faintly (0.3 scale); the near-mirror water of references 01 and 02 needs Ultra.
@@ -299,3 +300,36 @@ The references are single frames in their own light, so this is a check of range
 **Cost.** Nothing is added to the scene and the geometry is the same, so the draw and triangle counts above stand. The shader has a handful more arithmetic operations per pixel. The contact shade is made when a chunk is meshed (the terrain never changes, so nothing is meshed again for it) and costs meshing time: a chunk of 29 thousand triangles (a hollow room) took 13.5 ms without it and 15.1 ms with it, and a checkerboard of 90 thousand triangles 46.7 and 50.2 ms, about 7 to 12 percent, in a Vitest run on the idle sandbox CPU (compare the pair: the 7 ms quoted above for a dense chunk was measured in the browser). The demo's chunks take 0.3 to 1.3 ms, so for them it is a tenth of a millisecond. The remesh queue still spends 3 ms of a frame and always meshes one chunk.
 
 **Not checked.** Low and Ultra draw structures with the same shader and rendered the hall and the gate with no console error, but only Balanced's pictures were retaken. Nothing here has been seen on a real GPU: the light is judged on software-rendered screenshots, so the first look on Austin's machine is the one that counts.
+
+## Phase 4b: the Outpost Core
+
+The Core is the station's reactor, standing in the crater at the middle of the crash site, and the whole run is about it: the nights are about holding it, and the run ends when it falls. It is drawn to be found from across the valley and read at a glance, in the palette of the rest of the game: dark steel, amber trim and the cyan of the accents. The choices are in [decisions](decisions.md#phase-4b-the-outpost-core-2026-10-21).
+
+### The reactor
+
+- **Shape.** A foundation the width of its 3 by 3 footprint, a body with three vents of light in each face under a line of amber trim, a deck, four pylons with amber bands and cyan caps, and a frame joining their tops. In the cage a six-sided cyan crystal turns and bobs over a plate of light, with a thin ring tilted about it. It is 4 blocks high, about two blocks above the rim of the crater, so it is the first thing in the clearing the eye finds. The foundation reaches a block into the ground, because the crater floor slopes under it.
+- **Steel.** Dark blue-grey and fairly metallic, so the golden sun gives it warm edge light instead of turning it to clay (a first version in lighter steel did exactly that, a tan like wood) and the night makes it navy.
+- **The crystal is the gauge.** Cyan while the Core is sound, amber once it is worn and red near the end, with the turns at about the marks of the gauge on the HUD (half and a quarter). The beat quickens as it weakens, it flickers below 40 percent, a hit flashes it white, and when the Core has fallen it sits dark, grey and tilted. The vents and the caps take the crystal's colour, so the whole plinth shows it from the other side of the clearing. The glow dims on the faces turned away, so it reads as cut facets.
+- **Cost.** Six meshes: four merged by material (the steel, the lighter plates, the amber, the lights), the crystal and the ring. Counted like the tables above (Balanced, every pass, software GL), in view it adds 11 draws and about 24 thousand triangles: `shot=core` 105 draws and 747 thousand triangles against 94 and 724 thousand with the Core hidden, `shot=reactor` 106 and 752 thousand against 95 and 729 thousand. From `shot=lake`, where it is out of the main view, it still adds 5 draws and 11 thousand triangles, in the passes that are not the main view. Most of the triangles are the rounded corners of the small boxes (300 each); fewer segments on the thinnest trims would take about a third off if the frame ever needs it.
+
+### Screenshots
+
+Headless Chromium on software GL at 1280 by 720, Balanced, `freeze=1`, taken with the page's `?debug` hooks (`__ashbound.mp.warp` to nightfall, `__ashbound.mp.hurtCore` to wound it). Each reproduces from its URL, for example `/?shot=core&time=night&debug&quality=balanced&freeze=1&stats=0`.
+
+![The Core in its states](phase-4/core-states.jpg)
+
+| Image                                        | What to look at                                                                                                                                                                                         |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [core-day](phase-4/core-day.jpg)             | `shot=core`: the Core from the south-east rim at golden hour. The low sun gives the steel warm edges; the amber bands and the cyan vents are the only saturated colour on the dark floor of the crater. |
+| [reactor-day](phase-4/reactor-day.jpg)       | `shot=reactor`: from a few steps away with the sun behind the camera. The crystal's facets, the ring, the vents, and a plinth that is whole on this side.                                               |
+| [core-night](phase-4/core-night.jpg)         | The first night: the moon on the steel, the cyan crystal the brightest thing in the clearing, and the Core's gauge under the clock, whole.                                                              |
+| [core-fallen](phase-4/core-fallen.jpg)       | The Core has fallen: the crystal is dark and tilted, the lights are out, the gauge reads 0 in grey, the banner and a toast say so.                                                                      |
+| [core-pause](phase-4/core-pause.jpg)         | Esc after the fall: the pause card names the end of the run and the nights survived.                                                                                                                    |
+| [reactor-states](phase-4/reactor-states.jpg) | The reactor close up at night, whole, worn (amber), failing (red) and fallen.                                                                                                                           |
+| [core-gauge](phase-4/core-gauge.jpg)         | The gauge under the clock, enlarged, in its four states.                                                                                                                                                |
+
+### Known gaps in the Core
+
+- The wreckage and the scorched patch round it, and the faint amber-red mist of the crash site, are not drawn: the Core stands alone in the crater.
+- The crystal casts no light on the ground or the steel. The scene has no point lights (the atmosphere carries the sun and the sky), so the glow only blooms. A fake, a light patch on the ground, is the likely answer if it is missed.
+- Seen only on software-rendered pictures. How it reads on a real display, and how the bloom treats the crystal there, is for the first look on a real GPU.

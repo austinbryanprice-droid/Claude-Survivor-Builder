@@ -121,6 +121,9 @@ const IDLE_SURVIVAL: SurvivalView = {
     out.left = 0;
     out.sky = 0;
     out.running = false;
+    out.coreHealth = 0;
+    out.coreMax = 0;
+    out.over = false;
     return out;
   },
   onEvent: () => () => undefined,
@@ -158,6 +161,8 @@ export class HostSession implements GameSession {
   private survivalAt: number;
   private survivalRunning = false;
   private survivalDirty = false;
+  /** The Core's health as the guests were last told it; a different number is news. */
+  private coreSent = -1;
   private lastSurvivalSend = -Infinity;
   private readonly survivalQueue: SurvivalEvent[] = [];
 
@@ -805,10 +810,11 @@ export class HostSession implements GameSession {
 
   /**
    * Whether the run is going right now: with guests in the room it always is; alone, only while
-   * the player is playing. A change is noted so the guests hear of it at the next tick.
+   * the player is playing; and never once the Core has fallen. A change is noted so the guests
+   * hear of it at the next tick.
    */
   private refreshRunning(): boolean {
-    const running = this.hasGuests() || this.localActive;
+    const running = (this.hasGuests() || this.localActive) && !this.sim?.over;
     if (running !== this.survivalRunning) {
       this.survivalRunning = running;
       this.survivalDirty = true;
@@ -838,8 +844,12 @@ export class HostSession implements GameSession {
     }
     this.survivalQueue.length = 0;
 
-    const due = running && now - this.lastSurvivalSend >= NET.survivalIntervalMs;
-    if (guests && (this.survivalDirty || due)) {
+    // A change to the Core's health is sent soon, but not at once: a fight at the base can change
+    // it every step, and a fifth of a second is as fast as anyone can read a gauge.
+    const sinceSend = now - this.lastSurvivalSend;
+    const coreNews = sim.coreHealth !== this.coreSent && sinceSend >= NET.coreIntervalMs;
+    const due = running && sinceSend >= NET.survivalIntervalMs;
+    if (guests && (this.survivalDirty || due || coreNews)) {
       this.lastSurvivalSend = now;
       this.broadcast(this.survivalFrame());
     }
@@ -847,7 +857,16 @@ export class HostSession implements GameSession {
   }
 
   private survivalFrame(): string {
-    return encodeFrame({ t: 'sv', tick: this.sim?.tick ?? 0, run: this.refreshRunning() });
+    const sim = this.sim;
+    const core = sim?.coreHealth ?? 0;
+    this.coreSent = core;
+    return encodeFrame({
+      t: 'sv',
+      tick: sim?.tick ?? 0,
+      run: this.refreshRunning(),
+      core: [core, sim?.coreMax ?? 1],
+      over: sim?.over ?? false,
+    });
   }
 
   private broadcast(frame: string): void {

@@ -89,6 +89,7 @@ export function costText(piece: CellState): string {
 
 /** Why a click does nothing, in a short sentence. The world's and the aim's codes are listed; the host's words pass through. */
 const REFUSAL_TEXT: Readonly<Record<string, string>> = {
+  reserved: 'The Outpost Core needs that room',
   occupied: 'Something is already there',
   buried: 'That spot is inside the ground',
   unsupported: 'Needs ground or a block to rest on',

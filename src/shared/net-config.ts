@@ -4,7 +4,7 @@
  */
 export const NET = {
   /** Bumped whenever a message changes shape; a host and a guest on different versions refuse each other. */
-  protocolVersion: 2,
+  protocolVersion: 3,
   maxPlayers: 4,
 
   /** The local player's state is sent about this often (about 20 Hz). */
@@ -22,6 +22,8 @@ export const NET = {
 
   /** The host tells guests where the survival clock stands at least this often while it runs. */
   survivalIntervalMs: 500,
+  /** ...and within this long of the Core's health changing, so a fight at the base shows as it happens. */
+  coreIntervalMs: 200,
 
   pingIntervalMs: 2000,
   /**

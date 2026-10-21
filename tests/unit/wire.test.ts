@@ -150,10 +150,12 @@ describe('host control frames', () => {
     { t: 'rej', id: 4, r: 'occupied' },
     { t: 'fix', epoch: 3, x: 1, y: 0, z: -2 },
     { t: 'pong', n: 9 },
-    { t: 'sv', tick: 14400, run: true },
-    { t: 'sv', tick: 0, run: false },
+    { t: 'sv', tick: 14400, run: true, core: [1000, 1000], over: false },
+    { t: 'sv', tick: 0, run: false, core: [1, 1000], over: false },
+    { t: 'sv', tick: 9600, run: false, core: [0, 1000], over: true },
     { t: 'se', e: { k: 'nightfall', n: 1 } },
     { t: 'se', e: { k: 'dawn', n: 12 } },
+    { t: 'se', e: { k: 'overrun', n: 3 } },
     {
       t: 'pings',
       p: [
@@ -203,12 +205,12 @@ describe('host control frames', () => {
 
   it('refuses survival frames with a bad step count, a flag that is not a flag or an event it does not know', () => {
     for (const text of [
-      '{"t":"sv","tick":-1,"run":true}',
-      '{"t":"sv","tick":1.5,"run":true}',
-      '{"t":"sv","tick":3000000000,"run":true}',
-      '{"t":"sv","tick":"9","run":true}',
+      '{"t":"sv","tick":-1,"run":true,"core":[5,10],"over":false}',
+      '{"t":"sv","tick":1.5,"run":true,"core":[5,10],"over":false}',
+      '{"t":"sv","tick":3000000000,"run":true,"core":[5,10],"over":false}',
+      '{"t":"sv","tick":"9","run":true,"core":[5,10],"over":false}',
       '{"t":"sv","tick":9}',
-      '{"t":"sv","tick":9,"run":1}',
+      '{"t":"sv","tick":9,"run":1,"core":[5,10],"over":false}',
       '{"t":"se"}',
       '{"t":"se","e":null}',
       '{"t":"se","e":{"k":"nightfall"}}',
@@ -216,6 +218,27 @@ describe('host control frames', () => {
       '{"t":"se","e":{"k":"nightfall","n":1.5}}',
       '{"t":"se","e":{"k":"nightfall","n":70000}}',
       '{"t":"se","e":{"k":"eclipse","n":1}}',
+    ]) {
+      expect(decodeHostFrame(text), text).toBeNull();
+    }
+  });
+
+  it('refuses a survival frame whose Core is missing, malformed or more than whole', () => {
+    for (const text of [
+      '{"t":"sv","tick":9,"run":true}',
+      '{"t":"sv","tick":9,"run":true,"over":false}',
+      '{"t":"sv","tick":9,"run":true,"core":[5,10]}',
+      '{"t":"sv","tick":9,"run":true,"core":[5,10],"over":0}',
+      '{"t":"sv","tick":9,"run":true,"core":5,"over":false}',
+      '{"t":"sv","tick":9,"run":true,"core":[5],"over":false}',
+      '{"t":"sv","tick":9,"run":true,"core":[5,10,1],"over":false}',
+      '{"t":"sv","tick":9,"run":true,"core":["5",10],"over":false}',
+      '{"t":"sv","tick":9,"run":true,"core":[5.5,10],"over":false}',
+      '{"t":"sv","tick":9,"run":true,"core":[-1,10],"over":false}',
+      '{"t":"sv","tick":9,"run":true,"core":[11,10],"over":false}',
+      '{"t":"sv","tick":9,"run":true,"core":[0,0],"over":false}',
+      '{"t":"sv","tick":9,"run":true,"core":[5,70000],"over":false}',
+      '{"t":"sv","tick":9,"run":true,"core":null,"over":false}',
     ]) {
       expect(decodeHostFrame(text), text).toBeNull();
     }

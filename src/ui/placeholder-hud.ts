@@ -6,7 +6,7 @@ import { CRASH } from '../world/terrain/field';
 import { BuildPromptTracker, blockSlotsByKind, type BuildHudSource } from './build-hud';
 import { wrapBearing } from './player-hud/format';
 import { PlayerHud, type HotbarSlot, type PlayerHudState } from './player-hud/player-hud';
-import { clockForHud, objectiveForRun } from './run-hud';
+import { clockForHud, coreForHud, objectiveForRun } from './run-hud';
 
 /** Placeholder tools for the slots after the building blocks; the real ones come with the inventory. */
 const TOOLS: readonly HotbarSlot[] = [
@@ -100,6 +100,7 @@ export function createPlaceholderHud(
           },
         ],
         clock: run ? clockForHud(run) : null,
+        core: run ? coreForHud(run) : null,
         objective: run
           ? objectiveForRun(run)
           : { place: 'The Ashbound Outpost', title: 'Light the beacon at the crash site' },

@@ -103,6 +103,7 @@ describe('the icon sprite', () => {
 describe('refusal words', () => {
   it('give every reason the world and the aim can give a sentence of its own', () => {
     const codes = [
+      'reserved',
       'occupied',
       'buried',
       'unsupported',

@@ -35,6 +35,10 @@ uniform vec3 uColor;
 uniform vec3 uGlow;
 // x: gloss (0 matte, 1 mirror-like), y: metalness
 uniform vec2 uSurface;
+// How much the glow follows the way a face points: 0 gives off the same light everywhere, 1 lets
+// a face turned away from the viewer and the key light give off about a third of it, so a cut
+// gem reads as facets.
+uniform float uFacets;
 
 varying vec3 vWorld;
 varying vec3 vNormal;
@@ -56,10 +60,12 @@ void main() {
 
   // A faint rim from the sky keeps a dark suit readable against dark ground.
   float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+  float facing = 0.5 * max(dot(N, V), 0.0) + 0.5 * diff;
+  vec3 glow = uGlow * mix(1.0, 0.3 + 0.7 * facing, uFacets);
   vec3 lit = albedo * (uKeyColor * diff * shadow + ambientLight(N))
            + uKeyColor * specColor * shine * shadow
            + uAmbSky * rim * 0.18 * (0.4 + 0.6 * metal)
-           + uGlow;
+           + glow;
   lit = applyAtmosphere(lit, vWorld);
   gl_FragColor = vec4(lit, 1.0);
 }
@@ -75,6 +81,8 @@ export interface LitMaterialOptions {
   /** 0 is matte, 1 is polished. */
   gloss?: number;
   metalness?: number;
+  /** 0 (the default) glows evenly; towards 1 the glow dims on faces turned away, so flat facets show. */
+  facets?: number;
 }
 
 export function createLitMaterial(
@@ -86,6 +94,7 @@ export function createLitMaterial(
     uColor: { value: new Color(options.color) },
     uGlow: { value: glow },
     uSurface: { value: new Vector2(options.gloss ?? 0.4, options.metalness ?? 0.2) },
+    uFacets: { value: options.facets ?? 0 },
   };
   return registry.create({
     vertexShader: LIT_VERTEX,

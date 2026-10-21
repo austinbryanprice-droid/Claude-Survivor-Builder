@@ -52,7 +52,7 @@ Click the page to take the mouse; Esc gives it back.
 | `join=CODE`, `name=Ada`        | Join a room on load; the name to play under                                                                   |
 | `broker=host:port`, `ice=...`  | Another PeerJS server; STUN and TURN servers (`none` for direct only)                                         |
 
-The viewpoints are `lake`, `valley`, `canopy`, `crash`, `trail`, `outcrop`, `noon`, `sunset`, `dusk`, `night` and seven that look at the demo structures: `outpost` and `gate` for `demo=outpost`, `swatch` and `closeup` for `demo=swatch`, `hall`, `hallside` and `eaves` for `demo=hall`. A viewpoint brings its own time of day unless `time=` says otherwise. For example, `/?shot=lake&quality=balanced&hud=0&stats=0&freeze=1` draws the same frame every time.
+The viewpoints are `lake`, `valley`, `canopy`, `crash`, `core` and `reactor` (the Outpost Core from the rim and from a few steps away), `trail`, `outcrop`, `noon`, `sunset`, `dusk`, `night` and seven that look at the demo structures: `outpost` and `gate` for `demo=outpost`, `swatch` and `closeup` for `demo=swatch`, `hall`, `hallside` and `eaves` for `demo=hall`. A viewpoint brings its own time of day unless `time=` says otherwise. For example, `/?shot=lake&quality=balanced&hud=0&stats=0&freeze=1` draws the same frame every time.
 
 ## Benchmark
 

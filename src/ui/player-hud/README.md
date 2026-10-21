@@ -7,6 +7,6 @@ The in-game HUD, after reference 07: vitals, status icons, compass, objective ba
 - `icons.ts` is an SVG sprite of original icons, the block icons of the hotbar among them: a block, a slab and a wedge in each of the four materials, the slab and the wedge cut from the block's own paint.
 - `format.ts` holds the pure helpers (compass math, distance and clock text, segment fills, scale) that the unit tests cover.
 
-The state also carries the caption above the hotbar (`prompt`), the crosshair (`none`, `place` or `blocked`) and whether Build Mode is on; `../build-hud.ts` works those out from the player's building hands.
+The state also carries the run's day and night pill and the Outpost Core's gauge under it (`clock` and `core`; the gauge is hidden while the state has none), the caption above the hotbar (`prompt`), the crosshair (`none`, `place` or `blocked`) and whether Build Mode is on; `../build-hud.ts` works those out from the player's building hands.
 
 Colors, sizes and layout are described in [art direction](../../../docs/art-direction.md#hud). The class prefix is `ph-`.

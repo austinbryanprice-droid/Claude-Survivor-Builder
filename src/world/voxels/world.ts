@@ -1,6 +1,7 @@
 import type { BlockWorld, CellState } from '../../shared/block-world';
 import { isCellState, isKnownState, stateShape } from '../../shared/blocks';
 import { shapeBoxes, type CellBox } from '../../shared/shapes';
+import { outpostFor, type Outpost } from '../outpost';
 import { WORLD_HALF } from '../terrain/field';
 import { bakeTerrain, type Terrain } from '../terrain/terrain';
 import {
@@ -59,7 +60,7 @@ const TOUCH_DISTANCE = 0.05;
 
 /** Why a placement or a break is refused. The strings are what `checkPlace` and `checkBreak` return. */
 export type PlaceRefusal =
-  'unknown-block' | 'out-of-bounds' | 'occupied' | 'buried' | 'unsupported';
+  'unknown-block' | 'out-of-bounds' | 'reserved' | 'occupied' | 'buried' | 'unsupported';
 export type BreakRefusal = 'out-of-bounds' | 'empty';
 
 export type ChunkDirtyListener = (cx: number, cy: number, cz: number) => void;
@@ -71,6 +72,11 @@ export type ChunkDirtyListener = (cx: number, cy: number, cz: number) => void;
  * Edits go through `setBlock`, which is idempotent and cheap. It marks the chunk and any chunk
  * whose mesh can see the cell as dirty and does nothing else; the renderer drains the dirty
  * list once per frame and re-meshes what it can afford.
+ *
+ * The Outpost Core stands in the valley but is not made of blocks: it is part of the ground the
+ * world is built on. Its cells are solid (movement, the camera and plants treat them like a
+ * block) and nothing can be placed in them, but they hold no block, so they are never saved,
+ * sent or meshed.
  */
 export class VoxelWorld implements BlockWorld {
   private readonly chunks = new Map<number, Chunk>();
@@ -83,6 +89,8 @@ export class VoxelWorld implements BlockWorld {
   constructor(
     readonly seed: number,
     readonly terrain: Terrain,
+    /** The Outpost Core's cells, which no block may take; null for a world with no Core. */
+    readonly outpost: Outpost | null = null,
   ) {}
 
   /** How many cells hold a block. */
@@ -114,9 +122,11 @@ export class VoxelWorld implements BlockWorld {
     return chunk.cells[cellIndex(x & CHUNK_MASK, y & CHUNK_MASK, z & CHUNK_MASK)] as number;
   }
 
-  /** True when the cell holds a block, which is what movement and the camera ask. */
+  /** True when the cell holds a block or is part of the Core, which is what movement and the camera ask. */
   isSolid(x: number, y: number, z: number): boolean {
-    return this.getBlock(x, y, z) !== 0;
+    return (
+      this.getBlock(x, y, z) !== 0 || (this.outpost !== null && this.outpost.contains(x, y, z))
+    );
   }
 
   /** The part of a slab or wedge cell that is solid, as boxes; null for a whole cube or an empty cell. */
@@ -161,6 +171,7 @@ export class VoxelWorld implements BlockWorld {
     if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z))
       return 'out-of-bounds';
     if (!inBuildBounds(x, y, z)) return 'out-of-bounds';
+    if (this.outpost !== null && this.outpost.contains(x, y, z)) return 'reserved';
     if (this.getBlock(x, y, z) !== 0) return 'occupied';
     const grid = this.terrain.grid;
     let lowest = Infinity;
@@ -245,14 +256,15 @@ export class VoxelWorld implements BlockWorld {
     return taken;
   }
 
+  /** True when a block, or the Core, fills a cell that shares a face with this one. */
   private touchesBlock(x: number, y: number, z: number): boolean {
     return (
-      this.getBlock(x - 1, y, z) !== 0 ||
-      this.getBlock(x + 1, y, z) !== 0 ||
-      this.getBlock(x, y - 1, z) !== 0 ||
-      this.getBlock(x, y + 1, z) !== 0 ||
-      this.getBlock(x, y, z - 1) !== 0 ||
-      this.getBlock(x, y, z + 1) !== 0
+      this.isSolid(x - 1, y, z) ||
+      this.isSolid(x + 1, y, z) ||
+      this.isSolid(x, y - 1, z) ||
+      this.isSolid(x, y + 1, z) ||
+      this.isSolid(x, y, z - 1) ||
+      this.isSolid(x, y, z + 1)
     );
   }
 
@@ -284,7 +296,15 @@ export class VoxelWorld implements BlockWorld {
   }
 }
 
-/** Builds the world for a seed: the terrain it stands on and an empty set of blocks. */
+/**
+ * Builds the world for a seed: the terrain it stands on, the Outpost Core at the middle of the
+ * crash site (worked out from the seed's ground, so every peer puts it in the same cells) and an
+ * empty set of blocks.
+ */
 export function createWorld(seed: number, terrain: Terrain = bakeTerrain(seed)): VoxelWorld {
-  return new VoxelWorld(seed, terrain);
+  return new VoxelWorld(
+    seed,
+    terrain,
+    outpostFor((x, z) => terrain.grid.groundAt(x, z)),
+  );
 }

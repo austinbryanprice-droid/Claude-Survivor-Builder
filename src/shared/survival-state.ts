@@ -33,10 +33,27 @@ export interface SurvivalReading {
   sky: number;
   /** False while the clock is held (single-player with the mouse free). */
   running: boolean;
+  /** The Outpost Core's health, from 0 to `coreMax`. */
+  coreHealth: number;
+  /** The Core's full health. 0 where there is no Core to show, which hides its gauge. */
+  coreMax: number;
+  /** True once the Core has fallen: the run is over and the clock no longer moves. */
+  over: boolean;
 }
 
 export function createReading(): SurvivalReading {
-  return { elapsed: 0, cycle: 1, phase: 'day', into: 0, left: DAY_SECONDS, sky: 0, running: false };
+  return {
+    elapsed: 0,
+    cycle: 1,
+    phase: 'day',
+    into: 0,
+    left: DAY_SECONDS,
+    sky: 0,
+    running: false,
+    coreHealth: 0,
+    coreMax: 0,
+    over: false,
+  };
 }
 
 /**
@@ -62,14 +79,21 @@ export function nightStart(n: number): number {
   return (Math.max(1, Math.floor(n)) - 1) * CYCLE_SECONDS + DAY_SECONDS;
 }
 
+/** How many whole nights the crew has held out: the nights that ended in a dawn. */
+export function nightsSurvived(cycle: number): number {
+  return Math.max(0, Math.floor(cycle) - 1);
+}
+
 /** What the host announces as it happens. Late joiners do not get the past; the snapshot says where things stand. */
 export type SurvivalEvent =
   /** Night `n` has begun. */
   | { readonly k: 'nightfall'; readonly n: number }
   /** Night `n` is over and day `n + 1` has begun. */
-  | { readonly k: 'dawn'; readonly n: number };
+  | { readonly k: 'dawn'; readonly n: number }
+  /** The run has ended: the Core fell during day or night `n`, so `n - 1` nights were survived. */
+  | { readonly k: 'overrun'; readonly n: number };
 
-export const SURVIVAL_EVENT_KINDS: readonly SurvivalEvent['k'][] = ['nightfall', 'dawn'];
+export const SURVIVAL_EVENT_KINDS: readonly SurvivalEvent['k'][] = ['nightfall', 'dawn', 'overrun'];
 
 /**
  * The survival loop as a screen sees it. The host reads it straight from the simulation and a

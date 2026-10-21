@@ -56,6 +56,16 @@ export interface HudClock {
   readonly soon: boolean;
 }
 
+/** The Outpost Core's gauge under the clock. */
+export interface HudCore {
+  /** 0 to 1: how much of its health is left. */
+  readonly fraction: number;
+  /** The health left, in points, as it is read out. */
+  readonly value: string;
+  /** How worried to look: cyan while sound, amber when worn, red when critical, grey once fallen. */
+  readonly tone: 'sound' | 'worn' | 'critical' | 'fallen';
+}
+
 export interface PlayerHudState {
   /** 0 to 1. */
   readonly health: number;
@@ -72,6 +82,8 @@ export interface PlayerHudState {
   readonly waypoints: readonly HudWaypoint[];
   /** The day and night clock under the compass; absent or null hides it. */
   readonly clock?: HudClock | null;
+  /** The Outpost Core's gauge under the clock; absent or null hides it. */
+  readonly core?: HudCore | null;
   readonly objective: { readonly place: string; readonly title: string } | null;
   readonly slots: readonly HotbarSlot[];
   /** Index of the selected hotbar slot. */
@@ -137,6 +149,9 @@ export class PlayerHud {
   private readonly clockLabel: HTMLElement;
   private readonly clockTime: HTMLElement;
   private readonly clockFill: HTMLElement;
+  private readonly core: HTMLElement;
+  private readonly coreValue: HTMLElement;
+  private readonly coreFill: HTMLElement;
   private readonly objective: HTMLElement;
   private readonly objectivePlace: HTMLElement;
   private readonly objectiveTitle: HTMLElement;
@@ -155,6 +170,9 @@ export class PlayerHud {
   private lastHeading = Number.NaN;
   private lastClock = '';
   private lastClockFill = -1;
+  private lastCore = '';
+  private lastCorePoints = Number.NaN;
+  private coreHits = 0;
   private lastObjective = '';
   private readonly lastSlots: string[] = [];
   private lastSelected = -1;
@@ -210,6 +228,17 @@ export class PlayerHud {
     track.append(this.clockFill);
     this.clock.append(this.clockIcon, this.clockLabel, this.clockTime, track);
 
+    // The Outpost Core's gauge, a second pill under the clock.
+    this.core = el('div', 'ph-core');
+    this.core.hidden = true;
+    const coreIcon = el('span', 'ph-core-icon');
+    coreIcon.innerHTML = iconMarkup('core');
+    const coreTrack = el('i', 'ph-core-track');
+    this.coreFill = el('i', 'ph-core-fill');
+    coreTrack.append(this.coreFill);
+    this.coreValue = el('span', 'ph-core-value');
+    this.core.append(coreIcon, el('span', 'ph-core-label', 'Core'), coreTrack, this.coreValue);
+
     // Objective banner and the journal hint under it.
     this.objective = el('div', 'ph-objective');
     const banner = el('div', 'ph-banner');
@@ -248,6 +277,7 @@ export class PlayerHud {
       this.buff,
       compass,
       this.clock,
+      this.core,
       this.objective,
       this.prompt,
       bar,
@@ -298,6 +328,7 @@ export class PlayerHud {
     this.updateStatuses(state);
     this.updateCompass(state);
     this.updateClock(state);
+    this.updateCore(state);
     this.updateObjective(state);
     this.updateHotbar(state);
     this.updateBuild(state);
@@ -399,6 +430,27 @@ export class PlayerHud {
         this.clockFill.style.width = `${fill}%`;
       }
     }
+  }
+
+  private updateCore(state: PlayerHudState): void {
+    const core = state.core ?? null;
+    const fill = core ? Math.round(clamp01(core.fraction) * 1000) / 10 : -1;
+    const key = core ? `${core.tone}|${core.value}|${fill}` : '';
+    if (key === this.lastCore) return;
+    this.lastCore = key;
+    this.core.hidden = core === null;
+    if (!core) {
+      this.lastCorePoints = Number.NaN;
+      return;
+    }
+    this.core.dataset.tone = core.tone;
+    this.coreValue.textContent = core.value;
+    this.coreFill.style.width = `${fill}%`;
+    // A loss flashes the pill. Two animations take turns, because setting the one that is already
+    // running would not restart it.
+    const points = Number(core.value);
+    if (points < this.lastCorePoints) this.core.dataset.hit = String(++this.coreHits % 2);
+    this.lastCorePoints = points;
   }
 
   private updateObjective(state: PlayerHudState): void {

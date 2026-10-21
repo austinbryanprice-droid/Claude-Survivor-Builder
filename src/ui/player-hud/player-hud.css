@@ -380,6 +380,148 @@
   }
 }
 
+/* The Outpost Core's gauge: a second pill under the clock, shown at night and whenever it is hurt. */
+
+.ph-core {
+  --tone: #5fd8ef;
+
+  position: absolute;
+  top: calc(var(--u) * 77px);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 8px);
+  height: calc(var(--u) * 25px);
+  padding: 0 calc(var(--u) * 14px) 0 calc(var(--u) * 8px);
+  border-radius: calc(var(--u) * 12.5px);
+  background: rgb(34 37 45 / 84%);
+  box-shadow:
+    0 2px 6px rgb(0 0 0 / 35%),
+    inset 0 0 0 calc(var(--u) * 1px) rgb(255 255 255 / 9%);
+  font-size: calc(var(--u) * 14px);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: var(--shadow);
+  transform: translateX(-50%);
+}
+
+.ph-core[data-tone='worn'] {
+  --tone: #ffb347;
+}
+
+.ph-core[data-tone='critical'] {
+  --tone: #ff5d4d;
+}
+
+.ph-core[data-tone='fallen'] {
+  --tone: #8b919c;
+}
+
+.ph-core-icon {
+  width: calc(var(--u) * 18px);
+  height: calc(var(--u) * 18px);
+}
+
+.ph-core-label {
+  font-size: calc(var(--u) * 11px);
+  letter-spacing: 0.17em;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+}
+
+.ph-core-track {
+  position: relative;
+  width: calc(var(--u) * 92px);
+  height: calc(var(--u) * 7px);
+  overflow: hidden;
+  border-radius: calc(var(--u) * 3.5px);
+  background: rgb(0 0 0 / 45%);
+  box-shadow: inset 0 0 0 calc(var(--u) * 1px) rgb(255 255 255 / 10%);
+}
+
+.ph-core-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tone), white 38%), var(--tone));
+  transition: width 0.25s ease-out;
+}
+
+.ph-core-value {
+  min-width: calc(var(--u) * 34px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-align: right;
+}
+
+/* A loss flashes the pill red (two names, so the animation restarts on every hit). */
+
+.ph-core[data-hit='0'] {
+  animation: ph-core-hit-a 0.45s ease-out;
+}
+
+.ph-core[data-hit='1'] {
+  animation: ph-core-hit-b 0.45s ease-out;
+}
+
+@keyframes ph-core-hit-a {
+  0% {
+    box-shadow:
+      0 0 calc(var(--u) * 14px) #ff5d4d,
+      inset 0 0 0 calc(var(--u) * 2px) #ff5d4d;
+  }
+}
+
+@keyframes ph-core-hit-b {
+  0% {
+    box-shadow:
+      0 0 calc(var(--u) * 14px) #ff5d4d,
+      inset 0 0 0 calc(var(--u) * 2px) #ff5d4d;
+  }
+}
+
+/* Below a quarter the pill breathes red until the Core mends or falls. */
+
+.ph-core[data-tone='critical'] {
+  animation: ph-core-breath 1.1s ease-in-out infinite;
+}
+
+@keyframes ph-core-breath {
+  50% {
+    box-shadow:
+      0 0 calc(var(--u) * 12px) var(--tone),
+      inset 0 0 0 calc(var(--u) * 1px) var(--tone);
+  }
+}
+
+/* A hit while it is critical flashes over the breathing, then the breathing carries on. */
+
+.ph-core[data-tone='critical'][data-hit='0'] {
+  animation:
+    ph-core-breath 1.1s ease-in-out infinite,
+    ph-core-hit-a 0.45s ease-out;
+}
+
+.ph-core[data-tone='critical'][data-hit='1'] {
+  animation:
+    ph-core-breath 1.1s ease-in-out infinite,
+    ph-core-hit-b 0.45s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ph-core[data-hit],
+  .ph-core[data-tone='critical'],
+  .ph-core[data-tone='critical'][data-hit] {
+    animation: none;
+  }
+
+  .ph-core-fill {
+    transition: none;
+  }
+}
+
 /* Objective banner and journal hint, top right. */
 
 .ph-objective {

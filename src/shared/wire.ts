@@ -228,9 +228,15 @@ export function decodeHostFrame(text: string): HostFrame | null {
     }
     case 'pong':
       return isInt(raw.n, 0, MAX_U31) ? { t: 'pong', n: raw.n } : null;
-    case 'sv':
+    case 'sv': {
       if (!isInt(raw.tick, 0, MAX_U31) || typeof raw.run !== 'boolean') return null;
-      return { t: 'sv', tick: raw.tick, run: raw.run };
+      if (typeof raw.over !== 'boolean' || !Array.isArray(raw.core) || raw.core.length !== 2) {
+        return null;
+      }
+      const [health, max] = raw.core as unknown[];
+      if (!isInt(max, 1, MAX_U16) || !isInt(health, 0, max)) return null;
+      return { t: 'sv', tick: raw.tick, run: raw.run, core: [health, max], over: raw.over };
+    }
     case 'se': {
       const event = readSurvivalEvent(raw.e);
       return event ? { t: 'se', e: event } : null;
