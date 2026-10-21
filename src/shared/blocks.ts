@@ -70,6 +70,13 @@ export const SHAPES: readonly ShapeDef[] = [
 /** The four directions a wedge can rise toward: +x, +z, -x, -z. */
 export const WEDGE_FACINGS = 4;
 
+/** The shape a kind starts as: the whole cell, the lower slab, the wedge rising toward +x. */
+export function baseShape(kind: ShapeKind): number {
+  if (kind === 'slab') return SHAPE.slab;
+  if (kind === 'wedge') return SHAPE.wedge;
+  return SHAPE.cube;
+}
+
 /** The id of a slab in the lower or the upper half of its cell. */
 export function slabShape(upper: boolean): number {
   return SHAPE.slab + (upper ? 1 : 0);

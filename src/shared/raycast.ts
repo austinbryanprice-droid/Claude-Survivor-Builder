@@ -1,12 +1,17 @@
 import type { BlockWorld } from './block-world';
+import { stateShape } from './blocks';
 import type { GroundQuery } from './ground';
 import type { Vec3 } from './look';
+import { shapeGeometry, type ShapeFace, type ShapeGeometry } from './shapes';
 
 /**
  * Where a ray first meets the world: a block (found cell by cell) or the smooth terrain (found by
  * marching along the ray through the ground's signed distance). The build controls aim with it, and
  * the host could run the same code to check a click. Cell (x, y, z) is the unit cube that spans
  * [x, x + 1] in each axis, as everywhere else.
+ *
+ * A slab or a wedge fills only part of its cell, and the ray meets only that part: it goes on past
+ * the empty half of a lower slab, and lands on the slope of a wedge where the slope is.
  */
 
 /** What a ray found. One object is reused between calls, so read it before the next `castRay`. */
@@ -22,8 +27,11 @@ export interface RayHit {
   y: number;
   z: number;
   /**
-   * Which way the face that was hit points, as the step to the neighbor cell across it: one of the
-   * six axis directions. For terrain, the axis its surface faces most.
+   * Which way the face that was hit points, as the step to the cell a new block would take: one of
+   * the six axis directions. A face on the edge of its cell names the neighbor across it. A face
+   * inside the cell (the top of a lower slab) or a slanting one (the slope of a wedge) names the
+   * axis it faces most, and the vertical one when it faces two equally. For terrain, the axis its
+   * surface faces most.
    */
   nx: number;
   ny: number;
@@ -123,19 +131,105 @@ function castBlocks(
       nz = -stepZ;
     }
     if (t > maxDistance) return false;
-    if (blocks.getBlock(x, y, z) !== 0) {
-      out.kind = 'block';
-      out.distance = t;
-      out.x = x;
-      out.y = y;
-      out.z = z;
+    const state = blocks.getBlock(x, y, z);
+    if (state === 0) continue;
+    // A whole cell is hit where the ray enters it; a slab or a wedge only where the ray meets the shape.
+    const geometry = shapeGeometry(stateShape(state));
+    if (geometry === undefined || geometry.boxes === null) {
+      writeBlockHit(out, t, x, y, z);
       out.nx = nx;
       out.ny = ny;
       out.nz = nz;
       return true;
     }
+    if (hitShape(geometry, origin, dir, x, y, z, maxDistance, out)) return true;
   }
   return false;
+}
+
+function writeBlockHit(out: RayHit, distance: number, x: number, y: number, z: number): void {
+  out.kind = 'block';
+  out.distance = distance;
+  out.x = x;
+  out.y = y;
+  out.z = z;
+}
+
+/** A ray this close to level with a face is taken to run along it. */
+const PARALLEL = 1e-9;
+
+/**
+ * Finds where the ray enters the shape standing in cell (cx, cy, cz). The shape is convex, so it is
+ * the set of points inside every face plane: the ray is inside them all between the last plane it
+ * enters through and the first it leaves by, and the plane it enters last is the face it hit. The
+ * ray's origin lies outside the cell. On a hit, writes the distance and the step to the cell a new
+ * block would take.
+ */
+function hitShape(
+  geometry: ShapeGeometry,
+  origin: Vec3,
+  dir: Vec3,
+  cx: number,
+  cy: number,
+  cz: number,
+  maxDistance: number,
+  out: RayHit,
+): boolean {
+  const ox = origin.x - cx;
+  const oy = origin.y - cy;
+  const oz = origin.z - cz;
+  let enter = -Infinity;
+  let exit = maxDistance;
+  let hit = -1;
+  const planes = geometry.planes;
+  for (let i = 0; i < planes.length; i++) {
+    const plane = planes[i] as readonly [number, number, number, number];
+    const slope = plane[0] * dir.x + plane[1] * dir.y + plane[2] * dir.z;
+    const room = plane[3] - (plane[0] * ox + plane[1] * oy + plane[2] * oz);
+    if (Math.abs(slope) < PARALLEL) {
+      // Level with this face: the ray is either inside its plane for good or outside it for good.
+      if (room < 0) return false;
+      continue;
+    }
+    const t = room / slope;
+    if (slope < 0) {
+      if (t > enter) {
+        enter = t;
+        hit = i;
+      }
+    } else if (t < exit) {
+      exit = t;
+    }
+    if (enter > exit) return false;
+  }
+  if (hit < 0 || enter < 0) return false;
+
+  const face = geometry.faces[hit] as ShapeFace;
+  writeBlockHit(out, enter, cx, cy, cz);
+  out.nx = 0;
+  out.ny = 0;
+  out.nz = 0;
+  if (face.side >= 0) {
+    // On the edge of the cell: the neighbor across it.
+    const step = (face.side & 1) === 0 ? 1 : -1;
+    const axis = face.side >> 1;
+    if (axis === 0) out.nx = step;
+    else if (axis === 1) out.ny = step;
+    else out.nz = step;
+    return true;
+  }
+  stepAlong(face.normal, out);
+  return true;
+}
+
+/** Writes the axis direction a normal points along most into `out`; a tie goes to the vertical. */
+function stepAlong(normal: readonly [number, number, number], out: RayHit): void {
+  const ax = Math.abs(normal[0]);
+  const ay = Math.abs(normal[1]);
+  const az = Math.abs(normal[2]);
+  if (ay >= ax - 1e-9 && ay >= az - 1e-9) out.ny = normal[1] >= 0 ? 1 : -1;
+  else if (ax >= az) out.nx = normal[0] >= 0 ? 1 : -1;
+  else out.nz = normal[2] >= 0 ? 1 : -1;
 }
 
 /** The distance at which the ray first enters the ground within `limit`, or -1. */

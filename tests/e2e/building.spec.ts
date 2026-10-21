@@ -1,5 +1,16 @@
 import { expect, test, type Page } from '@playwright/test';
-import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
+import {
+  MATERIAL,
+  SHAPE,
+  isUpsideDown,
+  packState,
+  shapeKind,
+  slabShape,
+  stateMaterial,
+  stateShape,
+  wedgeFacing,
+  wedgeShape,
+} from '../../src/shared/blocks';
 
 // Software WebGL draws a few frames a second, so this test uses the Low preset and a small
 // window, and waits on game state rather than on time.
@@ -62,9 +73,11 @@ const frames = (page: Page, count = 1): Promise<void> =>
 interface Aim {
   on: 'nothing' | 'block' | 'terrain';
   target: Cell;
+  targetState: number;
   breakRefusal: string | null;
   hasPlace: boolean;
   place: Cell;
+  state: number;
   placeRefusal: string | null;
 }
 
@@ -238,6 +251,135 @@ test.describe('building by hand', () => {
       const aim = await aimAt(page, -0.7);
       await click(page, 'right');
       await expect.poll(() => blockAt(page, aim.place), { timeout: STATE_TIMEOUT }).toBe(ALLOY);
+    });
+
+    expect(problems).toEqual([]);
+  });
+
+  test('Q chooses a slab or a wedge, R turns it, and the ghost and the hotbar show the shape', async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    const problems = await open(page);
+    await page.evaluate(({ x, z }) => {
+      const game = window.__ashbound?.game;
+      if (game) game.teleport(x, game.world.groundAt(x, z) + 0.05, z, 0);
+    }, SPOT);
+    await page.getByRole('button', { name: 'Play' }).click();
+    await wait(page.locator('#hud')).toHaveAttribute('data-pointer', 'locked');
+    await page.waitForFunction(() => window.__ashbound?.game.player.onGround === true, null, {
+      timeout: STATE_TIMEOUT,
+    });
+    await page.keyboard.press('KeyB');
+    await wait(page.locator('.ph-prompt')).toContainText('Scrap Block');
+    await read<void>(
+      page,
+      'Promise.all([game.world.view.structures.warmUp(), game.world.view.ghost.precompile()])',
+    );
+    const firstIcon = page.locator('.ph-slot').first().locator('use');
+    await wait(firstIcon).toHaveAttribute('href', '#ph-i-block-scrap');
+
+    const settled = async (pitch: number, yaw = 0): Promise<Aim> => {
+      let aim = await aimAt(page, pitch, yaw);
+      await expect
+        .poll(async () => (aim = await aimAt(page, pitch, yaw)).placeRefusal, {
+          timeout: STATE_TIMEOUT,
+        })
+        .toBeNull();
+      return aim;
+    };
+
+    await test.step('Q picks the slab: the hotbar, the caption and the ghost change to a slab', async () => {
+      await page.keyboard.press('KeyQ');
+      await wait(firstIcon).toHaveAttribute('href', '#ph-i-slab-scrap');
+      await wait(page.locator('.ph-slot').nth(3).locator('use')).toHaveAttribute(
+        'href',
+        '#ph-i-slab-energy',
+      );
+      await wait(page.locator('.ph-prompt')).toContainText('Scrap Slab');
+      expect(await read<unknown>(page, 'build.hands()')).toMatchObject({ kind: 'slab', turn: 0 });
+      // On the ground a slab goes in the half of its cell the ground leaves open, so either half will do here.
+      const aim = await settled(-0.5);
+      expect(shapeKind(stateShape(aim.state))).toBe('slab');
+      expect(stateMaterial(aim.state)).toBe(MATERIAL.scrap);
+      expect(await read<unknown>(page, 'build.ghost()')).toMatchObject({
+        ghost: true,
+        ghostShape: stateShape(aim.state),
+      });
+    });
+
+    let slab = { cell: { x: 0, y: 0, z: 0 }, state: 0 };
+    await test.step('a right click places the slab on the ground', async () => {
+      const aim = await settled(-0.5);
+      slab = { cell: { ...aim.place }, state: aim.state };
+      await click(page, 'right');
+      await expect
+        .poll(() => blockAt(page, slab.cell), { timeout: STATE_TIMEOUT })
+        .toBe(slab.state);
+      expect(await read<unknown[]>(page, 'mp.rejections()')).toEqual([]);
+    });
+
+    await test.step('the cursor sees the slab where it is, and the outline is a slab', async () => {
+      let aim = await aimAt(page, -0.5);
+      await expect
+        .poll(async () => (aim = await aimAt(page, -0.5)).on, { timeout: STATE_TIMEOUT })
+        .toBe('block');
+      expect(aim.target).toEqual(slab.cell);
+      expect(aim.targetState).toBe(slab.state);
+      expect(await read<unknown>(page, 'build.ghost()')).toMatchObject({
+        target: true,
+        targetShape: stateShape(slab.state),
+      });
+    });
+
+    await test.step('R turns the slab over', async () => {
+      const before = await settled(-0.5);
+      await page.keyboard.press('KeyR');
+      expect(await read<unknown>(page, 'build.hands()')).toMatchObject({ kind: 'slab', turn: 1 });
+      const after = await settled(-0.5);
+      const other =
+        stateShape(before.state) === slabShape(false) ? slabShape(true) : slabShape(false);
+      expect(stateShape(after.state)).toBe(other);
+      await click(page, 'right');
+      await expect
+        .poll(() => blockAt(page, after.place), { timeout: STATE_TIMEOUT })
+        .toBe(after.state);
+    });
+
+    await test.step('Q again picks the wedge, which rises away from where the player looks', async () => {
+      await page.keyboard.press('KeyQ');
+      await wait(firstIcon).toHaveAttribute('href', '#ph-i-wedge-scrap');
+      await wait(page.locator('.ph-prompt')).toContainText('Scrap Wedge');
+      // The turn starts over with a new shape.
+      expect(await read<unknown>(page, 'build.hands()')).toMatchObject({ kind: 'wedge', turn: 0 });
+      // Yaw 0 looks along -z, yaw -pi/2 along +x, yaw pi/2 along -x and yaw pi along +z. Each look
+      // is at ground nothing has been built on yet.
+      const south = await settled(-0.5, Math.PI);
+      expect(wedgeFacing(stateShape(south.state))).toBe(1);
+      expect(isUpsideDown(stateShape(south.state))).toBe(false);
+      const east = await settled(-0.5, -Math.PI / 2);
+      expect(wedgeFacing(stateShape(east.state))).toBe(0);
+      expect(await read<unknown>(page, 'build.ghost()')).toMatchObject({
+        ghost: true,
+        ghostShape: wedgeShape(0),
+      });
+      await click(page, 'right');
+      await expect
+        .poll(() => blockAt(page, east.place), { timeout: STATE_TIMEOUT })
+        .toBe(packState(wedgeShape(0), MATERIAL.scrap));
+      // R turns it a quarter from the way the view would have it: looking west, that is -x, then -z.
+      await page.keyboard.press('KeyR');
+      const turned = await settled(-0.5, Math.PI / 2);
+      expect(wedgeFacing(stateShape(turned.state))).toBe(3);
+    });
+
+    await test.step('Q cycles back to the block, which has only one way to lie', async () => {
+      await page.keyboard.press('KeyQ');
+      await wait(firstIcon).toHaveAttribute('href', '#ph-i-block-scrap');
+      await wait(page.locator('.ph-prompt')).toContainText('Scrap Block');
+      expect(await read<unknown>(page, 'build.hands()')).toMatchObject({ kind: 'cube', turn: 0 });
+      await page.keyboard.press('KeyR');
+      expect(await read<unknown>(page, 'build.hands()')).toMatchObject({ kind: 'cube', turn: 0 });
     });
 
     expect(problems).toEqual([]);

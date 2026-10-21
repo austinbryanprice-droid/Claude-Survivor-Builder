@@ -1,10 +1,9 @@
 import {
-  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   Color,
   DoubleSide,
-  EdgesGeometry,
+  Float32BufferAttribute,
   Group,
   LineBasicMaterial,
   LineSegments,
@@ -13,13 +12,15 @@ import {
 } from 'three';
 import type { Stage } from '../../engine/stage';
 import { MATERIAL, SHAPE, packState } from '../../shared/blocks';
+import { shapeGeometry } from '../../shared/shapes';
 import { meshChunk } from '../voxels/mesher';
 
 /**
  * What the player aims with: a ghost block at the cell a click would fill, tinted by whether the
  * click would work, and an outline around the block a click would break. The ghost is the very
- * beveled cube the mesher makes (so it shows the shape that will appear), drawn translucent with a
- * bright rim; both sit exactly on the grid cell, which is what makes the snap readable.
+ * beveled piece the mesher makes (so it shows the shape that will appear, a slab or a wedge turned
+ * the way it will be), drawn translucent with a bright rim; the outline follows the shape of the
+ * block it marks. Both sit exactly on the grid cell, which is what makes the snap readable.
  */
 
 /** Linear colors (they go into a bloom threshold of 1, so the outline glows a little). */
@@ -63,11 +64,17 @@ void main() {
 }
 `;
 
-/** Both the ghost and the outline come from one cell at the origin, so they are moved by position alone. */
-function cubeGeometry(): BufferGeometry {
-  const cube = packState(SHAPE.cube, MATERIAL.scrap);
+/** What draws one shape: its beveled mesh, from the mesher, and the edges of its outline. */
+interface ShapeParts {
+  readonly mesh: BufferGeometry;
+  readonly lines: BufferGeometry;
+}
+
+/** The mesher's own skin for a shape in a cell at the origin, so the ghost and the outline are moved by position alone. */
+function meshGeometry(shape: number): BufferGeometry {
+  const piece = packState(shape, MATERIAL.scrap);
   const data = meshChunk(
-    { getBlock: (x, y, z) => (x === 0 && y === 0 && z === 0 ? cube : 0) },
+    { getBlock: (x, y, z) => (x === 0 && y === 0 && z === 0 ? piece : 0) },
     0,
     0,
     0,
@@ -77,6 +84,32 @@ function cubeGeometry(): BufferGeometry {
   geometry.setAttribute('normal', new BufferAttribute(data.normals, 3));
   geometry.setIndex(new BufferAttribute(data.indices, 1));
   return geometry;
+}
+
+/** The edges of a shape as line segments centered on the origin, so that scaling an outline grows it from the middle of the cell. */
+function outlineGeometry(shape: number): BufferGeometry {
+  const positions: number[] = [];
+  const geometry = shapeGeometry(shape);
+  if (geometry) {
+    const count = geometry.vertices.length;
+    const seen = new Set<number>();
+    for (const face of geometry.faces) {
+      for (let i = 0; i < face.loop.length; i++) {
+        const a = face.loop[i] as number;
+        const b = face.loop[(i + 1) % face.loop.length] as number;
+        const key = Math.min(a, b) * count + Math.max(a, b);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        for (const corner of [a, b]) {
+          const point = geometry.vertices[corner] as readonly [number, number, number];
+          positions.push(point[0] - 0.5, point[1] - 0.5, point[2] - 0.5);
+        }
+      }
+    }
+  }
+  const lines = new BufferGeometry();
+  lines.setAttribute('position', new Float32BufferAttribute(positions, 3));
+  return lines;
 }
 
 export interface GhostCell {
@@ -95,13 +128,13 @@ export class GhostRenderer {
   private readonly targetMaterial: ShaderMaterial;
   private readonly targetLines: LineSegments;
   private readonly targetLineMaterial: LineBasicMaterial;
-  private readonly geometries: BufferGeometry[] = [];
+  private readonly parts = new Map<number, ShapeParts>();
+  private ghostShape: number = SHAPE.cube;
+  private targetShape: number = SHAPE.cube;
   private time = 0;
 
   constructor(private readonly stage: Stage) {
-    const cube = cubeGeometry();
-    const box = new EdgesGeometry(new BoxGeometry(1, 1, 1));
-    this.geometries.push(cube, box);
+    const { mesh: cube, lines: box } = this.partsOf(SHAPE.cube);
 
     const makeBody = (color: Color, alpha: number): ShaderMaterial =>
       new ShaderMaterial({
@@ -149,17 +182,36 @@ export class GhostRenderer {
     stage.world.add(this.object);
   }
 
-  /** Whether the ghost block and the break outline are on screen. */
-  get shown(): { readonly ghost: boolean; readonly target: boolean } {
-    return { ghost: this.body.visible, target: this.target.visible };
+  /** Whether the ghost block and the break outline are on screen, and the shape each is drawn in. */
+  get shown(): {
+    readonly ghost: boolean;
+    readonly target: boolean;
+    readonly ghostShape: number;
+    readonly targetShape: number;
+  } {
+    return {
+      ghost: this.body.visible,
+      target: this.target.visible,
+      ghostShape: this.ghostShape,
+      targetShape: this.targetShape,
+    };
   }
 
-  /** Shows the ghost block on a cell, green-blue when a click would place it and red when it would not; null hides it. */
-  setGhost(cell: GhostCell | null, valid = true): void {
+  /**
+   * Shows the ghost block on a cell in the shape a click would place, green-blue when the click
+   * would work and red when it would not; null hides it.
+   */
+  setGhost(cell: GhostCell | null, valid = true, shape: number = SHAPE.cube): void {
     const shown = cell !== null;
     this.body.visible = shown;
     this.bodyLines.visible = shown;
     if (!cell) return this.syncVisibility();
+    if (shape !== this.ghostShape) {
+      const parts = this.partsOf(shape);
+      this.body.geometry = parts.mesh;
+      this.bodyLines.geometry = parts.lines;
+      this.ghostShape = shape;
+    }
     this.body.position.set(cell.x, cell.y, cell.z);
     this.bodyLines.position.set(cell.x + 0.5, cell.y + 0.5, cell.z + 0.5);
     const tint = valid ? VALID : INVALID;
@@ -168,12 +220,18 @@ export class GhostRenderer {
     this.syncVisibility();
   }
 
-  /** Outlines the block a click would break, paler when the click would be refused; null hides it. */
-  setTarget(cell: GhostCell | null, valid = true): void {
+  /** Outlines the block a click would break, in its own shape, paler when the click would be refused; null hides it. */
+  setTarget(cell: GhostCell | null, valid = true, shape: number = SHAPE.cube): void {
     const shown = cell !== null;
     this.target.visible = shown;
     this.targetLines.visible = shown;
     if (!cell) return this.syncVisibility();
+    if (shape !== this.targetShape) {
+      const parts = this.partsOf(shape);
+      this.target.geometry = parts.mesh;
+      this.targetLines.geometry = parts.lines;
+      this.targetShape = shape;
+    }
     // The mesh grows from its corner, so it is moved back by half of what it grew.
     const shift = (TARGET_SCALE - 1) / 2;
     this.target.position.set(cell.x - shift, cell.y - shift, cell.z - shift);
@@ -200,11 +258,26 @@ export class GhostRenderer {
 
   dispose(): void {
     this.stage.world.remove(this.object);
-    for (const geometry of this.geometries) geometry.dispose();
+    for (const parts of this.parts.values()) {
+      parts.mesh.dispose();
+      parts.lines.dispose();
+    }
     this.bodyMaterial.dispose();
     this.bodyLineMaterial.dispose();
     this.targetMaterial.dispose();
     this.targetLineMaterial.dispose();
+  }
+
+  /** The mesh and the outline of a shape, made the first time it is shown. A shape the tables do not know is drawn as a block. */
+  private partsOf(shape: number): ShapeParts {
+    const known = shapeGeometry(shape) !== undefined;
+    const id = known ? shape : SHAPE.cube;
+    let parts = this.parts.get(id);
+    if (!parts) {
+      parts = { mesh: meshGeometry(id), lines: outlineGeometry(id) };
+      this.parts.set(id, parts);
+    }
+    return parts;
   }
 
   private syncVisibility(): void {

@@ -1,7 +1,8 @@
 import type { Game } from '../engine/game';
+import type { ShapeKind } from '../shared/blocks';
 import { MOVEMENT } from '../shared/movement';
 import { CRASH } from '../world/terrain/field';
-import { BuildPromptTracker, blockSlot, type BuildHudSource } from './build-hud';
+import { BuildPromptTracker, blockSlotsByKind, type BuildHudSource } from './build-hud';
 import { wrapBearing } from './player-hud/format';
 import { PlayerHud, type HotbarSlot, type PlayerHudState } from './player-hud/player-hud';
 
@@ -42,10 +43,11 @@ export function createPlaceholderHud(
 ): PlaceholderHud {
   const hud = new PlayerHud(parent);
   const camera = game.stage.camera;
-  const slots: readonly HotbarSlot[] = [...build.pieces.map(blockSlot), ...TOOLS].slice(
-    0,
-    HOTBAR_SLOTS,
-  );
+  // The block slots look like the shape they make, so a row is kept for each kind.
+  const slotRows = new Map<ShapeKind, readonly HotbarSlot[]>();
+  for (const [kind, blocks] of blockSlotsByKind()) {
+    slotRows.set(kind, [...blocks, ...TOOLS].slice(0, HOTBAR_SLOTS));
+  }
   const prompts = new BuildPromptTracker();
   let stamina = 1;
   let buffSeconds = 10 * 60 + 52;
@@ -87,7 +89,7 @@ export function createPlaceholderHud(
           },
         ],
         objective: { place: 'The Ashbound Outpost', title: 'Light the beacon at the crash site' },
-        slots,
+        slots: slotRows.get(hands.kind) ?? [],
         selected: hands.selected,
         prompt: prompts.update(dt, hands),
         crosshair: hands.crosshair,

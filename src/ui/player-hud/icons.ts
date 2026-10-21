@@ -24,7 +24,15 @@ export type IconId =
   | 'block-scrap'
   | 'block-composite'
   | 'block-alloy'
-  | 'block-energy';
+  | 'block-energy'
+  | 'slab-scrap'
+  | 'slab-composite'
+  | 'slab-alloy'
+  | 'slab-energy'
+  | 'wedge-scrap'
+  | 'wedge-composite'
+  | 'wedge-alloy'
+  | 'wedge-energy';
 
 export const ICON_IDS: readonly IconId[] = [
   'blade',
@@ -44,6 +52,14 @@ export const ICON_IDS: readonly IconId[] = [
   'block-composite',
   'block-alloy',
   'block-energy',
+  'slab-scrap',
+  'slab-composite',
+  'slab-alloy',
+  'slab-energy',
+  'wedge-scrap',
+  'wedge-composite',
+  'wedge-alloy',
+  'wedge-energy',
 ];
 
 const INK = '#1b1e25';
@@ -72,9 +88,9 @@ function blockSymbol(name: string, paint: BlockPaint): string {
 </symbol>`;
 }
 
-const BLOCK_SYMBOLS = [
+const BLOCK_PAINTS: Readonly<Record<string, BlockPaint>> = {
   // Scrap: rusted plates with a salvaged teal patch and rivets.
-  blockSymbol('scrap', {
+  scrap: {
     top: '#b0724a',
     left: '#8a523a',
     right: '#64392a',
@@ -82,9 +98,9 @@ const BLOCK_SYMBOLS = [
   <path d="M10 20.2 L18 24.2 L18 30.4 L10 26.4 Z" fill="#3f8f8a" stroke="${INK}" stroke-opacity="0.55" stroke-width="0.8" stroke-linejoin="round"/>
   <path d="M28.5 28 L37.5 23.5 M28.5 33.5 L37.5 29" stroke="#3d2216" stroke-width="1.1" stroke-linecap="round"/>
   <circle cx="24" cy="9.2" r="1" fill="#2b1912"/><circle cx="35.6" cy="14" r="1" fill="#2b1912"/><circle cx="24" cy="18.8" r="1" fill="#2b1912"/><circle cx="12.4" cy="14" r="1" fill="#2b1912"/>`,
-  }),
+  },
   // Reinforced Composite: grey-green panels with cyan trim.
-  blockSymbol('composite', {
+  composite: {
     top: '#a6b8a8',
     left: '#7e9484',
     right: '#5b7064',
@@ -92,9 +108,9 @@ const BLOCK_SYMBOLS = [
   <path d="M26 27.5 L40 20.5 L40 23.4 L26 30.4 Z" fill="#6ad7e6" stroke="${INK}" stroke-opacity="0.45" stroke-width="0.7" stroke-linejoin="round"/>
   <path d="M10 24.2 L22 30.2" stroke="#6ad7e6" stroke-opacity="0.85" stroke-width="1.2" stroke-linecap="round"/>
   <path d="M13 14.9 L24 20.2 L35 14.9" fill="none" stroke="#d3f3f7" stroke-opacity="0.7" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>`,
-  }),
+  },
   // Advanced Alloy: bright steel with an amber hazard band.
-  blockSymbol('alloy', {
+  alloy: {
     top: '#cfd8e2',
     left: '#9aa8b8',
     right: '#6d7b8c',
@@ -103,9 +119,9 @@ const BLOCK_SYMBOLS = [
   <path d="M11 29.9 L13 30.9 L13 35.3 L11 34.3 Z M15.5 32.15 L17.5 33.15 L17.5 37.55 L15.5 36.55 Z M20 34.4 L22 35.4 L22 39.8 L20 38.8 Z" fill="${INK}" fill-opacity="0.78"/>
   <path d="M26 24.6 L40 17.6" stroke="#f4f8fc" stroke-opacity="0.55" stroke-width="1.2" stroke-linecap="round"/>
   <circle cx="30" cy="31" r="1" fill="#44505f"/><circle cx="36" cy="28" r="1" fill="#44505f"/>`,
-  }),
+  },
   // Energy-Infused: dark graphite cut with glowing cyan veins.
-  blockSymbol('energy', {
+  energy: {
     top: '#3b434e',
     left: '#2a3038',
     right: '#1e232a',
@@ -114,11 +130,91 @@ const BLOCK_SYMBOLS = [
     <path d="M14 14 L21 16.5 L25 12 L33 15 M10.5 22 L14.5 26.5 L12.5 31.5 L16.5 35 M33 24.5 L36.5 20.5 L35 28 L38 30" stroke="#59e6ff" stroke-opacity="0.28" stroke-width="3.2"/>
     <path d="M14 14 L21 16.5 L25 12 L33 15 M10.5 22 L14.5 26.5 L12.5 31.5 L16.5 35 M33 24.5 L36.5 20.5 L35 28 L38 30" stroke="#8cf0ff" stroke-width="1.2"/>
   </g>`,
-  }),
-].join('\n');
+  },
+};
+
+const BLOCK_SYMBOLS = Object.entries(BLOCK_PAINTS)
+  .map(([name, paint]) => blockSymbol(name, paint))
+  .join('\n');
+
+type Face = 'top' | 'left' | 'right';
+
+/** The three faces of the whole block in the icon, and the inset panel of each. */
+const FACE_PATHS: Readonly<Record<Face, string>> = {
+  top: 'M24 5 L42 14 L24 23 L6 14 Z',
+  left: 'M6 14 L24 23 L24 43 L6 34 Z',
+  right: 'M24 23 L42 14 L42 34 L24 43 Z',
+};
+const FACE_PANELS: Readonly<Record<Face, string>> = {
+  top: 'M24 7 L38 14 L24 21 L10 14 Z',
+  left: 'M8 17.2 L22 24.2 L22 39.8 L8 32.8 Z',
+  right: 'M40 17.2 L26 24.2 L26 39.8 L40 32.8 Z',
+};
+
+/** Where the face of a shape comes from on the whole block, and the move that carries its paint there. */
+interface FacePlacement {
+  readonly face: Face;
+  /** The clip path (see the sprite's defs) that cuts the part of the block's face the shape shows. */
+  readonly clip: string;
+  /** An SVG matrix, `a b c d e f`. */
+  readonly matrix: string;
+}
+
+/**
+ * A slab is the lower half of the block: each side face drops to half its height and the top
+ * face comes down with it. Each move is exact for its face, so the paint keeps its marks.
+ */
+const SLAB_FACES: readonly FacePlacement[] = [
+  { face: 'left', clip: 'ph-clip-left', matrix: '1 0.25 0 0.5 0 15.5' },
+  { face: 'right', clip: 'ph-clip-right', matrix: '1 -0.25 0 0.5 0 27.5' },
+  { face: 'top', clip: 'ph-clip-top', matrix: '1 0 0 1 0 10' },
+];
+const SLAB_OUTLINE = 'M24 15 L42 24 V34 L24 43 L6 34 V24 Z M6 24 L24 33 L42 24 M24 33 V43';
+
+/**
+ * A wedge rising toward the back right: the top face stretches down to the front edge to make the
+ * slope, and the half of the right face below the diagonal is its side.
+ */
+const WEDGE_FACES: readonly FacePlacement[] = [
+  { face: 'top', clip: 'ph-clip-top', matrix: '1 -0.5556 0 2.1111 0 7.7778' },
+  { face: 'right', clip: 'ph-clip-wedge-side', matrix: '1 0 0 1 0 0' },
+];
+const WEDGE_OUTLINE = 'M6 34 L24 5 L42 14 V34 L24 43 Z M24 43 L42 14';
+
+function placedFace(paint: BlockPaint, { face, clip, matrix }: FacePlacement): string {
+  return /* html */ `<g transform="matrix(${matrix})"><g clip-path="url(#${clip})">
+    <path d="${FACE_PATHS[face]}" fill="${paint[face]}"/>
+    <path d="${FACE_PANELS[face]}" fill="#fff" fill-opacity="0.13" stroke="#000" stroke-opacity="0.3" stroke-width="0.9" stroke-linejoin="round"/>
+    ${paint.marks}
+  </g></g>`;
+}
+
+function shapedSymbol(
+  id: string,
+  paint: BlockPaint,
+  faces: readonly FacePlacement[],
+  outline: string,
+): string {
+  return /* html */ `
+<symbol id="ph-i-${id}" viewBox="0 0 48 48">
+  ${faces.map((placement) => placedFace(paint, placement)).join('\n  ')}
+  <path d="${outline}" fill="none" stroke="${INK}" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>
+</symbol>`;
+}
+
+const SHAPE_SYMBOLS = Object.entries(BLOCK_PAINTS)
+  .flatMap(([name, paint]) => [
+    shapedSymbol(`slab-${name}`, paint, SLAB_FACES, SLAB_OUTLINE),
+    shapedSymbol(`wedge-${name}`, paint, WEDGE_FACES, WEDGE_OUTLINE),
+  ])
+  .join('\n');
 
 const SPRITE_BODY = /* html */ `
 <defs>
+  <clipPath id="ph-clip-top"><path d="M24 5 L42 14 L24 23 L6 14 Z"/></clipPath>
+  <clipPath id="ph-clip-left"><path d="M6 14 L24 23 L24 43 L6 34 Z"/></clipPath>
+  <clipPath id="ph-clip-right"><path d="M24 23 L42 14 L42 34 L24 43 Z"/></clipPath>
+  <clipPath id="ph-clip-wedge-side"><path d="M24 43 L42 34 L42 14 Z"/></clipPath>
   <linearGradient id="ph-steel" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0" stop-color="#e6edf5"/><stop offset="0.55" stop-color="#9fb0c4"/><stop offset="1" stop-color="#5d6d83"/>
   </linearGradient>
@@ -239,6 +335,7 @@ const SPRITE_BODY = /* html */ `
   <path d="M17 17 V41 M33 10 V41" stroke="${INK}" stroke-width="1.5" opacity="0.55"/>
 </symbol>
 ${BLOCK_SYMBOLS}
+${SHAPE_SYMBOLS}
 `;
 
 /** The hidden sprite sheet; add it once to the page, before any `iconMarkup`. */

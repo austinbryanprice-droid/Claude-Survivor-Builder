@@ -1,5 +1,16 @@
 import type { CellState } from '../shared/block-world';
-import { MATERIAL, materialOf, pieceName } from '../shared/blocks';
+import {
+  MATERIAL,
+  MATERIALS,
+  SHAPE_KINDS,
+  baseShape,
+  materialOf,
+  packState,
+  pieceName,
+  shapeKind,
+  stateShape,
+  type ShapeKind,
+} from '../shared/blocks';
 import { AIM_REFUSAL } from '../shared/build-aim';
 import type { HotbarSlot, HudPrompt } from './player-hud/player-hud';
 import type { IconId } from './player-hud/icons';
@@ -14,7 +25,9 @@ import type { IconId } from './player-hud/icons';
 export interface BuildHudInput {
   readonly selected: number;
   readonly buildMode: boolean;
-  /** The piece the selected slot places, or 0 when the slot holds no block. */
+  /** The kind of shape the block slots make: a block, a slab or a wedge. */
+  readonly kind: ShapeKind;
+  /** The piece the selected slot makes in that kind, or 0 when the slot holds no block. */
   readonly piece: CellState;
   readonly crosshair: 'none' | 'place' | 'blocked';
   /** Why a click would do nothing right now, as a code or as the host's words, or null. */
@@ -22,27 +35,50 @@ export interface BuildHudInput {
 }
 
 export interface BuildHudSource {
-  /** The piece each hotbar slot places, from the first slot; 0 for a slot that holds no block. */
-  readonly pieces: readonly CellState[];
   hudState(): BuildHudInput;
 }
 
-const BLOCK_ICONS: Readonly<Record<number, IconId>> = {
-  [MATERIAL.scrap]: 'block-scrap',
-  [MATERIAL.composite]: 'block-composite',
-  [MATERIAL.alloy]: 'block-alloy',
-  [MATERIAL.energy]: 'block-energy',
+const BLOCK_ICONS: Readonly<Record<ShapeKind, Readonly<Record<number, IconId>>>> = {
+  cube: {
+    [MATERIAL.scrap]: 'block-scrap',
+    [MATERIAL.composite]: 'block-composite',
+    [MATERIAL.alloy]: 'block-alloy',
+    [MATERIAL.energy]: 'block-energy',
+  },
+  slab: {
+    [MATERIAL.scrap]: 'slab-scrap',
+    [MATERIAL.composite]: 'slab-composite',
+    [MATERIAL.alloy]: 'slab-alloy',
+    [MATERIAL.energy]: 'slab-energy',
+  },
+  wedge: {
+    [MATERIAL.scrap]: 'wedge-scrap',
+    [MATERIAL.composite]: 'wedge-composite',
+    [MATERIAL.alloy]: 'wedge-alloy',
+    [MATERIAL.energy]: 'wedge-energy',
+  },
 };
 
-/** The icon of a piece, or null for a state the HUD has no picture of. */
+/** The icon of a piece: its material's, drawn in its shape. Null for a state the HUD has no picture of. */
 export function blockIcon(piece: CellState): IconId | null {
   const material = materialOf(piece);
-  return (material && BLOCK_ICONS[material.id]) || null;
+  const kind = shapeKind(stateShape(piece));
+  return (material && kind && BLOCK_ICONS[kind][material.id]) || null;
 }
 
 /** The hotbar slot that holds a piece: its icon on the cyan grid of placeable items. */
 export function blockSlot(piece: CellState): HotbarSlot {
   return { icon: blockIcon(piece), blueprint: true };
+}
+
+/** The four block slots of the hotbar as they look while the block slots make this kind of shape. */
+export function blockSlots(kind: ShapeKind): readonly HotbarSlot[] {
+  return MATERIALS.map((material) => blockSlot(packState(baseShape(kind), material.id)));
+}
+
+/** `blockSlots` for every kind, built once. */
+export function blockSlotsByKind(): ReadonlyMap<ShapeKind, readonly HotbarSlot[]> {
+  return new Map(SHAPE_KINDS.map((kind) => [kind, blockSlots(kind)]));
 }
 
 /** What a piece costs, such as "1 Scrap"; the number comes from the material table. */
@@ -85,6 +121,8 @@ export const BUILD_KEYS: readonly KeyRow[] = [
   { keys: ['RMB'], label: 'Place' },
   { keys: ['1–8'], label: 'Choose a block' },
   { keys: ['Wheel'], label: 'Next block' },
+  { keys: ['Q'], label: 'Block, slab or wedge' },
+  { keys: ['R'], label: 'Turn it' },
   { keys: ['B'], label: 'Leave Build Mode' },
   { keys: ['Esc'], label: 'Free the mouse' },
 ];

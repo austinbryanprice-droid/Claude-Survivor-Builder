@@ -1,6 +1,8 @@
 import { Vector3 } from 'three';
 import type { Game } from '../engine/game';
 import type { GameSession } from '../net/session';
+import type { CellState } from '../shared/block-world';
+import { stateShape } from '../shared/blocks';
 import type { Vec3 } from '../shared/look';
 import { PLAYER } from '../shared/movement';
 import type { ValleyView } from '../world/render/valley-view';
@@ -9,8 +11,8 @@ import type { ValleyWorld } from './valley-world';
 
 /**
  * Puts the player's building hands on the running game: the mouse buttons, the number keys, the
- * wheel and B go to the build controller; each frame it aims from the camera and shows the ghost
- * block and the outline of the block a click would break; and its commands go to the session. The
+ * wheel, B, Q and R go to the build controller; each frame it aims from the camera and shows the
+ * ghost block and the outline of the block a click would break; and its commands go to the session. The
  * game, the valley and the session each change over the life of a page (a joining player's valley
  * replaces the first one, and the session arrives when the network code has loaded), so all three
  * are read when they are needed.
@@ -37,16 +39,19 @@ export interface BuildControlsDebug {
   aim(): {
     on: 'nothing' | 'block' | 'terrain';
     target: { x: number; y: number; z: number };
+    targetState: CellState;
     breakRefusal: string | null;
     hasPlace: boolean;
     place: { x: number; y: number; z: number };
+    /** The piece a click would place there, turned the way the aim decides. */
+    state: CellState;
     placeRefusal: string | null;
     distance: number;
   };
-  /** The hotbar selection, Build Mode, the crosshair and the notice, as the HUD has them. */
+  /** The hotbar selection, the kind of shape and its turn, Build Mode, the crosshair and the notice, as the HUD has them. */
   hands(): BuildHudState;
-  /** Whether the ghost block and the break outline are on screen. */
-  ghost(): { ghost: boolean; target: boolean };
+  /** Whether the ghost block and the break outline are on screen, and the shape id each is drawn in. */
+  ghost(): { ghost: boolean; target: boolean; ghostShape: number; targetShape: number };
 }
 
 export interface BuildControls {
@@ -106,8 +111,8 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
   };
   const forward = new Vector3();
 
-  // The benchmark has no hands: while it flies the valley, the buttons, the number keys, the wheel
-  // and B do nothing, and nothing is prepared for them, so it measures the game alone.
+  // The benchmark has no hands: while it flies the valley, the buttons, the number keys, the wheel,
+  // B, Q and R do nothing, and nothing is prepared for them, so it measures the game alone.
   const stops = [
     input.onPointer((button, down) => {
       if (!down) controller.release(button);
@@ -119,7 +124,10 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
       else controller.scrollSlot(change.step);
     }),
     input.onAction((action) => {
-      if (action === 'toggleBuild' && !game.sweep.active) controller.toggleBuildMode();
+      if (game.sweep.active) return;
+      if (action === 'toggleBuild') controller.toggleBuildMode();
+      else if (action === 'cycleShape') controller.cycleShape();
+      else if (action === 'turnPiece') controller.turnPiece();
     }),
   ];
 
@@ -161,8 +169,16 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
     ghost.update(dt);
     if (controller.inBuildMode) {
       const aim = controller.target;
-      ghost.setGhost(aim.hasPlace ? aim.place : null, aim.placeRefusal === null);
-      ghost.setTarget(aim.on === 'block' ? aim.target : null, aim.breakRefusal === null);
+      ghost.setGhost(
+        aim.hasPlace ? aim.place : null,
+        aim.placeRefusal === null,
+        stateShape(aim.state),
+      );
+      ghost.setTarget(
+        aim.on === 'block' ? aim.target : null,
+        aim.breakRefusal === null,
+        stateShape(aim.targetState),
+      );
     } else {
       ghost.setGhost(null);
       ghost.setTarget(null);
@@ -171,14 +187,25 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
 
   const debug: BuildControlsDebug = {
     aim: () => {
-      const { on, target, breakRefusal, hasPlace, place, placeRefusal, distance } =
-        controller.target;
+      const {
+        on,
+        target,
+        targetState,
+        breakRefusal,
+        hasPlace,
+        place,
+        state,
+        placeRefusal,
+        distance,
+      } = controller.target;
       return {
         on,
         target: { ...target },
+        targetState,
         breakRefusal,
         hasPlace,
         place: { ...place },
+        state,
         placeRefusal,
         distance,
       };
@@ -186,7 +213,12 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
     hands: () => ({ ...controller.hudState() }),
     ghost: () => {
       const shown = valley()?.view.ghost.shown;
-      return { ghost: shown?.ghost ?? false, target: shown?.target ?? false };
+      return {
+        ghost: shown?.ghost ?? false,
+        target: shown?.target ?? false,
+        ghostShape: shown?.ghostShape ?? 0,
+        targetShape: shown?.targetShape ?? 0,
+      };
     },
   };
 

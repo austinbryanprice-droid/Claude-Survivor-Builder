@@ -28,9 +28,9 @@ const CONTROLS: Control[] = [
   { keys: ['V', 'F5'], label: 'First or third person' },
   { keys: ['LMB', 'RMB'], label: 'Break or place' },
   { keys: ['1–8', 'Wheel'], label: 'Choose a block' },
+  { keys: ['Q', 'R'], label: 'Block, slab or wedge; turn it' },
   { keys: ['B'], label: 'Build Mode' },
-  { keys: ['P'], label: 'Graphics preset' },
-  { keys: ['F3'], label: 'Frame times' },
+  { keys: ['P', 'F3'], label: 'Graphics preset, frame times' },
   { keys: ['Esc'], label: 'Free the mouse' },
 ];
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BuildController,
-  HOTBAR_PIECES,
+  HOTBAR_MATERIALS,
   HOTBAR_SLOTS,
   NOTICE_SECONDS,
   NOT_READY,
@@ -10,9 +10,21 @@ import {
   type BuildPorts,
   type BuildView,
 } from '../../src/app/build-controller';
-import { MATERIAL, MATERIALS, SHAPE, packState } from '../../src/shared/blocks';
+import {
+  MATERIAL,
+  MATERIALS,
+  SHAPE,
+  SHAPE_KINDS,
+  isUpsideDown,
+  packState,
+  slabShape,
+  stateShape,
+  wedgeFacing,
+  wedgeShape,
+} from '../../src/shared/blocks';
 import { AIM_REFUSAL, BUILD_REACH } from '../../src/shared/build-aim';
 import type { Vec3 } from '../../src/shared/look';
+import { turnCount } from '../../src/shared/placement';
 import type { BlockCommand } from '../../src/shared/protocol';
 import { createTerrainGround } from '../../src/world/terrain/collision';
 import { createWorld, type VoxelWorld } from '../../src/world/voxels/world';
@@ -83,18 +95,19 @@ describe('the hotbar', () => {
     const { controller } = rig();
     expect(controller.selected).toBe(0);
     expect(controller.piece).toBe(packState(SHAPE.cube, MATERIAL.scrap));
-    expect(HOTBAR_PIECES).toHaveLength(MATERIALS.length);
-    expect(HOTBAR_PIECES.length).toBeLessThan(HOTBAR_SLOTS);
-    HOTBAR_PIECES.forEach((piece, slot) => {
+    expect(HOTBAR_MATERIALS).toEqual(MATERIALS.map((m) => m.id));
+    expect(HOTBAR_MATERIALS.length).toBeLessThan(HOTBAR_SLOTS);
+    HOTBAR_MATERIALS.forEach((material, slot) => {
       controller.selectSlot(slot);
-      expect(controller.piece).toBe(piece);
+      expect(controller.piece).toBe(packState(SHAPE.cube, material));
     });
   });
 
   it('holds no block in the slots after the materials', () => {
     const { controller } = rig();
-    controller.selectSlot(HOTBAR_PIECES.length);
+    controller.selectSlot(HOTBAR_MATERIALS.length);
     expect(controller.piece).toBe(0);
+    expect(controller.choice).toBeNull();
     controller.selectSlot(HOTBAR_SLOTS - 1);
     expect(controller.piece).toBe(0);
   });
@@ -313,6 +326,133 @@ describe('Build Mode', () => {
       selected: 3,
       piece: packState(SHAPE.cube, MATERIAL.energy),
       buildMode: false,
+      kind: 'cube',
+      turn: 0,
     });
+  });
+});
+
+describe('the shape key and the turn key', () => {
+  it('start on blocks and cycle block, slab, wedge, block', () => {
+    const { controller } = rig();
+    expect(controller.kind).toBe('cube');
+    const seen: string[] = [];
+    for (let i = 0; i < SHAPE_KINDS.length + 1; i++) {
+      controller.cycleShape();
+      seen.push(controller.kind);
+    }
+    expect(seen).toEqual(['slab', 'wedge', 'cube', 'slab']);
+  });
+
+  it('turn a slab through two positions and a wedge through eight, and a block not at all', () => {
+    const { controller } = rig();
+    for (const kind of SHAPE_KINDS) {
+      while (controller.kind !== kind) controller.cycleShape();
+      const turns = new Set<number>();
+      for (let i = 0; i < turnCount(kind) * 2; i++) {
+        turns.add(controller.turn);
+        controller.turnPiece();
+        expect(controller.turn).toBeLessThan(turnCount(kind));
+      }
+      expect(turns.size).toBe(turnCount(kind));
+    }
+  });
+
+  it('start the turn over when the shape changes', () => {
+    const { controller } = rig();
+    controller.cycleShape();
+    controller.turnPiece();
+    expect(controller.turn).toBe(1);
+    controller.cycleShape();
+    expect(controller.turn).toBe(0);
+  });
+
+  it('keep the slot and change what every block slot makes', () => {
+    const { controller } = rig();
+    controller.selectSlot(2);
+    controller.cycleShape();
+    expect(controller.selected).toBe(2);
+    expect(controller.piece).toBe(packState(slabShape(false), MATERIAL.alloy));
+    controller.cycleShape();
+    expect(controller.piece).toBe(packState(wedgeShape(0), MATERIAL.alloy));
+    expect(controller.hudState()).toMatchObject({
+      kind: 'wedge',
+      piece: packState(wedgeShape(0), MATERIAL.alloy),
+    });
+  });
+
+  it('change nothing for a slot that holds no block', () => {
+    const { controller } = rig();
+    controller.selectSlot(HOTBAR_SLOTS - 1);
+    controller.cycleShape();
+    expect(controller.piece).toBe(0);
+    expect(controller.choice).toBeNull();
+    expect(controller.hudState().kind).toBe('slab');
+  });
+});
+
+describe('placing slabs and wedges', () => {
+  it('places a slab low on top of a block, and high once turned', () => {
+    const r = rig();
+    r.world.setBlock(SPOT.x, Math.floor(r.surface), SPOT.z, packState(SHAPE.cube, MATERIAL.scrap));
+    r.controller.cycleShape();
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    r.controller.release('secondary');
+    expect(r.sent[0]).toMatchObject({
+      type: 'place',
+      state: packState(slabShape(false), MATERIAL.scrap),
+    });
+    r.controller.turnPiece();
+    r.controller.update(RESEND_GUARD, r.lookDown(3));
+    r.controller.press('secondary');
+    expect(r.sent[1]).toMatchObject({
+      type: 'place',
+      state: packState(slabShape(true), MATERIAL.scrap),
+    });
+  });
+
+  it('places a wedge that rises away from where the player looks', () => {
+    const r = rig();
+    r.controller.cycleShape();
+    r.controller.cycleShape();
+    const above = { x: SPOT.x + 0.5, y: r.surface + 3, z: SPOT.z + 0.5 };
+    const looks = [
+      { x: 1, y: -3, z: 0, facing: 0 },
+      { x: 0, y: -3, z: 1, facing: 1 },
+      { x: -1, y: -3, z: 0, facing: 2 },
+      { x: 0, y: -3, z: -1, facing: 3 },
+    ];
+    for (const look of looks) {
+      const length = Math.hypot(look.x, look.y, look.z);
+      // Stand back along the look so the ray comes down onto the spot.
+      const origin = {
+        x: above.x - (look.x / length) * 2,
+        y: above.y,
+        z: above.z - (look.z / length) * 2,
+      };
+      r.controller.update(RESEND_GUARD, {
+        origin,
+        dir: { x: look.x / length, y: look.y / length, z: look.z / length },
+        eye: origin,
+      });
+      r.controller.press('secondary');
+      r.controller.release('secondary');
+      const sent = r.sent[r.sent.length - 1];
+      expect(sent?.type).toBe('place');
+      const state = sent?.type === 'place' ? sent.state : 0;
+      expect(wedgeFacing(stateShape(state)), `looking ${look.facing}`).toBe(look.facing);
+      expect(isUpsideDown(stateShape(state))).toBe(false);
+    }
+  });
+
+  it('sends the same piece the aim shows', () => {
+    const r = rig();
+    r.controller.cycleShape();
+    r.controller.turnPiece();
+    r.controller.update(0.016, r.lookDown(3));
+    const shown = r.controller.target.state;
+    r.controller.press('secondary');
+    expect(r.sent[0]).toMatchObject({ type: 'place', state: shown });
   });
 });
