@@ -2,10 +2,12 @@
 
 The composition root: the one place that knows the engine, the world and the interface together. `main.ts` calls `createApp`, which builds the stage, the game loop and the HUD and puts the valley into them. Nothing here is game logic; it is wiring.
 
-- `create-app.ts` reads the URL switches and the saved settings, builds the `Stage`, creates the `Game` with a `createWorld` callback, adds the HUD and starts the loop. With `?debug` it exposes `window.__ashbound` (`{ stage, game }`, and `mp` once multiplayer has loaded). Unless `?bench=1` is on, it then loads `attach-multiplayer.ts` on demand, so the benchmark page and the first paint never pay for the networking code.
+- `create-app.ts` reads the URL switches and the saved settings, builds the `Stage`, creates the `Game` with a `createWorld` callback, adds the HUD and starts the loop. With `?debug` it exposes `window.__ashbound` (`{ stage, game, build }`, and `mp` once multiplayer has loaded). Unless `?bench=1` is on, it then loads `attach-multiplayer.ts` on demand, so the benchmark page and the first paint never pay for the networking code.
 - `valley-world.ts` builds a `ValleyWorld` for a seed: the baked terrain, the `VoxelWorld` on top of it (the `BlockWorld` the net layer builds on; empty, unless `?demo=` raises a structure), the `ValleyView` that draws the terrain, lake, trees, grass and blocks, and the collision, spawn and benchmark route the game reads through the engine's `GameWorld` interface. `Game.loadWorld(seed)` calls the same callback again for a new seed.
 - `attach-multiplayer.ts` is the one file that knows both the game and the net glue. It hands `multiplayer.ts` the game's player, world, mouse and scene as narrow views and runs it once a frame (`game.onBeforeRender`). Joining a room calls `game.loadWorld(seed)` (unless the valley with that seed is already up with nothing built on it), empties any `?demo=` blocks the new valley raised, and the host's edits are applied to the new world's `BlockWorld`.
 - `multiplayer.ts` builds the lobby, the room panel, the player's movement over the network and the other players' avatars, and leaves the room when the page goes. `createMultiplayer` takes the narrow views and is updated once a frame; it never touches `Game` directly, so it can be driven from tests.
+- `build-controller.ts` is the player's building hands, with no DOM and no three.js: the hotbar selection, Build Mode, what the cursor would do (`src/shared/build-aim.ts`), held-button repeat, and the commands. A click becomes a `BlockCommand` for the session and nothing else; the world changes when the host's event comes back, and a refusal comes back as words for the HUD.
+- `build-controls.ts` puts those hands on the running game: the mouse buttons, the number keys, the wheel and B from `Input`; the aim from the camera each frame; the ghost block and the break outline on the valley view; the session (`setSession`, set when the network code has loaded) and its refusals. It also gets the blocks ready (`warmUp`) when Build Mode starts, or three seconds after the mouse is first taken, whichever comes first.
 - `player-sync.ts` sends the local player to the session each frame, flags teleports, and puts the player back where the host says.
 - `seat-spawn.ts` says where each of the four seats starts: in a row beside the spawn point, above anything built there.
 - `browser-storage.ts` is storage that never throws (private windows, blocked cookies).
@@ -14,14 +16,17 @@ The composition root: the one place that knows the engine, the world and the int
 
 Click the page to take the mouse; Esc gives it back.
 
-| Key                   | Does                                                                      |
-| --------------------- | ------------------------------------------------------------------------- |
-| W A S D, Shift, Space | Walk, sprint, jump                                                        |
-| V, F5                 | First or third person (F5 will not reload the page while the mouse is in) |
-| P                     | Cycle the graphics preset: Low, Balanced, Ultra (saved)                   |
-| F3                    | Show or hide the frame overlay                                            |
-| 1 to 8, mouse wheel   | Pick a hotbar slot (the HUD's items are placeholders until the inventory) |
-| Esc                   | Free the mouse, and stop a running benchmark                              |
+| Key                   | Does                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------- |
+| W A S D, Shift, Space | Walk, sprint, jump                                                                                      |
+| V, F5                 | First or third person (F5 will not reload the page while the mouse is in)                               |
+| P                     | Cycle the graphics preset: Low, Balanced, Ultra (saved)                                                 |
+| F3                    | Show or hide the frame overlay                                                                          |
+| Right click           | Place the selected block (hold: repeat)                                                                 |
+| Left click            | Break the block under the cursor (hold: repeat)                                                         |
+| 1 to 8, mouse wheel   | Pick a hotbar slot (slots 1 to 4 are blocks; the tools after them are placeholders until the inventory) |
+| B                     | Build Mode: ghost block, caption and key list                                                           |
+| Esc                   | Free the mouse, and stop a running benchmark                                                            |
 
 ## URL switches
 

@@ -6,6 +6,7 @@ import { readViewFlags } from '../shared/view-flags';
 import { createHud, type Hud } from '../ui/hud';
 import { loadSettings } from '../ui/settings-store';
 import { SHOTS, shotPose } from '../world/terrain/viewpoints';
+import { createBuildControls } from './build-controls';
 import type { Multiplayer } from './multiplayer';
 import { VALLEY_MIST, createValleyWorld, type ValleyWorld } from './valley-world';
 
@@ -58,9 +59,12 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
   });
   if (shot) game.setPhoto(shotPose(shot, game.world.groundAt));
 
+  // The player's building hands: the mouse, the hotbar keys and Build Mode, aimed from the camera.
+  const building = createBuildControls({ game, valley: () => valley });
+
   document.body.classList.toggle('no-hud', !view.hud);
-  const hud = createHud(game, { flags, view, buildId });
-  if (flags.debug) window.__ashbound = { stage, game };
+  const hud = createHud(game, { flags, view, buildId, build: building.controller });
+  if (flags.debug) window.__ashbound = { stage, game, build: building.debug };
 
   // Playing together loads after the game is up, and never in the benchmark, which measures the
   // game alone.
@@ -79,6 +83,8 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           flags: readNetFlags(search, { secure: window.location.protocol === 'https:' }),
           buildId,
         });
+        // Blocks are placed and broken by asking the session, which is the host's rules in solo play too.
+        building.setSession(multiplayer.lobby.hub);
         if (flags.debug && window.__ashbound) window.__ashbound.mp = multiplayer.debug;
       })
       .catch((error: unknown) => {
@@ -93,6 +99,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
     start: () => game.start(),
     dispose() {
       disposed = true;
+      building.dispose();
       multiplayer?.dispose();
       hud.dispose();
       game.dispose();

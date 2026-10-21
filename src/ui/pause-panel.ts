@@ -26,6 +26,9 @@ const CONTROLS: Control[] = [
   { keys: ['Space'], label: 'Jump (hold to keep hopping)' },
   { keys: ['Shift'], label: 'Sprint' },
   { keys: ['V', 'F5'], label: 'First or third person' },
+  { keys: ['LMB', 'RMB'], label: 'Break or place' },
+  { keys: ['1–8', 'Wheel'], label: 'Choose a block' },
+  { keys: ['B'], label: 'Build Mode' },
   { keys: ['P'], label: 'Graphics preset' },
   { keys: ['F3'], label: 'Frame times' },
   { keys: ['Esc'], label: 'Free the mouse' },
@@ -44,11 +47,7 @@ export function createPausePanel(game: Game, buildId: string): PausePanel {
   card.append(el('p', 'kicker', 'Ashbound Outpost'));
   card.append(el('h1', undefined, 'Click to play'));
   card.append(
-    el(
-      'p',
-      'lede',
-      'The valley around the crash site is yours to walk, run and climb. Building arrives next.',
-    ),
+    el('p', 'lede', 'The valley around the crash site is yours to walk, run, climb and build on.'),
   );
 
   const button = el('button', 'play-button', 'Play');

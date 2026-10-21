@@ -3,6 +3,7 @@ import type { Flags } from '../shared/flags';
 import { nextQuality } from '../shared/quality';
 import type { ViewFlags } from '../shared/view-flags';
 import { createBenchPanel } from './bench-panel';
+import type { BuildHudSource } from './build-hud';
 import { el } from './dom';
 import { createFrameOverlay } from './frame-overlay';
 import { createPausePanel } from './pause-panel';
@@ -20,6 +21,8 @@ export interface HudOptions {
   readonly flags: Flags;
   readonly view: ViewFlags;
   readonly buildId: string;
+  /** The player's building hands: the hotbar's blocks, the selection and Build Mode. */
+  readonly build: BuildHudSource;
 }
 
 const BANNER_INTERVAL_MS = 200;
@@ -32,12 +35,12 @@ const capitalized = (text: string): string => text.charAt(0).toUpperCase() + tex
  * Builds the HUD over the canvas and keeps it in step with the game: pointer lock, the benchmark,
  * the camera and the graphics preset. The player HUD of the reference sits underneath the panels.
  */
-export function createHud(game: Game, { flags, view, buildId }: HudOptions): Hud {
+export function createHud(game: Game, { flags, view, buildId, build }: HudOptions): Hud {
   const root = el('div');
   root.id = 'hud';
   root.hidden = !view.hud;
 
-  const playerHud = createPlaceholderHud(root, game);
+  const playerHud = createPlaceholderHud(root, game, build);
   const overlay = createFrameOverlay(game);
   const pause = createPausePanel(game, buildId);
   const bench = createBenchPanel(game, render);
@@ -87,11 +90,17 @@ export function createHud(game: Game, { flags, view, buildId }: HudOptions): Hud
   let lastBanner = 0;
   let lastFrame = performance.now();
   let camera = '';
+  let buildMode = false;
   const stopFrames = game.onFrame(() => {
     const now = performance.now();
     const dt = Math.min(MAX_HUD_STEP_SECONDS, (now - lastFrame) / 1000);
     lastFrame = now;
     playerHud.update(dt);
+    const building = build.hudState().buildMode;
+    if (building !== buildMode) {
+      buildMode = building;
+      status.setBuildMode(building);
+    }
     overlay.update();
     if (game.rig.mode !== camera) {
       camera = game.rig.mode;

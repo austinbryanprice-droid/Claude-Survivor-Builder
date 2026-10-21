@@ -6,7 +6,9 @@ import {
   SHAPES,
   isCellState,
   isKnownState,
+  materialOf,
   packState,
+  pieceName,
   stateMaterial,
   stateShape,
   withMaterial,
@@ -69,5 +71,27 @@ describe('cell states', () => {
       'Advanced Alloy',
       'Energy-Infused',
     ]);
+  });
+});
+
+describe('naming and pricing a piece', () => {
+  it('finds the material of a state, or nothing for one the tables do not know', () => {
+    expect(materialOf(packState(SHAPE.cube, MATERIAL.alloy))?.name).toBe('Advanced Alloy');
+    expect(materialOf(packState(SHAPE.cube, 200))).toBeUndefined();
+    expect(materialOf(0)).toBeUndefined();
+  });
+
+  it('call a piece by its material and shape, and an unknown state by nothing', () => {
+    expect(pieceName(packState(SHAPE.cube, MATERIAL.scrap))).toBe('Scrap Block');
+    expect(pieceName(packState(SHAPE.cube, MATERIAL.energy))).toBe('Energy-Infused Block');
+    expect(pieceName(0)).toBe('');
+    expect(pieceName(packState(200, MATERIAL.scrap))).toBe('');
+  });
+
+  it('price every material at a whole number of units, never free', () => {
+    for (const material of MATERIALS) {
+      expect(Number.isInteger(material.cost)).toBe(true);
+      expect(material.cost).toBeGreaterThan(0);
+    }
   });
 });

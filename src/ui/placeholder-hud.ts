@@ -1,20 +1,20 @@
 import type { Game } from '../engine/game';
 import { MOVEMENT } from '../shared/movement';
 import { CRASH } from '../world/terrain/field';
+import { BuildPromptTracker, blockSlot, type BuildHudSource } from './build-hud';
 import { wrapBearing } from './player-hud/format';
 import { PlayerHud, type HotbarSlot, type PlayerHudState } from './player-hud/player-hud';
 
-/** Placeholder items for the hotbar; the real ones come with the inventory. */
-const SLOTS: readonly HotbarSlot[] = [
+/** Placeholder tools for the slots after the building blocks; the real ones come with the inventory. */
+const TOOLS: readonly HotbarSlot[] = [
   { icon: 'blade', durability: 0.92, badge: 'heart' },
   { icon: 'pick', durability: 0.8 },
-  { icon: 'hammer', durability: 1, blueprint: true },
   { icon: 'torch', durability: 0.6 },
-  { icon: 'bow', durability: 0.74, badge: 'shield' },
-  { icon: 'axe', durability: 0.88 },
   { icon: 'charge', count: 15 },
-  { icon: 'cloth', count: 8, badge: 'flask' },
 ];
+
+/** The hotbar always has eight slots. */
+const HOTBAR_SLOTS = 8;
 
 /** Stamina drained and regained per second while sprinting and while not. */
 const STAMINA_DRAIN = 0.22;
@@ -31,30 +31,25 @@ export interface PlaceholderHud {
 
 /**
  * The player HUD of the reference, driven by the game where the game knows the answer (the compass
- * follows the view, the waypoint points at the crash site, stamina drains while sprinting) and by
- * made-up numbers where it does not yet: health, status effects, the objective and the hotbar.
- * The number keys and the mouse wheel pick hotbar slots while the mouse is taken.
+ * follows the view, the waypoint points at the crash site, stamina drains while sprinting, and the
+ * hotbar, the crosshair and Build Mode come from the player's building hands) and by made-up
+ * numbers where it does not yet: health, status effects, the objective and the tools.
  */
-export function createPlaceholderHud(parent: HTMLElement, game: Game): PlaceholderHud {
+export function createPlaceholderHud(
+  parent: HTMLElement,
+  game: Game,
+  build: BuildHudSource,
+): PlaceholderHud {
   const hud = new PlayerHud(parent);
   const camera = game.stage.camera;
-  let selected = 0;
+  const slots: readonly HotbarSlot[] = [...build.pieces.map(blockSlot), ...TOOLS].slice(
+    0,
+    HOTBAR_SLOTS,
+  );
+  const prompts = new BuildPromptTracker();
   let stamina = 1;
   let buffSeconds = 10 * 60 + 52;
   let visible = true;
-
-  const onKey = (event: KeyboardEvent): void => {
-    if (!game.input.locked) return;
-    const digit = /^Digit([1-8])$/.exec(event.code);
-    if (digit) selected = Number(digit[1]) - 1;
-  };
-  const onWheel = (event: WheelEvent): void => {
-    if (!game.input.locked) return;
-    const step = event.deltaY > 0 ? 1 : -1;
-    selected = (selected + step + SLOTS.length) % SLOTS.length;
-  };
-  window.addEventListener('keydown', onKey);
-  window.addEventListener('wheel', onWheel, { passive: true });
 
   return {
     hud,
@@ -77,6 +72,7 @@ export function createPlaceholderHud(parent: HTMLElement, game: Game): Placehold
 
       const dx = CRASH.x - camera.position.x;
       const dz = CRASH.z - camera.position.z;
+      const hands = build.hudState();
       const state: PlayerHudState = {
         health: 0.78,
         healthSegments: 3,
@@ -91,14 +87,15 @@ export function createPlaceholderHud(parent: HTMLElement, game: Game): Placehold
           },
         ],
         objective: { place: 'The Ashbound Outpost', title: 'Light the beacon at the crash site' },
-        slots: SLOTS,
-        selected,
+        slots,
+        selected: hands.selected,
+        prompt: prompts.update(dt, hands),
+        crosshair: hands.crosshair,
+        buildMode: hands.buildMode,
       };
       hud.update(state);
     },
     dispose() {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('wheel', onWheel);
       hud.dispose();
     },
   };
