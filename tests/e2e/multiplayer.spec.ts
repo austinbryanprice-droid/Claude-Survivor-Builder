@@ -422,6 +422,73 @@ test.describe('multiplayer', () => {
     }
   });
 
+  test("the Outpost Core's health and its fall reach every screen, and the run ends for everyone", async ({
+    browser,
+    baseURL,
+  }) => {
+    const host = await openPlayer(browser, baseURL, 'Host');
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone = [host, ada];
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) {
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+      }
+
+      // At night the gauge is up on every screen, with the Core whole.
+      await host.page.evaluate((to) => {
+        const mp = window.__ashbound!.mp!;
+        mp.warp(to - mp.clock().elapsed);
+      }, DAY_SECONDS + 1);
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await clockOf(p)).phase, { message: `${p.name} sees the night` })
+          .toBe('night');
+        await expect(p.page.locator('.ph-core-value')).toHaveText('1000', { timeout: 30_000 });
+      }
+
+      // A wound is the host's, and it shows on both screens: the number, and amber below half.
+      await host.page.evaluate(() => window.__ashbound!.mp!.hurtCore(600));
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await clockOf(p)).coreHealth, { message: `${p.name} sees the wound` })
+          .toBe(400);
+        await expect(p.page.locator('.ph-core-value')).toHaveText('400');
+        await expect(p.page.locator('.ph-core')).toHaveAttribute('data-tone', 'worn');
+      }
+
+      // It falls: the run is over everywhere, the clock stops for everyone, and everyone is told.
+      await host.page.evaluate(() => window.__ashbound!.mp!.hurtCore(1000));
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await clockOf(p)).over, { message: `${p.name} sees the Core fall` })
+          .toBe(true);
+        await expect(p.page.locator('.toast')).toContainText('The Outpost Core has fallen', {
+          timeout: 30_000,
+        });
+        await expect(p.page.locator('.ph-core')).toHaveAttribute('data-tone', 'fallen');
+        expect(await clockOf(p)).toMatchObject({ coreHealth: 0, running: false, over: true });
+      }
+      const stopped = (await clockOf(ada)).elapsed;
+      await ada.page.waitForTimeout(2500);
+      expect((await clockOf(ada)).elapsed).toBe(stopped);
+
+      // Someone who joins afterwards is told where things stand: the Core has fallen.
+      const bo = await openPlayer(browser, baseURL, 'Bo');
+      everyone.push(bo);
+      await joinRoom(bo, code);
+      await expect
+        .poll(async () => (await clockOf(bo)).over, { message: 'a newcomer sees the fall' })
+        .toBe(true);
+      await expect(bo.page.locator('.ph-core')).toHaveAttribute('data-tone', 'fallen');
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
   test('closing the host shows everyone the message, and they can carry on alone', async ({
     browser,
     baseURL,

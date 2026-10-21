@@ -29,15 +29,36 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npm run build
+
+  # The browser tests run against the production build, software-rendered, and the two projects are
+  # independent (the multiplayer one only waits for the other locally, to have the machine to
+  # itself). Side by side they take the time of the longer one, which kept the run well inside its
+  # limit as the game grew; in one job they were at ten and a half of fifteen minutes.
+  browser:
+    name: browser (${{ matrix.project }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [chromium, multiplayer]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
-      - name: Smoke test
-        run: npx playwright test
+      - name: Browser tests
+        run: npx playwright test --project=${{ matrix.project }} --no-deps
       - name: Upload test report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.project }}
           path: |
             playwright-report/
             test-results/
