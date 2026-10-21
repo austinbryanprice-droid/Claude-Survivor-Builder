@@ -415,8 +415,12 @@ test.describe('multiplayer', () => {
       await host.page.evaluate(() => window.__ashbound!.mp!.placeNear(4, 0, 257));
       await expectSameWorld([host, ...guests], 1);
 
-      // The host's tab goes away without ceremony.
-      await host.page.close();
+      // The host's tab is closed. The browser tells the page (`pagehide`) as it goes, and the page
+      // says goodbye then, but a tab that is torn down at once may not get the goodbye out (in one
+      // run of about ten it did not), and the guests then find out from ten seconds of silence, with
+      // another message. So the test sends that event itself, lets the guests hear it, and then
+      // closes the tab.
+      await host.page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
       for (const guest of guests) {
         await expectStatus(guest, 'ended');
         const dialog = guest.page.getByRole('alertdialog');
@@ -424,6 +428,7 @@ test.describe('multiplayer', () => {
         await expect(dialog).toContainText('The host left the game');
         await expect(dialog).toContainText('no host migration');
       }
+      await host.page.close();
 
       // Playing alone keeps the world as it was, and building works again.
       await ada.page.getByRole('button', { name: 'Play alone' }).click();
