@@ -6,16 +6,17 @@ Multiplayer arrives in Phase 3, before any gameplay exists, so the code is netwo
 
 Each layer may import only the layers listed. ESLint enforces the boundaries (`eslint.config.js`).
 
-| Folder        | Holds                                                                            | May import                   |
-| ------------- | -------------------------------------------------------------------------------- | ---------------------------- |
-| `src/shared`  | Pure TypeScript: hashing, seeded random numbers, math, URL flags, protocol types | nothing else in `src`        |
-| `src/engine`  | Renderer, camera, input, game loop, anything that touches three.js or the DOM    | `shared`, three              |
-| `src/world`   | Voxel data, seeded terrain, chunks, meshing, materials                           | `shared`                     |
-| `src/systems` | Survival, waves, economy, upgrades: the host simulation                          | `shared`, `world`            |
-| `src/net`     | Transports (loopback and PeerJS), commands, events, snapshots                    | `shared`, `world`, `systems` |
-| `src/ui`      | HUD, menus, overlays in HTML and CSS                                             | every layer                  |
+| Folder        | Holds                                                                                                                        | May import                   |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `src/shared`  | Pure TypeScript: hashing, seeded random numbers, math, URL flags, protocol types                                             | nothing else in `src`        |
+| `src/engine`  | Renderer, camera, input, game loop, anything that touches three.js or the DOM                                                | `shared`, three              |
+| `src/world`   | Voxel data, seeded terrain, chunks, meshing, materials                                                                       | `shared`                     |
+| `src/systems` | Survival, waves, economy, upgrades: the host simulation                                                                      | `shared`, `world`            |
+| `src/net`     | Transports (loopback and PeerJS), commands, events, snapshots                                                                | `shared`, `world`, `systems` |
+| `src/ui`      | HUD, menus, overlays in HTML and CSS                                                                                         | every layer                  |
+| `src/app`     | The composition root: reads the URL and the saved settings, builds the stage, the world and the HUD, and wires them together | every layer                  |
 
-`world`, `systems` and `net` never import three.js or touch the DOM, so they run in a Worker and under Vitest. The thin render adapters in `src/world/render` are the exception: they may import `engine` and three.js.
+`world`, `systems` and `net` never import three.js or touch the DOM, so they run in a Worker and under Vitest. The thin render adapters in `src/world/render` are the exception: they may import `engine` and three.js. `engine` never imports `world`, `systems`, `net` or `ui`; `src/app` is where they meet.
 
 ## The rules
 
@@ -26,4 +27,5 @@ Each layer may import only the layers listed. ESLint enforces the boundaries (`e
 5. **Fixed-step host.** The host simulates at 20 Hz in a Web Worker so a hidden tab does not freeze everyone. Rendering runs at display rate with interpolation. The host sees a warning when its tab is hidden.
 6. **Two channels.** An ordered channel carries edits and events. An unordered one (PeerJS `reliable: false`) carries player transforms (about 20 Hz) and enemy transforms (about 10 Hz) as quantized binary, and stale packets are dropped by sequence number. PeerJS cannot give truly lossy delivery. Clients own their movement and the host sanity-checks it; the host owns blocks, costs, enemies, waves, health and research. Broker and ICE servers are configurable by URL parameter, and room codes are prefixed and retried on collision.
 7. **Tunable and testable.** One balance file, URL switches for development (`?night=5`, `?bench=1`, `?debug`), and no gameplay that needs the console.
-8. **Movement and collision are shared code.** The player controller, the swept box collision and the fixed-step clock live in `src/shared` and read the world only through the `SolidQuery` interface (`isSolid(x, y, z)` on integer cells). The engine uses them for the local player today, and the host can run the very same code to sanity-check a client's movement. The engine runs them at 60 Hz and draws the frames in between by interpolation; the host's 20 Hz world tick (rule 5) is separate.
+8. **Movement and collision are shared code.** The player controller, the swept box collision and the fixed-step clock live in `src/shared` and read the world through two queries: `SolidQuery` (`isSolid(x, y, z)` on integer cells, for blocks) and `GroundQuery` (distance, push-out and snap-down against the smooth terrain). Together they are a `CollisionWorld`. The engine uses them for the local player, and the host can run the very same code to sanity-check a client's movement. The engine runs them at 60 Hz and draws the frames in between by interpolation; the host's 20 Hz world tick (rule 5) is separate.
+9. **The engine knows no world.** `Stage` (renderer, sky, sun, presets) and `Game` (the fixed-step loop, the local player, the camera) take the world as a `GameWorld`: its collision, spawn point, benchmark route and build timings. `src/app` builds the real one (`createValleyWorld`: the terrain, the voxel world on top of it, and the view that draws the terrain), so a test deck, an empty plane and the valley all fit, and `Game.loadWorld(seed)` swaps one for another. The net layer drives the game through `teleport`, `loadWorld`, `onTick` and `onBeforeRender`.

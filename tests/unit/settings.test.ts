@@ -9,11 +9,21 @@ describe('sanitizeSettings', () => {
   });
 
   it('keeps valid values', () => {
-    expect(sanitizeSettings({ mouseSensitivity: 1.5, fov: 90, invertY: true })).toEqual({
+    expect(
+      sanitizeSettings({ mouseSensitivity: 1.5, fov: 90, invertY: true, quality: 'ultra' }),
+    ).toEqual({
       mouseSensitivity: 1.5,
       fov: 90,
       invertY: true,
+      quality: 'ultra',
     });
+  });
+
+  it('only keeps a graphics preset that exists', () => {
+    expect(sanitizeSettings({ quality: 'low' }).quality).toBe('low');
+    expect(sanitizeSettings({ quality: 'extreme' }).quality).toBe(DEFAULT_SETTINGS.quality);
+    expect(sanitizeSettings({ quality: 3 }).quality).toBe(DEFAULT_SETTINGS.quality);
+    expect(sanitizeSettings({}).quality).toBe(DEFAULT_SETTINGS.quality);
   });
 
   it('clamps out-of-range numbers and replaces broken fields one by one', () => {

@@ -1,11 +1,20 @@
 import { createContacts, moveBody, type Body } from './collision';
-import type { SolidQuery } from './solid';
+import type { CollisionWorld } from './ground';
 
 /** The player's collision box and eye height, in blocks (1 block = 1 meter). */
 export const PLAYER = {
   halfWidth: 0.3,
   height: 1.8,
   eyeHeight: 1.62,
+} as const;
+
+/**
+ * The body as smooth ground sees it: spheres as wide as the collision box, stacked from the feet
+ * to the head. The lowest sits one radius up, so it rests on the surface when the feet do.
+ */
+export const GROUND_SPHERES = {
+  radius: PLAYER.halfWidth,
+  heights: [PLAYER.halfWidth, 0.9, 1.5] as readonly number[],
 } as const;
 
 /** Every number that shapes how movement feels. Speeds are blocks per second. */
@@ -27,6 +36,11 @@ export interface MovementTuning {
   coyoteTime: number;
   /** How long before landing a jump press is remembered. */
   jumpBufferTime: number;
+  /**
+   * How far a body that stood on the terrain is pulled down to keep standing on it. Without it,
+   * walking down a slope would be a string of tiny falls, with air steering and no friction.
+   */
+  groundSnap: number;
 }
 
 export const MOVEMENT: MovementTuning = {
@@ -41,6 +55,7 @@ export const MOVEMENT: MovementTuning = {
   maxFallSpeed: 55,
   coyoteTime: 0.1,
   jumpBufferTime: 0.12,
+  groundSnap: 0.4,
 };
 
 /** What the player is asking for during one tick. */
@@ -152,7 +167,7 @@ export function stepPlayer(
   state: PlayerState,
   input: PlayerInput,
   dt: number,
-  world: SolidQuery,
+  world: CollisionWorld,
   tuning: MovementTuning = MOVEMENT,
 ): void {
   state.jumped = false;
@@ -203,13 +218,34 @@ export function stepPlayer(
 
   if (contacts.x) state.vx = 0;
   if (contacts.z) state.vz = 0;
-  if (contacts.y) {
-    if (dy < 0) {
-      if (!wasOnGround) state.landingSpeed = -state.vy;
-      state.onGround = true;
-    } else {
-      state.onGround = false;
+
+  // The speed the body met the floor at, read before any contact takes it away.
+  const fallSpeed = -state.vy;
+  let supported = contacts.y && dy < 0;
+  if (contacts.y) state.vy = 0;
+
+  // Smooth ground pushes the body out of slopes and rock. A body that is still rising (a jump
+  // that just started, or one skimming a slope) is not standing on it, and is not pulled down to it.
+  const ground = world.ground;
+  if (ground) {
+    const rising = state.vy > 0;
+    const touching = ground.pushOut(state, GROUND_SPHERES.radius, GROUND_SPHERES.heights);
+    if (!rising) {
+      if (touching) supported = true;
+      else if (!supported && wasOnGround) {
+        supported = ground.snapDown(
+          state,
+          GROUND_SPHERES.radius,
+          PLAYER.halfWidth,
+          tuning.groundSnap,
+        );
+      }
     }
+  }
+
+  if (supported) {
+    if (!wasOnGround) state.landingSpeed = fallSpeed;
+    state.onGround = true;
     state.vy = 0;
   } else {
     state.onGround = false;

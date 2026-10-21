@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_QUALITY,
+  QUALITY_NAMES,
   QUALITY_PRESETS,
   isQualityName,
-  readQuality,
+  nextQuality,
   type QualityName,
 } from '../../src/shared/quality';
 
@@ -49,13 +50,16 @@ describe('quality presets', () => {
     }
   });
 
-  it('reads ?quality= and falls back to the default for anything else', () => {
-    expect(readQuality('?quality=ultra')).toBe('ultra');
-    expect(readQuality('?foo=1&quality=low')).toBe('low');
-    expect(readQuality('?quality=extreme')).toBe(DEFAULT_QUALITY);
-    expect(readQuality('')).toBe(DEFAULT_QUALITY);
+  it('recognizes only the three preset names', () => {
     expect(isQualityName('balanced')).toBe(true);
     expect(isQualityName('medium')).toBe(false);
     expect(isQualityName(null)).toBe(false);
+  });
+
+  it('lists the presets lowest first and cycles through them', () => {
+    expect(QUALITY_NAMES).toEqual(ORDER);
+    expect(nextQuality('low')).toBe('balanced');
+    expect(nextQuality('balanced')).toBe('ultra');
+    expect(nextQuality('ultra')).toBe('low');
   });
 });

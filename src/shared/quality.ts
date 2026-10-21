@@ -114,8 +114,11 @@ export function isQualityName(value: string | null | undefined): value is Qualit
   return value === 'low' || value === 'balanced' || value === 'ultra';
 }
 
-/** Reads `?quality=low|balanced|ultra`; anything else is the default preset. */
-export function readQuality(search: string): QualityName {
-  const value = new URLSearchParams(search).get('quality');
-  return isQualityName(value) ? value : DEFAULT_QUALITY;
+/** Every preset, lowest first: the order the quality key cycles through and the benchmark flies. */
+export const QUALITY_NAMES: readonly QualityName[] = ['low', 'balanced', 'ultra'];
+
+/** The preset after `name`, wrapping from the last one back to the first. */
+export function nextQuality(name: QualityName): QualityName {
+  const index = QUALITY_NAMES.indexOf(name);
+  return QUALITY_NAMES[(index + 1) % QUALITY_NAMES.length] ?? DEFAULT_QUALITY;
 }

@@ -29,5 +29,5 @@ export function valley(): TestValley {
 /** The same valley as a `Terrain`, which is what the voxel world is built on. */
 export function terrain(): Terrain {
   const { field, grid } = valley();
-  return { seed: TEST_SEED, field, grid };
+  return { seed: TEST_SEED, field, grid, buildMs: { field: 0, grid: 0 } };
 }

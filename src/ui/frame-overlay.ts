@@ -54,14 +54,16 @@ export function createFrameOverlay(game: Game): FrameOverlay {
   };
   const frameRow = row('frame');
   const cpuRow = row('cpu');
+  const gpuMsRow = row('gpu ms');
   const sceneRow = row('scene');
+  const presetRow = row('preset');
   const playerRow = row('player');
   const motionRow = row('motion');
   const viewRow = row('view');
   const canvasRow = row('canvas');
-  const gpuRow = row('gpu');
-  gpuRow.textContent = game.gpu;
-  gpuRow.classList.add('fo-gpu');
+  const adapterRow = row('adapter');
+  adapterRow.textContent = game.gpu;
+  adapterRow.classList.add('fo-gpu');
 
   root.append(head, canvas, rows);
 
@@ -96,13 +98,16 @@ export function createFrameOverlay(game: Game): FrameOverlay {
     current.textContent = summary.frames > 0 ? `${ms(summary.avgMs)} ms` : '-- ms';
     frameRow.textContent = `avg ${ms(summary.avgMs)} · p95 ${ms(summary.p95Ms)} · max ${ms(summary.maxMs, 0)}`;
     cpuRow.textContent = `${ms(cpu.avgMs, 2)} ms · ${ticks} tick${ticks === 1 ? '' : 's'}`;
+    const { stage } = game;
+    gpuMsRow.textContent = stage.gpuMs === null ? 'no timer' : `${ms(stage.gpuMs, 2)} ms`;
     sceneRow.textContent = `${drawCalls} calls · ${(triangles / 1000).toFixed(1)}k tris`;
+    presetRow.textContent = `${stage.quality.name} · scale ${stage.renderScale.toFixed(2)} · ${stage.moment ?? 'cycle'}`;
     const { player, rig } = game;
     playerRow.textContent = `${ms(player.x, 2)}  ${ms(player.y, 2)}  ${ms(player.z, 2)}`;
     const speed = Math.hypot(player.vx, player.vz);
     motionRow.textContent = `${ms(speed)} b/s · ${player.onGround ? 'ground' : 'air'}`;
-    viewRow.textContent = `${rig.mode === 'first' ? 'first' : 'third'} person · fov ${Math.round(game.stage.camera.fov)}`;
-    const { domElement } = game.stage.renderer;
+    viewRow.textContent = `${rig.mode === 'first' ? 'first' : 'third'} person · fov ${Math.round(stage.camera.fov)}`;
+    const { domElement } = stage.renderer;
     canvasRow.textContent = `${domElement.width}×${domElement.height} px · ${window.devicePixelRatio.toFixed(2)}x`;
   };
 

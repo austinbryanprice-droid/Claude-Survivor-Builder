@@ -2,7 +2,7 @@
 
 A browser co-op survivor-builder for two to four players. By day you scavenge the wreckage of a crashed orbital station and build a shared outpost from refined, beveled blocks and modular machines. By night rogue machines attack in waves that grow every night.
 
-> **Status: early development.** You can run, jump and look around a walled test deck (Phase 1). The real world, building and enemies are not in yet. The [roadmap](docs/roadmap.md) lists what comes next.
+> **Status: early development.** You can run, jump and look around the Ashbound Valley: seeded terrain, a lake, trees and a golden-hour sky. Building, multiplayer and enemies are not in yet (the voxel world they build on is). The [roadmap](docs/roadmap.md) lists what comes next.
 
 ## Play
 
@@ -18,14 +18,13 @@ Click the page to take the mouse. Esc gives it back.
 | Space   | Jump (hold it to keep hopping)                                      |
 | Shift   | Sprint                                                              |
 | V or F5 | Switch between first and third person (F5 will not reload mid-game) |
+| P       | Cycle the graphics preset: Low, Balanced, Ultra                     |
 | F3      | Show or hide the frame-time overlay                                 |
 | Esc     | Free the mouse (and stop a running benchmark)                       |
 
-Mouse sensitivity, field of view and inverted look are on the pause panel and are remembered in the browser.
+Mouse sensitivity, field of view, inverted look, the graphics preset and the time of day are on the pause panel. All but the time of day are remembered in the browser.
 
-To check the frame rate, open the game with `?bench=1`. It flies a fixed 30-second route (walking, sprinting, jumping, third person), then shows the average frame rate, the 95th percentile frame time and the graphics adapter, with a button that copies the report. `?bench=1&benchSeconds=60` changes the length.
-
-The look spike page, `look.html`, shows the valley in the target look. Its `?bench=1` is the same benchmark, with the same report and pass mark, flown through the valley once each for Low, Balanced and Ultra. That run is the frame-rate check for the look; the game page measures the movement test deck until the valley moves into the game in Phase 2.
+To check the frame rate, open the game with `?bench=1`. It flies the valley once for each graphics preset (30 seconds each, with a two-second warm-up), then shows the average frame rate, the 95th percentile frame time and the graphics adapter for each, with a button that copies the report. `?bench=1&benchSeconds=60` changes the length and `&benchPresets=balanced` picks the presets. [The app README](src/app/README.md) lists every key and URL switch.
 
 ## Develop
 
@@ -40,7 +39,7 @@ npm run test:e2e  # builds, then runs the Playwright browser tests
 
 The browser tests need a Chromium that Playwright can find. On a fresh machine run `npx playwright install chromium` first. Headless runs use software WebGL (SwiftShader), so they prove correctness but say nothing about frame rate.
 
-URL switches: `?bench=1` runs the benchmark, and `?debug` exposes `window.__ashbound` and shows the frame overlay from the start. More arrive with the features that use them (`?night=5`, `?quality=`).
+URL switches: `?bench=1` runs the benchmark, `?debug` exposes `window.__ashbound` and shows the frame overlay from the start, `?quality=low` picks a graphics preset for one visit, and `?shot=lake` holds the camera at a named viewpoint for screenshots. The full list is in [the app README](src/app/README.md). More arrive with the features that use them (`?night=5`).
 
 ## How multiplayer will work
 
@@ -55,6 +54,7 @@ src/world     voxel data, seeded terrain, chunks, meshing, materials
 src/systems   survival, waves, economy and upgrades (the host simulation)
 src/net       transports, commands, events and snapshots
 src/ui        HUD, menus and overlays
+src/app       the composition root that wires the layers together
 assets/       generated or licensed assets (none yet)
 public/       files copied as-is into the build
 tests/        unit tests (Vitest) and browser tests (Playwright)

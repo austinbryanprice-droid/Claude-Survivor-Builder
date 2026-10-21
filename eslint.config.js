@@ -44,23 +44,28 @@ export default defineConfig(
   },
   {
     files: ['src/shared/**/*.ts'],
-    rules: restrictImports(['engine', 'world', 'systems', 'net', 'ui'], { three: true }),
+    rules: restrictImports(['engine', 'world', 'systems', 'net', 'ui', 'app'], { three: true }),
   },
   {
     files: ['src/engine/**/*.ts'],
-    rules: restrictImports(['world', 'systems', 'net', 'ui']),
+    rules: restrictImports(['world', 'systems', 'net', 'ui', 'app']),
   },
   {
     files: ['src/world/**/*.ts'],
     ignores: ['src/world/render/**'],
-    rules: restrictImports(['engine', 'systems', 'net', 'ui'], { three: true }),
+    rules: restrictImports(['engine', 'systems', 'net', 'ui', 'app'], { three: true }),
   },
   {
     files: ['src/systems/**/*.ts'],
-    rules: restrictImports(['engine', 'net', 'ui'], { three: true }),
+    rules: restrictImports(['engine', 'net', 'ui', 'app'], { three: true }),
   },
   {
     files: ['src/net/**/*.ts'],
-    rules: restrictImports(['engine', 'ui'], { three: true }),
+    rules: restrictImports(['engine', 'ui', 'app'], { three: true }),
+  },
+  {
+    // The interface layer may use every layer below it, but not the composition root above it.
+    files: ['src/ui/**/*.ts'],
+    rules: restrictImports(['app']),
   },
 );

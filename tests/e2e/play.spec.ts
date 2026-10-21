@@ -1,16 +1,20 @@
 import { expect, test, type Page } from '@playwright/test';
 
 // Software WebGL is slow (a few frames a second), and the loop runs at most five ticks per frame,
-// so these tests wait on game state rather than on time, and use a smaller window to go faster.
+// so these tests wait on game state rather than on time, and use a smaller window and the Low
+// preset to go faster.
 test.use({ viewport: { width: 960, height: 540 } });
 
 const STATE_TIMEOUT = 45_000;
+
+/** Where the player starts, on the lake shore (see `SPAWN_SHOT`); the game puts the feet on the ground. */
+const SPAWN = { x: 12, z: 7 };
 
 interface Opened {
   problems: string[];
 }
 
-async function open(page: Page, query = '?debug'): Promise<Opened> {
+async function open(page: Page, query = '?debug&quality=low'): Promise<Opened> {
   const problems: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error') problems.push(`console: ${message.text()}`);
@@ -47,22 +51,33 @@ const read = <T>(page: Page, expression: string): Promise<T> =>
     return ${expression};
   })()`);
 
+/** Horizontal distance the player is from the spawn point. */
+const awayFromSpawn = (page: Page): Promise<number> =>
+  read<number>(page, `Math.hypot(game.player.x - ${SPAWN.x}, game.player.z - ${SPAWN.z})`);
+
+/** Waits for the player to settle on the ground and returns the height of the feet. */
+async function standOnTheGround(page: Page): Promise<number> {
+  await page.waitForFunction(() => window.__ashbound?.game.player.onGround === true, null, {
+    timeout: STATE_TIMEOUT,
+  });
+  return read<number>(page, 'game.player.y');
+}
+
 test.describe('playing', () => {
   test.describe.configure({ timeout: 90_000 });
 
   test('starts on the pause panel; Play takes the pointer and hides it', async ({ page }) => {
     const { problems } = await open(page);
     await expect(page.locator('.pause')).toBeVisible();
-    await expect(page.locator('.crosshair')).toBeHidden();
     await expect(page.getByRole('heading', { name: 'Click to play' })).toBeVisible();
+    await expect(page.locator('.ph')).toBeVisible();
 
     await expect(page.locator('.status-panel')).toBeHidden();
 
     await takeThePointer(page);
     await expect(page.locator('.pause')).toBeHidden();
-    await expect(page.locator('.crosshair')).toBeVisible();
     await expect(page.locator('.status-panel')).toBeVisible();
-    await expect(page.locator('.status-panel')).toContainText('Proving ground');
+    await expect(page.locator('.status-panel')).toContainText('Ashbound Valley');
 
     await page.evaluate(() => document.exitPointerLock());
     await expect(page.locator('#hud')).toHaveAttribute('data-pointer', 'free');
@@ -77,15 +92,28 @@ test.describe('playing', () => {
     await expect(page.locator('#hud')).toHaveAttribute('data-pointer', 'locked');
   });
 
+  test('the player starts on the ground at the lake shore', async ({ page }) => {
+    await open(page);
+    const feet = await standOnTheGround(page);
+    const ground = await read<number>(page, 'game.world.groundAt(game.player.x, game.player.z)');
+    expect(Math.abs(feet - ground)).toBeLessThan(0.3);
+    expect(await awayFromSpawn(page)).toBeLessThan(0.5);
+  });
+
   test('W walks forward, S walks back, and Shift sprints faster', async ({ page }) => {
     await open(page);
     await takeThePointer(page);
-    expect(await read<number>(page, 'game.player.z')).toBeCloseTo(0.5, 2);
+    await standOnTheGround(page);
 
     await page.keyboard.down('KeyW');
-    await page.waitForFunction(() => (window.__ashbound?.game.player.z ?? 0) < 0.5 - 2, null, {
-      timeout: STATE_TIMEOUT,
-    });
+    await page.waitForFunction(
+      ({ x, z }) => {
+        const player = window.__ashbound?.game.player;
+        return !!player && Math.hypot(player.x - x, player.z - z) > 2;
+      },
+      SPAWN,
+      { timeout: STATE_TIMEOUT },
+    );
     const walking = await read<number>(page, 'Math.hypot(game.player.vx, game.player.vz)');
     expect(walking).toBeCloseTo(4.4, 1);
 
@@ -101,28 +129,35 @@ test.describe('playing', () => {
     await page.keyboard.up('ShiftLeft');
     await page.keyboard.up('KeyW');
 
-    const here = await read<number>(page, 'game.player.z');
+    // Walking backward heads for the spawn point again, along the way it came.
+    const far = await awayFromSpawn(page);
     await page.keyboard.down('KeyS');
-    await page.waitForFunction((z) => (window.__ashbound?.game.player.z ?? -99) > z + 1.5, here, {
-      timeout: STATE_TIMEOUT,
-    });
+    await page.waitForFunction(
+      ({ x, z, far }) => {
+        const player = window.__ashbound?.game.player;
+        return !!player && Math.hypot(player.x - x, player.z - z) < far - 1.5;
+      },
+      { ...SPAWN, far },
+      { timeout: STATE_TIMEOUT },
+    );
     await page.keyboard.up('KeyS');
   });
 
   test('Space jumps and the player lands again', async ({ page }) => {
     await open(page);
     await takeThePointer(page);
+    const feet = await standOnTheGround(page);
     await page.keyboard.down('Space');
-    await page.waitForFunction(() => (window.__ashbound?.game.player.y ?? 0) > 0.5, null, {
+    await page.waitForFunction((y) => (window.__ashbound?.game.player.y ?? 0) > y + 0.5, feet, {
       timeout: STATE_TIMEOUT,
     });
     await page.keyboard.up('Space');
     await page.waitForFunction(
-      () => {
+      (y) => {
         const player = window.__ashbound?.game.player;
-        return !!player && player.onGround && player.y < 0.001;
+        return !!player && player.onGround && Math.abs(player.y - y) < 0.3;
       },
-      null,
+      feet,
       { timeout: STATE_TIMEOUT },
     );
   });
@@ -131,17 +166,23 @@ test.describe('playing', () => {
     page,
   }) => {
     await open(page);
+    await standOnTheGround(page);
     // Pressed while the mouse is free, so the game never sees it.
     await page.keyboard.down('KeyW');
     await page.waitForTimeout(1500);
-    expect(await read<number>(page, 'game.player.z')).toBeCloseTo(0.5, 3);
+    expect(await awayFromSpawn(page)).toBeLessThan(0.2);
 
     await takeThePointer(page);
     await page.keyboard.up('KeyW');
     await page.keyboard.down('KeyW');
-    await page.waitForFunction(() => (window.__ashbound?.game.player.z ?? 0) < 0.5 - 1, null, {
-      timeout: STATE_TIMEOUT,
-    });
+    await page.waitForFunction(
+      ({ x, z }) => {
+        const player = window.__ashbound?.game.player;
+        return !!player && Math.hypot(player.x - x, player.z - z) > 1;
+      },
+      SPAWN,
+      { timeout: STATE_TIMEOUT },
+    );
     await page.evaluate(() => document.exitPointerLock());
     await expect(page.locator('#hud')).toHaveAttribute('data-pointer', 'free');
     // Let the loop settle; the held W must no longer push the player.
@@ -166,11 +207,13 @@ test.describe('playing', () => {
     // Playwright's own mouse sends one large stray movement (-263 px) a second or so after the lock
     // starts, which may land before or after these events, and the game drops the first movement
     // after a lock. So either two or three of these events count, minus the stray: the view turns
-    // between 1.2 and 2.6 radians, never far enough to wrap past straight behind.
+    // between 1.2 and 2.6 radians, never far enough to wrap past straight behind. Yaw wraps at
+    // pi, so the turn is measured the short way round.
     await moveMouse(page, 400, 0, 3);
     await page.waitForFunction(
       (before) => {
-        const turned = before - (window.__ashbound?.game.look.yaw ?? before);
+        const now = window.__ashbound?.game.look.yaw ?? before;
+        const turned = Math.atan2(Math.sin(before - now), Math.cos(before - now));
         return turned > 0.8 && turned < 3;
       },
       yaw,
@@ -199,16 +242,19 @@ test.describe('playing', () => {
       });
     });
 
-    await expect(page.locator('.status-panel')).toContainText('First person');
+    // The HUD redraws on a rendered frame, which software WebGL can take seconds to deliver when
+    // two workers share the machine, so these waits are as long as the state waits above.
+    const slow = { timeout: STATE_TIMEOUT };
+    await expect(page.locator('.status-panel')).toContainText('First person', slow);
     await page.keyboard.press('KeyV');
-    await expect(hud).toHaveAttribute('data-camera', 'third');
-    await expect(page.locator('.status-panel')).toContainText('Third person');
+    await expect(hud).toHaveAttribute('data-camera', 'third', slow);
+    await expect(page.locator('.status-panel')).toContainText('Third person', slow);
     await page.keyboard.press('F5');
-    await expect(hud).toHaveAttribute('data-camera', 'first');
+    await expect(hud).toHaveAttribute('data-camera', 'first', slow);
     await page.keyboard.press('F5');
-    await expect(hud).toHaveAttribute('data-camera', 'third');
+    await expect(hud).toHaveAttribute('data-camera', 'third', slow);
     await page.keyboard.press('KeyV');
-    await expect(hud).toHaveAttribute('data-camera', 'first');
+    await expect(hud).toHaveAttribute('data-camera', 'first', slow);
 
     await expect(page.locator('html')).toHaveAttribute('data-stayed', 'yes');
     await expect(page.locator('html')).toHaveAttribute('data-f5-prevented', 'true');
@@ -238,11 +284,35 @@ test.describe('playing', () => {
     await open(page);
     await takeThePointer(page);
     await page.keyboard.press('KeyV');
-    await page.waitForFunction(() => (window.__ashbound?.game.rig.blend ?? 0) > 0.99, null, {
-      timeout: STATE_TIMEOUT,
-    });
+    // Playwright's mouse sends one stray movement after the lock that tips the view upward, and
+    // looking up with the hill behind the player pulls the boom in (that is the camera working, and
+    // the unit tests cover it). Holding the view level keeps this test about the pull back itself.
+    await page.waitForFunction(
+      () => {
+        const game = window.__ashbound?.game;
+        if (!game) return false;
+        game.look.pitch = 0;
+        return game.rig.blend > 0.99 && game.rig.boomLength > 3;
+      },
+      null,
+      { timeout: STATE_TIMEOUT },
+    );
     expect(await read<boolean>(page, 'game.rig.showAvatar')).toBe(true);
-    expect(await read<number>(page, 'game.rig.boomLength')).toBeGreaterThan(3);
+  });
+
+  test('P steps through the graphics presets and says which one it chose', async ({ page }) => {
+    await open(page);
+    await takeThePointer(page);
+    expect(await read<string>(page, 'game.stage.quality.name')).toBe('low');
+    await page.keyboard.press('KeyP');
+    await expect(page.locator('.toast')).toHaveText('Graphics: Balanced');
+    expect(await read<string>(page, 'game.stage.quality.name')).toBe('balanced');
+    expect(await read<string>(page, 'game.settings.quality')).toBe('balanced');
+    await expect(page.locator('.status-panel')).toContainText('Graphics: Balanced');
+    await page.keyboard.press('KeyP');
+    await page.keyboard.press('KeyP');
+    await expect(page.locator('.toast')).toHaveText('Graphics: Low');
+    expect(await read<string>(page, 'game.stage.quality.name')).toBe('low');
   });
 
   test('F3 toggles the frame overlay', async ({ page }) => {
@@ -254,10 +324,11 @@ test.describe('playing', () => {
     await page.keyboard.press('F3');
     await expect(overlay).toBeVisible();
     await expect(overlay.locator('.fo-fps')).not.toHaveText('--', { timeout: STATE_TIMEOUT });
+    await expect(overlay).toContainText('low');
   });
 
   test('the overlay is hidden until asked for when no debug switch is on', async ({ page }) => {
-    await open(page, '');
+    await open(page, '?quality=low');
     const overlay = page.locator('.frame-overlay');
     await expect(overlay).toBeHidden();
     await page.keyboard.press('F3');
@@ -271,14 +342,28 @@ test.describe('playing', () => {
     await sensitivity.fill('2');
     await fov.fill('90');
     await page.getByLabel('Invert vertical look').check();
+    await page.getByLabel('Graphics').selectOption('low');
     expect(await read<number>(page, 'game.settings.mouseSensitivity')).toBe(2);
+    expect(await read<string>(page, 'game.settings.quality')).toBe('low');
 
-    await page.reload();
+    // No ?quality= this time, so the saved preset is the one that decides.
+    await page.goto('./?debug');
     await expect(page.locator('html')).toHaveAttribute('data-ready', 'true');
     await expect(sensitivity).toHaveValue('2');
     await expect(fov).toHaveValue('90');
     await expect(page.getByLabel('Invert vertical look')).toBeChecked();
+    await expect(page.getByLabel('Graphics')).toHaveValue('low');
     expect(await read<number>(page, 'game.settings.fov')).toBe(90);
+    expect(await read<string>(page, 'game.stage.quality.name')).toBe('low');
+  });
+
+  test('the time of day can be changed from the pause panel', async ({ page }) => {
+    await open(page);
+    expect(await read<string | null>(page, 'game.stage.moment')).toBe('golden');
+    await page.getByLabel('Time of day').selectOption('night');
+    expect(await read<string | null>(page, 'game.stage.moment')).toBe('night');
+    await page.getByLabel('Time of day').selectOption('clock');
+    expect(await read<string | null>(page, 'game.stage.moment')).toBeNull();
   });
 
   test('screenshot: playing in first and third person', async ({ page }, testInfo) => {
@@ -296,16 +381,18 @@ test.describe('playing', () => {
 });
 
 test.describe('benchmark', () => {
-  test('?bench=1 runs the flythrough by itself and ends with a report to copy', async ({
+  // One preset keeps these quick under software rendering; the sweep over all three is unit tested.
+  test('?bench=1 flies the valley by itself and ends with a report to copy', async ({
     page,
     context,
   }, testInfo) => {
     test.setTimeout(180_000);
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-    const { problems } = await open(page, '?bench=1&benchSeconds=2&debug');
+    const { problems } = await open(page, '?bench=1&benchSeconds=2&benchPresets=low&debug');
     const hud = page.locator('#hud');
     await expect(hud).toHaveAttribute('data-bench', 'running', { timeout: STATE_TIMEOUT });
     await expect(page.locator('.bench-banner')).toBeVisible();
+    await expect(page.locator('.bench-banner')).toContainText('Low (1 of 1)');
     await expect(page.locator('.pause')).toBeHidden();
     await expect(page.locator('.status-panel')).toBeHidden();
     await expect(hud).toHaveAttribute('data-bench', 'done', { timeout: 150_000 });
@@ -313,8 +400,9 @@ test.describe('benchmark', () => {
     const card = page.locator('.results-card');
     await expect(card).toBeVisible();
     await expect(card.locator('.report-text')).toContainText('Ashbound Outpost benchmark');
-    await expect(card.locator('.report-text')).toContainText('GPU:');
+    await expect(card.locator('.report-text')).toContainText('Graphics adapter:');
     await expect(card.locator('.gpu-line')).toContainText('GPU:');
+    await expect(card.locator('.bench-table tr[data-preset="low"]')).toBeVisible();
     const shot = testInfo.outputPath('benchmark-results.png');
     await page.screenshot({ path: shot });
     await testInfo.attach('benchmark-results', { path: shot, contentType: 'image/png' });
@@ -325,12 +413,16 @@ test.describe('benchmark', () => {
     await card.getByRole('button', { name: 'Back to game' }).click();
     await expect(card).toBeHidden();
     await expect(page.locator('.pause')).toBeVisible();
+    // The sweep gives the preset and the sky back. The page started on the saved preset (Balanced:
+    // this URL has no ?quality=), and the one-preset run flew Low, so Balanced is what comes back.
+    expect(await read<string>(page, 'game.stage.quality.name')).toBe('balanced');
+    expect(await read<string | null>(page, 'game.stage.moment')).toBe('golden');
     expect(problems).toEqual([]);
   });
 
   test('Escape stops a run and says so', async ({ page }) => {
     test.setTimeout(120_000);
-    await open(page, '?bench=1&benchSeconds=120');
+    await open(page, '?bench=1&benchSeconds=120&benchPresets=low');
     const hud = page.locator('#hud');
     await expect(hud).toHaveAttribute('data-bench', 'running', { timeout: STATE_TIMEOUT });
     await page.keyboard.press('Escape');
@@ -340,19 +432,18 @@ test.describe('benchmark', () => {
 
   test('the mouse cannot steer during a run, even with the pointer taken', async ({ page }) => {
     test.setTimeout(120_000);
-    await open(page, '?bench=1&benchSeconds=120&debug');
+    await open(page, '?bench=1&benchSeconds=120&benchPresets=low&debug');
     await expect(page.locator('#hud')).toHaveAttribute('data-bench', 'running', {
       timeout: STATE_TIMEOUT,
     });
     await page.mouse.click(480, 270);
     await expect(page.locator('#hud')).toHaveAttribute('data-pointer', 'locked');
     const before = await read<number>(page, 'game.look.yaw');
-    // Two counted events of 300 px would turn the view by about 1.3 radians.
+    const position = await read<number[]>(page, '[game.player.x, game.player.z]');
     await moveMouse(page, 300, 0);
     await page.waitForTimeout(500);
-    // The route turns the view by itself, slowly, so only a small positive change is expected.
-    const delta = (await read<number>(page, 'game.look.yaw')) - before;
-    expect(delta).toBeGreaterThanOrEqual(0);
-    expect(delta).toBeLessThan(1);
+    // The route flies the camera; the player's own view and place stay where they were.
+    expect(await read<number>(page, 'game.look.yaw')).toBe(before);
+    expect(await read<number[]>(page, '[game.player.x, game.player.z]')).toEqual(position);
   });
 });

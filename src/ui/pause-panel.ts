@@ -1,4 +1,6 @@
 import type { Game } from '../engine/game';
+import { TIME_PRESETS } from '../shared/daycycle';
+import { QUALITY_NAMES, isQualityName } from '../shared/quality';
 import { SETTINGS_LIMITS } from '../shared/settings';
 import { el, keycap } from './dom';
 import { saveSettings } from './settings-store';
@@ -24,9 +26,14 @@ const CONTROLS: Control[] = [
   { keys: ['Space'], label: 'Jump (hold to keep hopping)' },
   { keys: ['Shift'], label: 'Sprint' },
   { keys: ['V', 'F5'], label: 'First or third person' },
+  { keys: ['P'], label: 'Graphics preset' },
   { keys: ['F3'], label: 'Frame times' },
   { keys: ['Esc'], label: 'Free the mouse' },
 ];
+
+const CLOCK = 'clock';
+const MOMENT_LABELS: Readonly<Record<string, string>> = { golden: 'Golden hour' };
+const capitalized = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
 export function createPausePanel(game: Game, buildId: string): PausePanel {
   const root = el('section', 'pause');
@@ -40,7 +47,7 @@ export function createPausePanel(game: Game, buildId: string): PausePanel {
     el(
       'p',
       'lede',
-      'A walled test deck for running, jumping and climbing. The real world arrives in the next phases.',
+      'The valley around the crash site is yours to walk, run and climb. Building arrives next.',
     ),
   );
 
@@ -103,6 +110,45 @@ export function createPausePanel(game: Game, buildId: string): PausePanel {
   });
   invert.append(invertBox, el('span', undefined, 'Invert vertical look'));
   settingsBlock.append(invert);
+
+  const choice = (
+    label: string,
+    options: readonly { value: string; label: string }[],
+    onPick: (value: string) => void,
+  ): HTMLSelectElement => {
+    const row = el('label', 'setting choice');
+    const select = el('select');
+    for (const option of options) {
+      const node = el('option', undefined, option.label);
+      node.value = option.value;
+      select.append(node);
+    }
+    select.addEventListener('change', () => onPick(select.value));
+    row.append(el('span', undefined, label), select);
+    settingsBlock.append(row);
+    return select;
+  };
+  const graphics = choice(
+    'Graphics',
+    QUALITY_NAMES.map((name) => ({ value: name, label: capitalized(name) })),
+    (value) => {
+      if (!isQualityName(value)) return;
+      game.setQuality(value);
+      saveSettings(game.settings);
+    },
+  );
+  // A preview of the light at each hour, until the day and night cycle runs on its own.
+  const timeOfDay = choice(
+    'Time of day',
+    [
+      ...Object.keys(TIME_PRESETS).map((name) => ({
+        value: name,
+        label: MOMENT_LABELS[name] ?? capitalized(name),
+      })),
+      { value: CLOCK, label: 'Day and night cycle' },
+    ],
+    (value) => game.stage.setMoment(value === CLOCK ? null : value),
+  );
   card.append(settingsBlock);
 
   card.append(el('p', 'footnote', `Build ${buildId}`));
@@ -116,6 +162,8 @@ export function createPausePanel(game: Game, buildId: string): PausePanel {
   });
 
   const refresh = (): void => {
+    graphics.value = game.stage.quality.name;
+    timeOfDay.value = game.stage.moment ?? CLOCK;
     hint.textContent = game.input.blocked
       ? 'The browser did not hand over the mouse. Wait a moment, then click Play again.'
       : 'Esc frees the mouse at any time. F5 will not reload the page while you are playing.';

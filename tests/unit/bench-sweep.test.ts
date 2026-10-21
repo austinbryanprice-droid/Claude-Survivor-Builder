@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PresetSweep, type SweepTarget } from '../../src/engine/bench-sweep';
 import type { QualityName } from '../../src/shared/quality';
-import { PresetSweep, type SweepTarget } from '../../src/spike/bench';
 
-/** Stands in for the look scene: records what the sweep asks of it. */
+/** Stands in for the game: records what the sweep asks of it. */
 class FakeScene implements SweepTarget {
   quality: { name: QualityName } = { name: 'balanced' };
   stats: SweepTarget['stats'] = {

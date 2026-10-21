@@ -4,9 +4,9 @@ import {
   TARGET_FPS,
   holdsTarget,
   type BenchReport,
-} from '../shared/bench-report';
-import type { FrameSummary } from '../shared/frame-stats';
-import type { QualityName } from '../shared/quality';
+} from './bench-report';
+import type { FrameSummary } from './frame-stats';
+import type { QualityName } from './quality';
 
 /** One preset's flight along the benchmark route. */
 export interface PresetRun {
@@ -23,7 +23,7 @@ export interface PresetRun {
   readonly triangles: number;
 }
 
-/** What the look page adds to the game's report: the valley and the timers behind the numbers. */
+/** What the benchmark adds to a single run's report: the valley and the timers behind the numbers. */
 export interface SweepExtras {
   readonly timerQueries: boolean;
   /** Terrain mesher in use: 'surface-nets' or 'heightfield'. */
@@ -46,12 +46,12 @@ const label = (preset: QualityName): string => preset.charAt(0).toUpperCase() + 
 
 /**
  * The sweep as Markdown, ready to paste into the thread. The pass mark and every number except
- * the GPU column come from the same report the game page's `?bench=1` prints.
+ * the GPU column come from the same per-run report the benchmark prints to the console.
  */
 export function formatSweepReport(runs: readonly PresetRun[], extras: SweepExtras): string {
   const first = runs[0]?.report;
   const lines: string[] = [
-    `### Ashbound Outpost look benchmark, build ${first?.environment.buildId ?? '-'}`,
+    `### Ashbound Outpost benchmark, build ${first?.environment.buildId ?? '-'}`,
     '',
   ];
   if (runs.length > 0) {
@@ -86,7 +86,7 @@ export function formatSweepReport(runs: readonly PresetRun[], extras: SweepExtra
   }
   lines.push(
     '',
-    `Holding 60 means an average of at least ${AVG_FPS_FLOOR} FPS and a 95th percentile frame time of at most ${P95_LIMIT_MS} ms, the pass mark of the game page's \`?bench=1\`.`,
+    `Holding 60 means an average of at least ${AVG_FPS_FLOOR} FPS and a 95th percentile frame time of at most ${P95_LIMIT_MS} ms, the pass mark of the \`?bench=1\` benchmark.`,
   );
   return lines.join('\n');
 }

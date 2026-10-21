@@ -1,3 +1,5 @@
+import { DEFAULT_QUALITY, isQualityName, type QualityName } from './quality';
+
 /** Player preferences that the engine reads every frame. The UI edits them and stores them. */
 export interface Settings {
   /** Multiplier on the base turn rate; 1 is the default feel. */
@@ -5,6 +7,8 @@ export interface Settings {
   /** Vertical field of view in degrees. */
   fov: number;
   invertY: boolean;
+  /** Graphics preset; a `?quality=` switch overrides it for one visit. */
+  quality: QualityName;
 }
 
 export const SETTINGS_LIMITS = {
@@ -16,6 +20,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mouseSensitivity: 1,
   fov: 70,
   invertY: false,
+  quality: DEFAULT_QUALITY,
 };
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
@@ -36,5 +41,9 @@ export function sanitizeSettings(raw: unknown): Settings {
     ),
     fov: clampNumber(source.fov, fov.min, fov.max, DEFAULT_SETTINGS.fov),
     invertY: typeof source.invertY === 'boolean' ? source.invertY : DEFAULT_SETTINGS.invertY,
+    quality:
+      typeof source.quality === 'string' && isQualityName(source.quality)
+        ? source.quality
+        : DEFAULT_SETTINGS.quality,
   };
 }

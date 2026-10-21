@@ -6,10 +6,6 @@ import {
 } from '../shared/bench-report';
 import { TICK_RATE } from '../shared/fixed-step';
 import { summarizeFrames } from '../shared/frame-stats';
-import type { LookState } from '../shared/look';
-import type { PlayerInput } from '../shared/movement';
-import { driveBenchTick } from './bench-script';
-import type { CameraRig } from './camera-rig';
 
 export type BenchState = 'idle' | 'warmup' | 'running' | 'done' | 'cancelled';
 
@@ -19,7 +15,7 @@ const WARMUP_SECONDS = 2;
 const MAX_FRAMES_PER_SECOND = 400;
 
 export interface BenchmarkHooks {
-  /** Puts the player, the view and the camera back at the start of the route. */
+  /** Puts the camera back at the start of the route. */
   prepare(): void;
   /** Reads the machine and scene details for the report. */
   describe(): BenchEnvironment;
@@ -38,12 +34,7 @@ export interface Benchmark {
   start(): void;
   cancel(reason?: string): void;
   onChange(listener: () => void): () => void;
-  /** Called once per simulation tick: plays the next step of the route into `input` and `look`. */
-  driveTick(input: PlayerInput, look: LookState, rig: CameraRig): void;
-  /**
-   * Called once per simulation tick by a page that flies a camera instead of a player (the look
-   * spike): counts the tick and ends the run on the last one. Read `progress` for where the route is.
-   */
+  /** Called once per simulation tick: counts the tick and ends the run on the last one. Read `progress` for where the route is. */
   advance(): void;
   /** Called once per rendered frame with the frame interval and the CPU time spent on it. */
   recordFrame(frameMs: number, cpuMs: number): void;
@@ -136,11 +127,6 @@ export function createBenchmark(scriptSeconds: number, hooks: BenchmarkHooks): B
     onChange(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
-    },
-    driveTick(input, look, rig) {
-      if (state !== 'running') return;
-      rig.setMode(driveBenchTick(tick, totalTicks, input, look));
-      nextTick();
     },
     advance() {
       if (state === 'running') nextTick();
