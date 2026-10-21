@@ -153,6 +153,9 @@ export class GuestSession implements GameSession {
   get closed(): CloseInfo | null {
     return this.closedInfo;
   }
+  get roomOnline(): boolean {
+    return true;
+  }
   get stats(): Readonly<NetStats> {
     return this.counters;
   }

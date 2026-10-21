@@ -1,6 +1,7 @@
 import { NET } from '../shared/net-config';
 import type { BrokerConfig, IceServer } from '../shared/net-flags';
 import { generateRoomCode, peerIdForCode } from '../shared/room-code';
+import { cryptoRandom, randomString } from './random';
 import type { Scheduler } from './scheduler';
 import {
   NetError,
@@ -104,23 +105,8 @@ const RECONNECT_MAX_MS = 30_000;
 /** After a room closes, the PeerJS peer lives this long so goodbye frames already queued can leave. */
 const DESTROY_GRACE_MS = 1500;
 
-function cryptoRandom(): () => number {
-  const source = globalThis.crypto;
-  if (!source?.getRandomValues) return Math.random;
-  const buffer = new Uint32Array(1);
-  return () => {
-    source.getRandomValues(buffer);
-    return (buffer[0] as number) / 4_294_967_296;
-  };
-}
-
 function randomId(random: () => number, length: number): string {
-  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let id = '';
-  for (let i = 0; i < length; i++) {
-    id += alphabet[Math.min(alphabet.length - 1, Math.floor(random() * alphabet.length))];
-  }
-  return id;
+  return randomString(random, 'abcdefghijklmnopqrstuvwxyz0123456789', length);
 }
 
 /** How a PeerJS error type reads while setting a connection up. */

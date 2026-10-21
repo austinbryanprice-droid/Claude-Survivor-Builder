@@ -151,3 +151,39 @@ export function describeNetwork(flags: NetFlags): string | null {
   }
   return parts.length > 0 ? `Custom network: ${parts.join(', ')}.` : null;
 }
+
+/** The switches that decide which servers a room is reached through. A friend needs the same ones to find it. */
+const NETWORK_SWITCHES = ['broker', 'brokerKey', 'ice', 'iceUser', 'iceCred'] as const;
+
+/**
+ * The link to hand a friend: this page, the room code, and the network switches (so a room on a
+ * private server is found on the same one). Everything else in the address, such as the host's
+ * own name or debug switches, is left out.
+ */
+export function buildInviteLink(href: string, code: string): string {
+  const url = new URL(href);
+  const from = url.searchParams;
+  const kept: [string, string][] = [['join', code]];
+  for (const key of NETWORK_SWITCHES) {
+    const value = from.get(key);
+    if (value !== null) kept.push([key, value]);
+  }
+  url.search = new URLSearchParams(kept).toString();
+  url.hash = '';
+  return url.toString();
+}
+
+/**
+ * This address with `?join=` set to the room being visited, or removed when there is none, so
+ * that reloading the page goes back into the same room. Everything else is kept as it was.
+ */
+export function withJoinParam(href: string, code: string | null): string {
+  const url = new URL(href);
+  const parts = url.search
+    .replace(/^\?/, '')
+    .split('&')
+    .filter((part) => part !== '' && !/^join(=|$)/i.test(part));
+  if (code !== null) parts.push(`join=${encodeURIComponent(code)}`);
+  url.search = parts.join('&');
+  return url.toString();
+}

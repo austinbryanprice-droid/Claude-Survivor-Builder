@@ -132,6 +132,7 @@ export class HostSession implements GameSession {
   private lastPing = 0;
 
   private endpoint: HostEndpoint | null = null;
+  private brokerOnline = true;
   private stopTimer: (() => void) | null = null;
   private roleValue: SessionRole = 'solo';
   private phaseValue: SessionPhase = 'open';
@@ -192,6 +193,9 @@ export class HostSession implements GameSession {
   }
   get closed(): CloseInfo | null {
     return this.closedInfo;
+  }
+  get roomOnline(): boolean {
+    return this.brokerOnline;
   }
   get stats(): Readonly<NetStats> {
     return this.counters;
@@ -288,9 +292,27 @@ export class HostSession implements GameSession {
     }
     this.endpoint = endpoint;
     endpoint.onLink((link) => this.accept(link));
+    endpoint.onBroker?.((online) => {
+      if (this.endpoint !== endpoint || online === this.brokerOnline) return;
+      this.brokerOnline = online;
+      this.playerChanges.emit();
+    });
     this.roleValue = 'host';
     this.playerChanges.emit();
     return endpoint.code;
+  }
+
+  /**
+   * Changes the host player's display name. Only while no room is open: the protocol has no way
+   * to tell guests about a new name, and a name picked in the lobby is never changed mid-game.
+   */
+  rename(raw: string): void {
+    if (this.endpoint) return;
+    const host = this.members.get(HOST_PLAYER_ID) as Member;
+    const name = cleanName(raw, host.name);
+    if (name === host.name) return;
+    host.name = name;
+    this.playerChanges.emit();
   }
 
   /** Closes the room (guests are told, and see the host-left screen) and goes back to single-player. */
@@ -313,6 +335,7 @@ export class HostSession implements GameSession {
     }
     endpoint?.close();
     this.departed.clear();
+    this.brokerOnline = true;
     this.roleValue = 'solo';
     this.playerChanges.emit();
   }

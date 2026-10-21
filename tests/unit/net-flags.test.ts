@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { describeNetwork, parseBroker, parseIce, readNetFlags } from '../../src/shared/net-flags';
+import {
+  buildInviteLink,
+  describeNetwork,
+  parseBroker,
+  parseIce,
+  readNetFlags,
+  withJoinParam,
+} from '../../src/shared/net-flags';
 
 const http = { secure: false };
 const https = { secure: true };
@@ -140,5 +147,40 @@ describe('reading a whole address', () => {
     expect(flags.iceServers).toBeNull();
     expect(flags.warnings).toHaveLength(2);
     expect(describeNetwork(flags)).toBeNull();
+  });
+});
+
+describe('invite links', () => {
+  it('points at this page with the code and nothing personal', () => {
+    expect(buildInviteLink('https://example.com/game/?name=Ada&debug=1#top', 'K7M2Q')).toBe(
+      'https://example.com/game/?join=K7M2Q',
+    );
+  });
+
+  it('keeps the switches that decide which servers the room is on', () => {
+    const link = buildInviteLink(
+      'http://localhost:4173/?broker=localhost:9000&ice=none&name=Ada&bench=1&join=OLD11',
+      'ABCDE',
+    );
+    const url = new URL(link);
+    expect(url.searchParams.get('join')).toBe('ABCDE');
+    expect(url.searchParams.get('broker')).toBe('localhost:9000');
+    expect(url.searchParams.get('ice')).toBe('none');
+    expect(url.searchParams.has('name')).toBe(false);
+    expect(url.searchParams.has('bench')).toBe(false);
+    // And the link reads back as the same network.
+    const flags = readNetFlags(url.search, { secure: false });
+    expect(flags.join).toBe('ABCDE');
+    expect(flags.broker?.port).toBe(9000);
+    expect(flags.iceServers).toEqual([]);
+  });
+
+  it('sets and clears the join switch without touching the rest', () => {
+    const href = 'http://localhost:4173/play?name=Ada&broker=localhost:9000';
+    const joined = withJoinParam(href, 'K7M2Q');
+    expect(new URL(joined).searchParams.get('join')).toBe('K7M2Q');
+    expect(new URL(joined).searchParams.get('name')).toBe('Ada');
+    expect(withJoinParam(joined, 'ZZZZZ')).toContain('join=ZZZZZ');
+    expect(withJoinParam(joined, null)).toBe(href);
   });
 });

@@ -74,6 +74,12 @@ export interface GameSession {
   readonly players: readonly RosterEntry[];
   /** Why the session ended, once `phase` is `closed`. */
   readonly closed: CloseInfo | null;
+  /**
+   * False while a room is open but the matchmaking server has lost track of it, so nobody new
+   * can find it (the players already inside are not affected). True in every other case. A
+   * change is announced through `onPlayers`.
+   */
+  readonly roomOnline: boolean;
   readonly stats: Readonly<NetStats>;
 
   /** Asks the host to change the world. Fire and forget: the result arrives as an event or a rejection. */

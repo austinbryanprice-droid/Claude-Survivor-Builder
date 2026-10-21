@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { Transport } from '../../src/net/transport';
 import { NET } from '../../src/shared/net-config';
 import { HOST_PLAYER_ID, type WorldEvent } from '../../src/shared/protocol';
 import { at, helloText, makeRoom, rawGuest, token } from './helpers/net';
@@ -557,5 +558,68 @@ describe('pings', () => {
     expect(room.host.players[1]?.pingMs).toBeGreaterThan(70);
     const seenByGuest = a.session.players.find((p) => p.id === a.session.localId);
     expect(seenByGuest?.pingMs).toBeGreaterThan(70);
+  });
+});
+
+describe('room visibility and the host name', () => {
+  it('reports when the matchmaking server loses the room, and when it is back', async () => {
+    const room = makeRoom();
+    let report: ((online: boolean) => void) | null = null;
+    const transport: Transport = {
+      dial: (code, signal) => room.network.dial(code, signal),
+      openHost: async () => {
+        const endpoint = await room.network.openHost();
+        return {
+          code: endpoint.code,
+          onLink: (listener) => endpoint.onLink(listener),
+          onBroker: (listener) => {
+            report = listener;
+            listener(true);
+          },
+          close: () => endpoint.close(),
+        };
+      },
+    };
+    const changes: boolean[] = [];
+    room.host.onPlayers(() => changes.push(room.host.roomOnline));
+
+    expect(room.host.roomOnline).toBe(true);
+    const opening = room.host.openRoom(transport);
+    await room.settle(20);
+    await opening;
+    changes.length = 0;
+
+    report!(false);
+    expect(room.host.roomOnline).toBe(false);
+    report!(false);
+    report!(true);
+    expect(room.host.roomOnline).toBe(true);
+    expect(changes).toEqual([false, true]);
+
+    report!(false);
+    room.host.closeRoom();
+    expect(room.host.roomOnline).toBe(true);
+    // A late report from a room that is already closed changes nothing.
+    report!(false);
+    expect(room.host.roomOnline).toBe(true);
+  });
+
+  it('lets the host change its name until a room is open', async () => {
+    const room = makeRoom();
+    const changes: number[] = [];
+    room.host.onPlayers(() => changes.push(1));
+    room.host.rename('  Ada   Lovelace ');
+    expect(room.host.players[0]?.name).toBe('Ada Lovelace');
+    expect(changes).toHaveLength(1);
+    room.host.rename('Ada Lovelace');
+    room.host.rename('   ');
+    expect(changes).toHaveLength(1);
+
+    const code = await room.openRoom();
+    room.host.rename('Someone Else');
+    expect(room.host.players[0]?.name).toBe('Ada Lovelace');
+
+    const guest = await room.join(code, 'A');
+    expect(guest.session.players.map((p) => p.name)).toEqual(['Ada Lovelace', 'A']);
   });
 });

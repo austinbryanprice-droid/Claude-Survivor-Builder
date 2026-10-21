@@ -95,6 +95,9 @@ export class SessionHub implements GameSession {
   get closed(): CloseInfo | null {
     return this.session.closed;
   }
+  get roomOnline(): boolean {
+    return this.session.roomOnline;
+  }
   get stats(): Readonly<NetStats> {
     return this.session.stats;
   }

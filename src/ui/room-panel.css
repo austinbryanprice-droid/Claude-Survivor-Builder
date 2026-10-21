@@ -1,0 +1,550 @@
+/*
+ * Multiplayer panel, in the same dark slate and cream as the HUD: a card on the start screen, a
+ * small roster while playing and a full-screen notice when a room ends. It sits above the HUD
+ * layers so clicking it never reaches the "click to play" screen.
+ */
+
+.mp {
+  --panel: linear-gradient(180deg, rgb(27 33 42 / 92%), rgb(14 19 26 / 90%));
+  --line: rgb(244 232 208 / 22%);
+  --line-strong: rgb(244 232 208 / 42%);
+  --ink: #f4ead2;
+  --ink-dim: rgb(244 234 210 / 68%);
+  --amber: #f2a43a;
+  --cyan: #3ad1e0;
+  --mint: #b6ddb8;
+  --bad: #e8603c;
+
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  overflow: hidden;
+  color: var(--ink);
+  font:
+    14px/1.45 system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  pointer-events: none;
+}
+
+.mp [hidden] {
+  display: none !important;
+}
+
+.mp :where(h2, p, ul) {
+  margin: 0;
+  padding: 0;
+}
+
+.mp :where(ul) {
+  list-style: none;
+}
+
+.mp-card,
+.mp-mini,
+.mp-ended-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow:
+    0 10px 36px rgb(0 0 0 / 38%),
+    inset 0 1px 0 rgb(255 255 255 / 6%);
+  backdrop-filter: blur(8px);
+}
+
+/* The card on the start screen. */
+
+.mp-card {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  gap: 12px;
+  width: min(330px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 16px 18px 18px;
+  overflow: auto;
+  pointer-events: auto;
+  user-select: text;
+}
+
+.mp-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mp-kicker {
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.mp-title {
+  margin-top: 2px;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.mp-fold {
+  padding: 4px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 6%);
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mp-fold:hover {
+  background: rgb(255 255 255 / 12%);
+  color: var(--ink);
+}
+
+.mp-card[data-folded='true'] {
+  gap: 0;
+  padding: 10px 14px;
+}
+
+.mp-card[data-folded='true'] .mp-body {
+  display: none;
+}
+
+.mp-card[data-folded='true'] .mp-title {
+  font-size: 16px;
+}
+
+.mp-body {
+  display: grid;
+  gap: 12px;
+}
+
+.mp-alone,
+.mp-busy,
+.mp-room {
+  display: grid;
+  gap: 12px;
+}
+
+.mp-lede {
+  color: var(--ink-dim);
+  font-size: 13px;
+}
+
+.mp-field {
+  display: grid;
+  gap: 4px;
+}
+
+.mp-field-label {
+  color: var(--ink-dim);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mp-input {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: rgb(0 0 0 / 30%);
+  color: var(--ink);
+  font: inherit;
+}
+
+.mp-input::placeholder {
+  color: rgb(244 234 210 / 40%);
+}
+
+.mp-code-input {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mp-code-input::placeholder {
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.mp-primary,
+.mp-secondary,
+.mp-danger {
+  padding: 10px 18px;
+  border-radius: 999px;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.mp-primary {
+  border: 1px solid rgb(242 164 58 / 75%);
+  background: linear-gradient(180deg, rgb(242 164 58 / 34%), rgb(242 164 58 / 12%));
+}
+
+.mp-primary:hover {
+  background: linear-gradient(180deg, rgb(242 164 58 / 48%), rgb(242 164 58 / 20%));
+}
+
+.mp-secondary {
+  border: 1px solid var(--line-strong);
+  background: rgb(255 255 255 / 6%);
+}
+
+.mp-secondary:hover {
+  background: rgb(255 255 255 / 12%);
+}
+
+.mp-danger {
+  border: 1px solid rgb(232 96 60 / 75%);
+  background: linear-gradient(180deg, rgb(232 96 60 / 34%), rgb(232 96 60 / 12%));
+}
+
+.mp-danger:hover {
+  background: linear-gradient(180deg, rgb(232 96 60 / 48%), rgb(232 96 60 / 20%));
+}
+
+.mp button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mp button:focus-visible,
+.mp-input:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.mp-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-dim);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+
+.mp-divider::before,
+.mp-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.mp-join {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+/* Opening and joining. */
+
+.mp-busy {
+  justify-items: start;
+}
+
+.mp-busy-text {
+  font-weight: 650;
+}
+
+.mp-spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgb(244 234 210 / 22%);
+  border-top-color: var(--amber);
+  border-radius: 50%;
+  animation: mp-spin 0.9s linear infinite;
+}
+
+@keyframes mp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* In a room. */
+
+.mp-code-block {
+  display: grid;
+  gap: 8px;
+}
+
+.mp-code {
+  display: block;
+  color: var(--amber);
+  font:
+    700 40px/1.1 ui-monospace,
+    'SF Mono',
+    Menlo,
+    Consolas,
+    monospace;
+  letter-spacing: 0.22em;
+  text-shadow: 0 0 18px rgb(242 164 58 / 35%);
+  user-select: all;
+}
+
+.mp-copy-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mp-copy-row .mp-secondary {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.mp-copied {
+  color: var(--mint);
+  font-size: 12px;
+}
+
+.mp-link {
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+
+.mp-roster {
+  display: grid;
+  gap: 6px;
+}
+
+.mp-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.mp-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 50%),
+    0 0 8px rgb(255 255 255 / 15%);
+}
+
+.mp-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-tag {
+  flex: none;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-dim);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.mp-tag-host {
+  border-color: rgb(242 164 58 / 60%);
+  color: var(--amber);
+}
+
+.mp-ping {
+  margin-left: auto;
+  color: var(--ink-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-fine {
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+
+.mp-warning {
+  padding: 8px 10px;
+  border: 1px solid rgb(242 164 58 / 55%);
+  border-radius: 8px;
+  background: rgb(242 164 58 / 10%);
+  color: var(--amber);
+  font-size: 12px;
+}
+
+.mp-leave-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mp-confirm {
+  display: none;
+}
+
+.mp[data-confirm='true'] .mp-confirm {
+  display: inline-flex;
+}
+
+.mp[data-confirm='true'] .mp-leave {
+  display: none;
+}
+
+.mp-confirm-text {
+  flex-basis: 100%;
+  color: var(--ink);
+  font-weight: 650;
+}
+
+/* Failures and notes. */
+
+.mp-notice {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgb(232 96 60 / 60%);
+  border-radius: 8px;
+  background: rgb(232 96 60 / 10%);
+}
+
+.mp-notice-title {
+  color: #ffb29b;
+  font-weight: 650;
+}
+
+.mp-notice-detail {
+  color: var(--ink-dim);
+  font-size: 12px;
+}
+
+.mp-notes {
+  display: grid;
+  gap: 4px;
+  color: var(--ink-dim);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+/* The roster while playing. */
+
+.mp-mini {
+  position: absolute;
+  bottom: 40px;
+  left: 16px;
+  display: grid;
+  gap: 6px;
+  min-width: 150px;
+  padding: 8px 12px 9px;
+  font-size: 13px;
+}
+
+.mp-mini-code {
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.mp-mini-roster {
+  display: grid;
+  gap: 3px;
+}
+
+.mp-mini .mp-player {
+  min-height: 20px;
+}
+
+/* Toasts: someone joined or left. */
+
+.mp-toasts {
+  position: absolute;
+  top: 84px;
+  left: 50%;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  transform: translateX(-50%);
+}
+
+.mp-toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(14 19 26 / 86%);
+  font-size: 13px;
+  animation: mp-rise 0.25s ease-out;
+}
+
+@keyframes mp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* The room is gone. */
+
+.mp-ended {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: radial-gradient(ellipse at center, rgb(8 12 18 / 62%), rgb(6 9 14 / 90%));
+  pointer-events: auto;
+}
+
+.mp-ended-card {
+  display: grid;
+  gap: 12px;
+  width: min(500px, 100%);
+  max-height: 100%;
+  padding: 26px 30px 24px;
+  overflow: auto;
+}
+
+.mp-ended-title {
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.mp-ended-detail {
+  color: var(--ink-dim);
+}
+
+.mp-ended-card .mp-primary {
+  justify-self: start;
+  padding: 12px 30px;
+  font-size: 15px;
+}
+
+.mp-ended-error {
+  color: #ffb29b;
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-spinner {
+    animation-duration: 3s;
+  }
+
+  .mp-toast {
+    animation: none;
+  }
+}
