@@ -11,7 +11,7 @@ import {
 import type { Stage } from '../../engine/stage';
 import { MATERIAL, MATERIALS, SHAPE, TILE_LAYOUTS, packState } from '../../shared/blocks';
 import { chunkCoords } from '../voxels/chunk';
-import { meshChunk, type ChunkMeshData } from '../voxels/mesher';
+import { meshChunk, type ChunkMeshData, type GroundHeight } from '../voxels/mesher';
 import { RemeshQueue } from '../voxels/remesh-queue';
 import type { VoxelWorld } from '../voxels/world';
 import { createStructureMaterial } from './structure-material';
@@ -64,6 +64,7 @@ export class VoxelRenderer {
   private material: ShaderMaterial | null = null;
   private warming: Promise<void> | null = null;
   private primer: Mesh | null = null;
+  private readonly ground: GroundHeight = (x, z) => this.world.terrain.grid.groundAt(x, z);
 
   constructor(
     private readonly stage: Stage,
@@ -152,7 +153,7 @@ export class VoxelRenderer {
       return;
     }
     const t0 = performance.now();
-    const data = meshChunk(this.world, cx, cy, cz);
+    const data = meshChunk(this.world, cx, cy, cz, this.ground);
     this.stats.lastMeshMs = performance.now() - t0;
     this.stats.meshed++;
     if (data.triangleCount === 0) {
