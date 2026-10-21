@@ -39,7 +39,7 @@ Click the page to take the mouse; Esc gives it back.
 | `shot=<name>`                  | Photo mode: hold the camera at a named viewpoint (see `viewpoints.ts`)       |
 | `time=<moment>`                | Fix the time of day; `clock` runs the day and night cycle instead            |
 | `seed=<n>`                     | Build another valley                                                         |
-| `demo=outpost\|swatch`         | Raise a demo structure before the first frame (`demo` alone: the outpost)    |
+| `demo=outpost\|swatch\|hall`   | Raise a demo structure before the first frame (`demo` alone: the outpost)    |
 | `terrain=heightfield`          | Mesh the terrain as a smoothed heightfield instead of surface nets           |
 | `scale=<0..1>`                 | Force the internal resolution and switch the adaptive governor off           |
 | `hud=0`                        | Hide the whole HUD (player HUD, panels, overlay, room card), for clean shots |
@@ -48,7 +48,7 @@ Click the page to take the mouse; Esc gives it back.
 | `join=CODE`, `name=Ada`        | Join a room on load; the name to play under                                  |
 | `broker=host:port`, `ice=...`  | Another PeerJS server; STUN and TURN servers (`none` for direct only)        |
 
-The viewpoints are `lake`, `valley`, `canopy`, `crash`, `trail`, `outcrop`, `noon`, `sunset`, `dusk`, `night` and four that look at the demo structures: `outpost` and `gate` for `demo=outpost`, `swatch` and `closeup` for `demo=swatch`. A viewpoint brings its own time of day unless `time=` says otherwise. For example, `/?shot=lake&quality=balanced&hud=0&stats=0&freeze=1` draws the same frame every time.
+The viewpoints are `lake`, `valley`, `canopy`, `crash`, `trail`, `outcrop`, `noon`, `sunset`, `dusk`, `night` and seven that look at the demo structures: `outpost` and `gate` for `demo=outpost`, `swatch` and `closeup` for `demo=swatch`, `hall`, `hallside` and `eaves` for `demo=hall`. A viewpoint brings its own time of day unless `time=` says otherwise. For example, `/?shot=lake&quality=balanced&hud=0&stats=0&freeze=1` draws the same frame every time.
 
 ## Benchmark
 

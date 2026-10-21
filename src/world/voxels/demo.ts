@@ -1,15 +1,16 @@
-import { MATERIAL, SHAPE, packState } from '../../shared/blocks';
+import { MATERIAL, SHAPE, packState, slabShape, wedgeShape } from '../../shared/blocks';
 import type { CellState } from '../../shared/block-world';
 import type { VoxelWorld } from './world';
 
 /**
  * Structures that build themselves, for looking at the block renderer before players can build.
  * `?demo=outpost` raises a small walled outpost near the crash site; `?demo=swatch` stands the
- * four material tiers side by side. Both place blocks the way a player would, one at a time and
- * each only where `checkPlace` allows, so the demo proves the same rules the host will enforce.
+ * four material tiers side by side; `?demo=hall` raises a gabled hall to show slabs and wedges.
+ * All of them place pieces the way a player would, one at a time and each only where
+ * `checkPlace` allows, so the demo proves the same rules the host will enforce.
  */
 
-export const DEMO_NAMES = ['outpost', 'swatch'] as const;
+export const DEMO_NAMES = ['outpost', 'swatch', 'hall'] as const;
 export type DemoName = (typeof DEMO_NAMES)[number];
 
 export function isDemoName(value: string | null | undefined): value is DemoName {
@@ -62,14 +63,28 @@ const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: num
   z1,
 });
 
+interface PlanCell {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly material: number;
+  readonly shape: number;
+}
+
 /** A plan is drawn with these, in order: later boxes paint over earlier ones, `clear` cuts holes. */
 class Plan {
-  readonly cells = new Map<string, { x: number; y: number; z: number; material: number }>();
+  readonly cells = new Map<string, PlanCell>();
 
-  fill(b: Box, material: number): this {
+  fill(b: Box, material: number, shape: number = SHAPE.cube): this {
     for (let y = b.y0; y <= b.y1; y++)
       for (let z = b.z0; z <= b.z1; z++)
-        for (let x = b.x0; x <= b.x1; x++) this.cells.set(`${x},${y},${z}`, { x, y, z, material });
+        for (let x = b.x0; x <= b.x1; x++) this.put(x, y, z, material, shape);
+    return this;
+  }
+
+  /** One cell of any shape. */
+  put(x: number, y: number, z: number, material: number, shape: number = SHAPE.cube): this {
+    this.cells.set(`${x},${y},${z}`, { x, y, z, material, shape });
     return this;
   }
 
@@ -157,12 +172,62 @@ function swatchPlan(): Plan {
   return plan;
 }
 
+// The directions a wedge can rise toward, as `wedgeShape` takes them.
+const PLUS_X = 0;
+const MINUS_X = 2;
+const MINUS_Z = 3;
+
+/**
+ * A hall under a gabled roof, to show slabs and wedges: a platform with a ramp up to it, composite
+ * walls with a door whose top corners are cut by upside-down wedges, slit windows with slab sills,
+ * and a roof of wedges stepped up to a ridge, with eaves and gable overhangs. The front, with the
+ * ramp and the lamp posts, faces south (+z).
+ */
+function hallPlan(): Plan {
+  const plan = new Plan();
+  // The platform, one block high, and the ramp that climbs to its front edge.
+  plan.fill(box(0, 0, 0, 9, 0, 9), scrap);
+  plan.fill(box(3, 0, 10, 6, 0, 10), scrap, wedgeShape(MINUS_Z));
+  // Walls, three high, with the door in the front (south) wall.
+  plan.fill(box(1, 1, 1, 8, 3, 1), composite).fill(box(1, 1, 8, 8, 3, 8), composite);
+  plan.fill(box(1, 1, 1, 1, 3, 8), composite).fill(box(8, 1, 1, 8, 3, 8), composite);
+  plan.clear(box(4, 1, 8, 5, 2, 8));
+  // The top corners of the doorway are cut away by upside-down wedges, so it reads as an arch.
+  plan.put(4, 2, 8, composite, wedgeShape(MINUS_X, true));
+  plan.put(5, 2, 8, composite, wedgeShape(PLUS_X, true));
+  // Windows: the upper half of a cell is open above a slab sill.
+  for (const z of [3, 4, 5, 6]) {
+    plan.put(1, 2, z, composite, slabShape(false)).put(8, 2, z, composite, slabShape(false));
+  }
+  for (const x of [2, 7]) plan.put(x, 2, 8, composite, slabShape(false));
+  // The roof: wedges climb from the eaves, cubes fill the gable behind them. It stands one block
+  // past the walls at both ends, and the first wedge of each slope hangs over the wall as an eave.
+  for (let z = 0; z <= 9; z++) {
+    plan.put(0, 3, z, alloy, wedgeShape(PLUS_X)).put(9, 3, z, alloy, wedgeShape(MINUS_X));
+    for (let row = 0; row < 4; row++) {
+      const left = 1 + row;
+      const right = 8 - row;
+      plan.put(left, 4 + row, z, alloy, wedgeShape(PLUS_X));
+      plan.put(right, 4 + row, z, alloy, wedgeShape(MINUS_X));
+      if (right - left > 1) plan.fill(box(left + 1, 4 + row, z, right - 1, 4 + row, z), alloy);
+    }
+  }
+  // Lamp posts either side of the ramp, each capped with an energy lamp and a slab.
+  for (const x of [2, 7]) {
+    plan.fill(box(x, 0, 10, x, 2, 10), alloy);
+    plan.put(x, 3, 10, energy);
+    plan.put(x, 4, 10, alloy, slabShape(false));
+  }
+  return plan;
+}
+
 const PLANS: Record<
   DemoName,
   { plan: () => Plan; origin: { x: number; z: number }; width: number; depth: number }
 > = {
   outpost: { plan: outpostPlan, origin: { x: -5, z: 3 }, width: 12, depth: 10 },
   swatch: { plan: swatchPlan, origin: { x: -6, z: 14 }, width: 28, depth: 7 },
+  hall: { plan: hallPlan, origin: { x: -5, z: 3 }, width: 10, depth: 11 },
 };
 
 /** The lowest y at which a block can stand in a column of the terrain, or null where none can. */
@@ -224,20 +289,28 @@ export function buildDemo(world: VoxelWorld, name: DemoName): DemoResult {
       x: origin.x + c.x,
       y: floorY + c.y,
       z: origin.z + c.z,
-      state: packState(SHAPE.cube, c.material),
+      state: packState(c.shape, c.material),
     });
   }
   wanted.sort((a, b) => a.y - b.y || a.z - b.z || a.x - b.x);
 
-  let refused = 0;
-  for (const edit of wanted) {
-    if (world.checkPlace(edit.x, edit.y, edit.z, edit.state) === null) {
-      world.setBlock(edit.x, edit.y, edit.z, edit.state);
-      edits.push(edit);
-    } else {
-      refused++;
+  // A piece that hangs out over the edge of the structure can only go down once what holds it is
+  // there, so what the world refuses is tried again after the rest, until a pass places nothing.
+  let pending = wanted;
+  while (pending.length > 0) {
+    const later: DemoEdit[] = [];
+    for (const edit of pending) {
+      if (world.checkPlace(edit.x, edit.y, edit.z, edit.state) === null) {
+        world.setBlock(edit.x, edit.y, edit.z, edit.state);
+        edits.push(edit);
+      } else {
+        later.push(edit);
+      }
     }
+    if (later.length === pending.length) break;
+    pending = later;
   }
+  const refused = pending.length;
 
   return {
     edits,

@@ -78,6 +78,43 @@ test.describe('the blocks', () => {
     expect([...bare, ...problems]).toEqual([]);
   });
 
+  test('a hall of slabs and wedges is meshed, drawn and clean of shader errors', async ({
+    page,
+  }, testInfo) => {
+    const problems = await open(page, '?debug&quality=low&freeze=1&hud=0&shot=hall&demo=hall');
+    // Shape ids: 1 is the cube, 8 and 9 the slabs, 16 and up the wedges.
+    const counts = await read<{ cubes: number; slabs: number; wedges: number }>(
+      page,
+      `(() => {
+        const counts = { cubes: 0, slabs: 0, wedges: 0 };
+        game.world.voxels.forEachEdit((x, y, z, state) => {
+          const shape = state & 0xff;
+          if (shape === 1) counts.cubes++;
+          else if (shape < 16) counts.slabs++;
+          else counts.wedges++;
+        });
+        return counts;
+      })()`,
+    );
+    expect(counts.cubes).toBeGreaterThan(50);
+    expect(counts.slabs).toBeGreaterThan(5);
+    expect(counts.wedges).toBeGreaterThan(50);
+
+    const stats = await read<{ chunks: number; triangles: number; pending: number }>(
+      page,
+      'structures.stats',
+    );
+    expect(stats.chunks).toBeGreaterThan(0);
+    expect(stats.triangles).toBeGreaterThan(5_000);
+    expect(stats.pending).toBe(0);
+    expect(await read<boolean>(page, 'structures.ready && game.stage.structureReady')).toBe(true);
+
+    const path = testInfo.outputPath('hall.png');
+    await page.screenshot({ path });
+    await testInfo.attach('hall', { path, contentType: 'image/png' });
+    expect(problems).toEqual([]);
+  });
+
   test('a name that is not a demo builds nothing', async ({ page }) => {
     const problems = await open(page, '?debug&quality=low&freeze=1&hud=0&demo=castle');
     expect(await read<number>(page, 'game.world.voxels.blockCount')).toBe(0);
