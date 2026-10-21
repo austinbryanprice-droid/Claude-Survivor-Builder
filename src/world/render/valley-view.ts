@@ -7,6 +7,7 @@ import type { Terrain } from '../terrain/terrain';
 import { SHOTS } from '../terrain/viewpoints';
 import type { VoxelWorld } from '../voxels/world';
 import { BackdropRenderer } from './backdrop-render';
+import { CoreRenderer } from './core-render';
 import { bakeFoliageTextures, type FoliageTextures } from './foliage-textures';
 import { GhostRenderer } from './ghost-render';
 import { bakeGroundMaps, TerrainRenderer } from './terrain-render';
@@ -25,7 +26,8 @@ export interface ValleyBuildTimings {
 
 /**
  * The valley as the stage draws it: the terrain mesh, the distant hills, the lake, the trees and
- * grass scattered over the ground, and the blocks players have built on it. It follows the stage's
+ * grass scattered over the ground, the Outpost Core at the crash site, and the blocks players have
+ * built on it. It follows the stage's
  * quality preset and gets a callback before every frame to hide what is out of range and to mesh
  * the blocks that changed. Everything is built for one terrain, so a new seed means a new view.
  */
@@ -37,6 +39,8 @@ export class ValleyView {
   readonly structures: VoxelRenderer;
   /** The ghost block and the outline of the block a click would break. */
   readonly ghost: GhostRenderer;
+  /** The Outpost Core at the crash site; null in a world that has none. */
+  readonly core: CoreRenderer | null;
   readonly foliage: FoliageTextures;
   readonly buildMs: ValleyBuildTimings;
   private readonly stopQuality: () => void;
@@ -84,6 +88,7 @@ export class ValleyView {
     this.buildMs = { mesh: this.terrain.stats.meshMs, scatter: performance.now() - t0 };
     this.structures = new VoxelRenderer(stage, voxels);
     this.ghost = new GhostRenderer(stage);
+    this.core = voxels.outpost ? new CoreRenderer(world, registry, voxels.outpost) : null;
     this.vegetation.setObstacles(voxels);
 
     // The planar water reflection is drawn from the lake's side of the scene, before the main view.
@@ -116,12 +121,14 @@ export class ValleyView {
     }
     this.vegetation.update(camera);
     this.structures.update(camera);
+    this.core?.update(this.stage.animTime);
   }
 
   dispose(): void {
     this.stopQuality();
     this.stopRender();
     this.stage.pipeline.beforeScene = null;
+    this.core?.dispose();
     this.ghost.dispose();
     this.structures.dispose();
     this.vegetation.dispose();

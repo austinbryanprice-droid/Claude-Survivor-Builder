@@ -75,12 +75,13 @@ A guest that says hello gets a `welcome` with the world seed, its seat, the room
 
 ## The survival clock
 
-Since Phase 4a the host also plays the day and night clock (`src/systems/survival/`), and the room sees the same time.
+Since Phase 4a the host also plays the day and night clock (`src/systems/survival/`), and the room sees the same time. Since 4b it plays the Outpost Core's health too.
 
-- **The host plays it, the guests mirror it.** The host steps a pure simulation in fixed 20 Hz steps from its session timer and tells the guests with an `sv` control frame (its step count, and whether the clock is running) about twice a second, at once when the clock starts or stops, and straight after the world snapshot for a newcomer. A guest carries the last word forward on its own timer (for three seconds at most) and never lets the countdown tick backwards. An `se` frame announces a change of light (nightfall, dawn) as it happens; a late joiner is not told the past, the snapshot says where things stand.
+- **The host plays it, the guests mirror it.** The host steps a pure simulation in fixed 20 Hz steps from its session timer and tells the guests with an `sv` control frame (its step count, whether the clock is running, the Core's health out of its maximum, and whether the run is over) about twice a second, at once when the clock starts or stops, and straight after the world snapshot for a newcomer. A guest carries the last word forward on its own timer (for three seconds at most) and never lets the countdown tick backwards. An `se` frame announces a change of light (nightfall, dawn) or the fall of the Core (`overrun`, with the day or night it fell in) as it happens; a late joiner is not told the past, the snapshot says where things stand.
+- **The Core's health rides `sv`.** A change in it is sent when 200 milliseconds (`NET.coreIntervalMs`) have passed since the last frame, so a hit shows on every screen within a fifth of a second and a night of hits is five frames a second at most, never one per blow. The Core itself is not an edit and not in the snapshot: its cells come from the seed's ground (`src/world/outpost.ts`), so every peer already has it, and the host refuses a block in its cells with `reserved`. When it falls the host stops the clock for the whole room (a run that is over does not wait for anyone), and `sv` says `over` until the room is closed.
 - **Alone, the run waits for the player.** With nobody else in the room the clock runs only while the mouse is captured, so a menu, a hidden tab or a forgotten page costs no night. With a guest in the room it never waits, because the others are playing.
 - **A blocked host loses time instead of replaying it.** A tick that finds more than two seconds to catch up plays two and drops the rest, so a tab that comes back after a minute does not skip a night.
-- **Protocol version 2.** The frames above are new, so a version 1 host and a version 2 guest refuse each other and say why.
+- **Protocol versions 2 and 3.** Version 2 added the frames above; version 3 (4b) put the Core's health and `over` into `sv` and added `overrun` to `se`. A host and a guest on different versions refuse each other and say why.
 
 ## Movement
 

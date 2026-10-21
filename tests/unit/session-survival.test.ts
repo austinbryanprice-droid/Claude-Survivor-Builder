@@ -20,6 +20,11 @@ function read(view: SurvivalView) {
   return { ...view.read(createReading()) };
 }
 
+/** What the host says about the clock when the Core is whole. */
+function say(mirror: SurvivalMirror, tick: number, run: boolean): void {
+  mirror.apply(tick, run, 1000, 1000, false);
+}
+
 function listen(view: SurvivalView): SurvivalEvent[] {
   const seen: SurvivalEvent[] = [];
   view.onEvent((event) => seen.push(event));
@@ -182,6 +187,140 @@ describe('the survival clock in a room', () => {
   });
 });
 
+describe('the Outpost Core in a room', () => {
+  const MAX = SURVIVAL.core.maxHealth;
+  const night = { startAt: nightStart(1) };
+
+  it('tells a newcomer how the Core stands with the world', async () => {
+    const room = makeRoom({ survival: { ...night, coreHealth: 400 } });
+    room.host.setLocalActive(true);
+    const code = await room.openRoom();
+    const raw = await rawGuest(room, code);
+    raw.link.sendControl(helloText());
+    await room.settle(100);
+    const word = raw.frames.find((frame) => frame.t === 'sv');
+    expect(word).toMatchObject({ t: 'sv', core: [400, MAX], over: false });
+  });
+
+  it("shows a guest the host's Core soon after it is hurt", async () => {
+    const room = makeRoom({ survival: night, latency: 40 });
+    const code = await room.openRoom();
+    const guest = await room.join(code);
+    expect(read(guest.session.survival)).toMatchObject({ coreHealth: MAX, coreMax: MAX });
+    room.host.survivalSim?.hurtCore(250);
+    await room.settle(500);
+    expect(read(guest.session.survival)).toMatchObject({
+      coreHealth: MAX - 250,
+      coreMax: MAX,
+      over: false,
+    });
+    expect(read(room.host.survival)).toMatchObject({ coreHealth: MAX - 250, over: false });
+  });
+
+  it('does not send a word for every blow: a fight is reported a few times a second', async () => {
+    const room = makeRoom({ survival: night });
+    const code = await room.openRoom();
+    const raw = await rawGuest(room, code);
+    raw.link.sendControl(helloText());
+    await room.settle(100);
+    const before = raw.frames.filter((frame) => frame.t === 'sv').length;
+    for (let i = 0; i < 20; i++) {
+      room.host.survivalSim?.hurtCore(5);
+      room.scheduler.advance(NET.relayIntervalMs);
+    }
+    const sent = raw.frames.filter((frame) => frame.t === 'sv').length - before;
+    // A second of blows, one every 50 ms: about one word per coreIntervalMs, never one per blow.
+    expect(sent).toBeGreaterThanOrEqual(3);
+    expect(sent).toBeLessThanOrEqual(Math.ceil(1000 / NET.coreIntervalMs) + 1);
+    // And the last word says where it ended up.
+    await room.settle(NET.coreIntervalMs * 2);
+    const last = raw.frames.filter((frame) => frame.t === 'sv').at(-1);
+    expect(last).toMatchObject({ core: [MAX - 100, MAX] });
+  });
+
+  it('is quiet while nothing changes beyond the regular word', async () => {
+    const room = makeRoom({ survival: night });
+    room.host.setLocalActive(true);
+    const code = await room.openRoom();
+    const raw = await rawGuest(room, code);
+    raw.link.sendControl(helloText());
+    await room.settle(100);
+    const before = raw.frames.filter((frame) => frame.t === 'sv').length;
+    await room.settle(2000);
+    const sent = raw.frames.filter((frame) => frame.t === 'sv').length - before;
+    expect(sent).toBeLessThanOrEqual(5);
+  });
+
+  it('ends the run for everyone when the Core falls: announced, flagged and the clocks stopped', async () => {
+    const room = makeRoom({ survival: night });
+    const code = await room.openRoom();
+    const guest = await room.join(code);
+    const hostSeen = listen(room.host.survival);
+    const guestSeen = listen(guest.session.survival);
+    room.host.survivalSim?.hurtCore(MAX);
+    await room.settle(300);
+    expect(hostSeen).toEqual([{ k: 'overrun', n: 1 }]);
+    expect(guestSeen).toEqual([{ k: 'overrun', n: 1 }]);
+    expect(read(room.host.survival)).toMatchObject({ over: true, running: false, coreHealth: 0 });
+    expect(read(guest.session.survival)).toMatchObject({
+      over: true,
+      running: false,
+      coreHealth: 0,
+    });
+
+    const held = room.host.survivalSim?.elapsed ?? 0;
+    await room.settle(3000);
+    expect(room.host.survivalSim?.elapsed).toBe(held);
+    expect(read(guest.session.survival).elapsed).toBeCloseTo(held, 1);
+  });
+
+  it('tells a player who joins after the fall that the run is over', async () => {
+    const room = makeRoom({ survival: night });
+    room.host.setLocalActive(true);
+    room.host.survivalSim?.hurtCore(MAX);
+    room.scheduler.advance(NET.relayIntervalMs);
+    const code = await room.openRoom();
+    const guest = await room.join(code);
+    await room.settle(300);
+    expect(read(guest.session.survival)).toMatchObject({ over: true, coreHealth: 0 });
+  });
+
+  it('stops the host’s own clock at the fall even while the player is playing', () => {
+    const room = makeRoom({ survival: night });
+    room.host.setLocalActive(true);
+    const seen = listen(room.host.survival);
+    room.scheduler.advance(1000);
+    room.host.survivalSim?.hurtCore(MAX);
+    room.scheduler.advance(NET.relayIntervalMs);
+    const held = room.host.survivalSim?.elapsed ?? 0;
+    room.scheduler.advance(5000);
+    expect(room.host.survivalSim?.elapsed).toBe(held);
+    expect(read(room.host.survival)).toMatchObject({ running: false, over: true });
+    expect(seen).toEqual([{ k: 'overrun', n: 1 }]);
+  });
+
+  it('has no Core to show where there is no simulation', () => {
+    const room = makeRoom();
+    expect(read(room.host.survival)).toMatchObject({ coreMax: 0, coreHealth: 0, over: false });
+  });
+});
+
+describe("the guest's mirror of the Core", () => {
+  it('shows the Core and the fall the host last reported', () => {
+    const mirror = new SurvivalMirror(new ManualScheduler());
+    expect(read(mirror)).toMatchObject({ coreHealth: 0, coreMax: 0, over: false });
+    mirror.apply(20 * 300, true, 640, 1000, false);
+    expect(read(mirror)).toMatchObject({ coreHealth: 640, coreMax: 1000, over: false });
+    mirror.apply(20 * 301, false, 0, 1000, true);
+    expect(read(mirror)).toMatchObject({
+      coreHealth: 0,
+      coreMax: 1000,
+      over: true,
+      running: false,
+    });
+  });
+});
+
 describe('the hub and the survival view', () => {
   function solo(survival: boolean) {
     const scheduler = new ManualScheduler();
@@ -239,7 +378,7 @@ describe("the guest's mirror of the clock", () => {
   it("carries the host's last word forward on its own timer while the clock runs", () => {
     const scheduler = new ManualScheduler();
     const mirror = new SurvivalMirror(scheduler);
-    mirror.apply(20 * 100, true);
+    say(mirror, 20 * 100, true);
     scheduler.advance(1500);
     expect(read(mirror).elapsed).toBeCloseTo(101.5, 6);
   });
@@ -247,7 +386,7 @@ describe("the guest's mirror of the clock", () => {
   it('stands still while the host says the clock is held', () => {
     const scheduler = new ManualScheduler();
     const mirror = new SurvivalMirror(scheduler);
-    mirror.apply(20 * 100, false);
+    say(mirror, 20 * 100, false);
     scheduler.advance(5000);
     expect(read(mirror)).toMatchObject({ elapsed: 100, running: false });
   });
@@ -255,7 +394,7 @@ describe("the guest's mirror of the clock", () => {
   it('stops carrying the clock if the host goes quiet', () => {
     const scheduler = new ManualScheduler();
     const mirror = new SurvivalMirror(scheduler);
-    mirror.apply(0, true);
+    say(mirror, 0, true);
     scheduler.advance(60_000);
     expect(read(mirror).elapsed).toBeLessThanOrEqual(3);
   });
@@ -263,20 +402,20 @@ describe("the guest's mirror of the clock", () => {
   it("does not let the countdown tick backwards when the host's word runs a little behind", () => {
     const scheduler = new ManualScheduler();
     const mirror = new SurvivalMirror(scheduler);
-    mirror.apply(0, true);
+    say(mirror, 0, true);
     scheduler.advance(500);
     const shown = read(mirror).elapsed;
     // The next word says 0.45 s: the host's clock is a hair behind ours.
-    mirror.apply(Math.round(0.45 * 20), true);
+    say(mirror, Math.round(0.45 * 20), true);
     expect(read(mirror).elapsed).toBeGreaterThanOrEqual(shown);
   });
 
   it('follows a real rewind, such as a new run starting', () => {
     const scheduler = new ManualScheduler();
     const mirror = new SurvivalMirror(scheduler);
-    mirror.apply(20 * 500, true);
+    say(mirror, 20 * 500, true);
     read(mirror);
-    mirror.apply(0, true);
+    say(mirror, 0, true);
     expect(read(mirror).elapsed).toBeLessThan(1);
   });
 

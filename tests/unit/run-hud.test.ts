@@ -3,7 +3,10 @@ import { DAY_SECONDS, NIGHT_SECONDS } from '../../src/shared/daycycle';
 import { createReading, readClock } from '../../src/shared/survival-state';
 import {
   CLOCK_SOON_SECONDS,
+  CORE_CRITICAL_BELOW,
+  CORE_WORN_BELOW,
   clockForHud,
+  coreForHud,
   messageFor,
   objectiveForRun,
   runLine,
@@ -12,6 +15,15 @@ import {
 function reading(elapsed: number, running = true) {
   const out = readClock(elapsed, createReading());
   out.running = running;
+  return out;
+}
+
+/** A reading with a Core of `health` out of 1000, `over` once it has fallen. */
+function withCore(elapsed: number, health: number, over = false) {
+  const out = reading(elapsed, !over);
+  out.coreHealth = health;
+  out.coreMax = 1000;
+  out.over = over;
   return out;
 }
 
@@ -75,5 +87,79 @@ describe('what the HUD says about the run', () => {
   it('announces the change of light', () => {
     expect(messageFor({ k: 'nightfall', n: 3 })).toBe('Night 3 has fallen');
     expect(messageFor({ k: 'dawn', n: 3 })).toBe('Dawn breaks on day 4');
+  });
+});
+
+describe("the Outpost Core's gauge", () => {
+  it('stays out of the way by day while the Core is whole', () => {
+    expect(coreForHud(withCore(10, 1000))).toBeNull();
+  });
+
+  it('is on screen all night, even whole', () => {
+    expect(coreForHud(withCore(DAY_SECONDS + 10, 1000))).toEqual({
+      fraction: 1,
+      value: '1000',
+      tone: 'sound',
+    });
+  });
+
+  it('comes up by day as soon as the Core is hurt, and shows what is left', () => {
+    expect(coreForHud(withCore(10, 999))).toEqual({
+      fraction: 0.999,
+      value: '999',
+      tone: 'sound',
+    });
+  });
+
+  it('turns amber below half and red below a quarter', () => {
+    expect(CORE_WORN_BELOW).toBe(0.5);
+    expect(CORE_CRITICAL_BELOW).toBe(0.25);
+    const tone = (health: number) => coreForHud(withCore(DAY_SECONDS + 5, health))?.tone;
+    expect(tone(900)).toBe('sound');
+    expect(tone(500)).toBe('sound');
+    expect(tone(499)).toBe('worn');
+    expect(tone(250)).toBe('worn');
+    expect(tone(249)).toBe('critical');
+    expect(tone(1)).toBe('critical');
+  });
+
+  it('goes grey and stays up once the Core has fallen, by day or by night', () => {
+    expect(coreForHud(withCore(10, 0, true))).toEqual({ fraction: 0, value: '0', tone: 'fallen' });
+    expect(coreForHud(withCore(DAY_SECONDS + 10, 0, true))?.tone).toBe('fallen');
+  });
+
+  it('is absent where the run has no Core to show', () => {
+    expect(coreForHud(reading(DAY_SECONDS + 10))).toBeNull();
+  });
+
+  it('keeps its bar inside its frame whatever the numbers say', () => {
+    const over = withCore(DAY_SECONDS + 5, 1500);
+    expect(coreForHud(over)?.fraction).toBe(1);
+    const under = withCore(DAY_SECONDS + 5, -20);
+    expect(coreForHud(under)?.fraction).toBe(0);
+  });
+});
+
+describe('what the HUD says when the Core falls', () => {
+  it('stops breathing the clock and says the Core has fallen', () => {
+    const fallen = withCore(DAY_SECONDS - 10, 0, true);
+    expect(clockForHud(fallen).soon).toBe(false);
+    expect(objectiveForRun(fallen).title).toBe('The Outpost Core has fallen');
+  });
+
+  it('puts the end of the run on the pause card with the nights survived', () => {
+    expect(runLine(withCore(DAY_SECONDS + 30, 0, true))).toBe(
+      'Outpost Overrun on Night 1 · 0 nights survived',
+    );
+    expect(runLine(withCore(720 + DAY_SECONDS + 30, 0, true))).toBe(
+      'Outpost Overrun on Night 2 · 1 night survived',
+    );
+    expect(runLine(withCore(2 * 720 + 100, 0, true))).toBe(
+      'Outpost Overrun on Day 3 · 2 nights survived',
+    );
+  });
+
+  it('announces the fall', () => {
+    expect(messageFor({ k: 'overrun', n: 3 })).toBe('The Outpost Core has fallen');
   });
 });

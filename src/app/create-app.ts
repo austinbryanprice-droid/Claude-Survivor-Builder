@@ -2,9 +2,11 @@ import { DEFAULT_MOMENT, createStage } from '../engine/stage';
 import { createGame, type Game } from '../engine/game';
 import { readFlags } from '../shared/flags';
 import { readNetFlags } from '../shared/net-flags';
+import { createReading } from '../shared/survival-state';
 import { readViewFlags } from '../shared/view-flags';
 import { createHud, type Hud } from '../ui/hud';
 import { loadSettings } from '../ui/settings-store';
+import type { CoreLook } from '../world/render/core-render';
 import { SHOTS, shotPose } from '../world/terrain/viewpoints';
 import { createBuildControls } from './build-controls';
 import type { Multiplayer } from './multiplayer';
@@ -48,6 +50,8 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
   });
   // The valley being played, which carries the blocks the net layer syncs. Set by each `createWorld`.
   let valley: ValleyWorld | null = null;
+  // What the Core's crystal shows. It has the run to ask once the run exists, and shows a whole Core until then.
+  let coreLook: (() => CoreLook | null) | null = null;
   const game = createGame({
     stage,
     settings,
@@ -55,7 +59,11 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
     benchPresets: view.benchPresets,
     buildId,
     seed: view.seed,
-    createWorld: (seed) => (valley = createValleyWorld(stage, seed, view.terrain, demo)),
+    createWorld: (seed) => {
+      valley = createValleyWorld(stage, seed, view.terrain, demo);
+      valley.view.core?.follow(() => coreLook?.() ?? null);
+      return valley;
+    },
   });
   if (shot) game.setPhoto(shotPose(shot, game.world.groundAt));
 
@@ -89,7 +97,14 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
         // Blocks are placed and broken by asking the session, which is the host's rules in solo play too.
         building.setSession(multiplayer.lobby.hub);
         // The clock by the compass and the objective come from the run, which lives in the session.
-        hud.setSurvival(multiplayer.lobby.hub.survival);
+        const survival = multiplayer.lobby.hub.survival;
+        hud.setSurvival(survival);
+        const reading = createReading();
+        coreLook = () => {
+          survival.read(reading);
+          if (reading.coreMax <= 0) return null;
+          return { health: reading.coreHealth / reading.coreMax, fallen: reading.over };
+        };
         if (flags.debug && window.__ashbound) window.__ashbound.mp = multiplayer.debug;
       })
       .catch((error: unknown) => {
@@ -106,6 +121,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
       disposed = true;
       building.dispose();
       multiplayer?.dispose();
+      coreLook = null;
       hud.setSurvival(null);
       hud.dispose();
       game.dispose();

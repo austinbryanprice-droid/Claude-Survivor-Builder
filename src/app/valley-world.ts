@@ -2,6 +2,7 @@ import type { MistZones } from '../engine/atmosphere';
 import type { GameWorld, SpawnPoint } from '../engine/game';
 import type { Stage } from '../engine/stage';
 import type { TerrainMode } from '../shared/view-flags';
+import { withOutpost } from '../world/outpost';
 import { ValleyView } from '../world/render/valley-view';
 import { createTerrainGround } from '../world/terrain/collision';
 import { CRASH, LAKE, WATER_LEVEL, WORLD_HALF } from '../world/terrain/field';
@@ -49,6 +50,10 @@ export function createValleyWorld(
   if (built) view.structures.meshAll();
   const { grid } = terrain;
   const groundAt = (x: number, z: number): number => grid.groundAt(x, z);
+  // The Core is solid cells to movement; the ground the cursor and the camera measure also knows it, so
+  // the crosshair stops on the Core and a block goes against its face.
+  const terrainGround = createTerrainGround(grid, EDGE_WALL);
+  const ground = voxels.outpost ? withOutpost(terrainGround, voxels.outpost) : terrainGround;
 
   const spawnShot = SHOTS[SPAWN_SHOT];
   if (!spawnShot) throw new Error(`Unknown spawn viewpoint "${SPAWN_SHOT}"`);
@@ -67,7 +72,7 @@ export function createValleyWorld(
     collision: {
       isSolid: (x, y, z) => voxels.isSolid(x, y, z),
       boxesAt: (x, y, z) => voxels.boxesAt(x, y, z),
-      ground: createTerrainGround(grid, EDGE_WALL),
+      ground,
     },
     spawn,
     route: createFlyRoute(groundAt),

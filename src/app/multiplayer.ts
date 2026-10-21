@@ -77,10 +77,12 @@ export interface MultiplayerDebug {
     state: CellState,
     up?: number,
   ): { x: number; y: number; z: number };
-  /** The run's clock as the screen sees it: which day or night, the time left, and whether it runs. */
+  /** The run as the screen sees it: which day or night, the time left, whether the clock runs, and the Core's health. */
   clock(): SurvivalReading;
   /** Jumps the run's clock ahead by this many seconds. Only a host (or single-player) can; others ignore it. */
   warp(seconds: number): void;
+  /** Wounds the Outpost Core by this many points (the readings of `clock()` show its health). Only a host (or single-player) can. */
+  hurtCore(amount: number): void;
   /** Refusals the host sent back, newest last. */
   rejections(): Rejection[];
   /** World events applied since the page loaded. */
@@ -215,6 +217,10 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     warp: (seconds) => {
       const session = hub.current;
       if (session instanceof HostSession) session.survivalSim?.warp(seconds);
+    },
+    hurtCore: (amount) => {
+      const session = hub.current;
+      if (session instanceof HostSession) session.survivalSim?.hurtCore(amount);
     },
     rejections: () => [...refusals],
     eventCount: () => events,

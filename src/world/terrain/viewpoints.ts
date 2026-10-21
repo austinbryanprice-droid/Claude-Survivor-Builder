@@ -72,6 +72,31 @@ export const SHOTS: Readonly<Record<string, ShotPose>> = {
     time: 'golden',
     note: 'Crash site at golden hour',
   },
+  // From the south-east rim down into the crater at the Outpost Core, the low sun on its pylons.
+  core: {
+    x: 5.5,
+    z: 2,
+    height: 1.7,
+    clear: 6,
+    bearing: 308,
+    pitch: -12,
+    fov: 52,
+    time: 'golden',
+    note: 'The Outpost Core at golden hour',
+  },
+  // From the east side of the crater a few steps from the Core, with the low sun behind the
+  // camera and full on its face.
+  reactor: {
+    x: 4.5,
+    z: -3.5,
+    height: 1.6,
+    clear: 4,
+    bearing: 270,
+    pitch: -10,
+    fov: 60,
+    time: 'golden',
+    note: 'Close to the Outpost Core',
+  },
   // Low, close and backlit: grass and trees against the sun.
   trail: {
     x: -14,

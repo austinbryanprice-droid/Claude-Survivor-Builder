@@ -11,4 +11,14 @@ export const SURVIVAL = {
    * second a tab comes back.
    */
   maxCatchUpSeconds: 2,
+
+  /**
+   * The Outpost Core, the station's reactor: the run ends when its health reaches 0. The numbers
+   * are a first guess to be tuned once enemies hit it (docs/decisions.md, Phase 4b).
+   */
+  core: {
+    maxHealth: 1000,
+    /** Health the Core mends each second of daylight: a full repair takes half the day (four minutes). */
+    mendPerSecond: 1000 / 240,
+  },
 } as const;

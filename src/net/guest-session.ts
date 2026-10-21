@@ -417,7 +417,7 @@ export class GuestSession implements GameSession {
         break;
       }
       case 'sv':
-        this.mirror.apply(frame.tick, frame.run);
+        this.mirror.apply(frame.tick, frame.run, frame.core[0], frame.core[1], frame.over);
         break;
       case 'se':
         this.mirror.announce(frame.e);
