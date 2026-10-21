@@ -15,11 +15,13 @@ Up to four players share one world. One of them hosts: their browser is the auth
 
 ![The host's start screen with a full room](phase-3/room-host.jpg)
 
-![Four players in the valley, seen by the host](phase-3/room-playing.jpg)
+![Three of the four players in front of a wall all four of them built, seen by the host](phase-3/room-playing.jpg)
+
+![The same wall on a guest's own page](phase-3/room-blocks-guest.jpg)
 
 ![What a guest sees when the host closes the room](phase-3/host-left.jpg)
 
-The screenshots are four real pages talking through a local PeerJS server in headless Chromium on software rendering, so they show the layout and the look, not the frame rate.
+The screenshots are four real pages talking through a local PeerJS server in headless Chromium on software rendering, so they show the layout and the look, not the frame rate. The wall is 24 blocks, six placed by each player through the `?debug` hook, in each player's own material (Scrap, Composite, Alloy and Energy-Infused from right to left in the second picture); all four pages draw it and a fingerprint of their worlds is identical.
 
 A page that reloads goes back into its room by itself: while a player is in a room the address carries `?join=CODE`, and the host gives the same seat back to the same browser tab (see [tokens](#tokens-and-seats)).
 
