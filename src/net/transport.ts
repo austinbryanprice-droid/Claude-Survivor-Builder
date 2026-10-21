@@ -32,14 +32,24 @@ export interface HostEndpoint {
   readonly code: string;
   /** Called with each new link once its control lane is open. */
   onLink(listener: (link: Link) => void): void;
+  /**
+   * Whether the matchmaking server still knows this room. When it does not, players already in
+   * the room are unaffected, but nobody new can join until it is back. Called with the current
+   * state straight away and again on every change.
+   */
+  onBroker?(listener: (online: boolean) => void): void;
+  /** Stops accepting players and takes the room off the matchmaking server. Existing links stay up for a moment so goodbyes arrive. */
   close(): void;
 }
 
 export interface Transport {
-  /** Opens a room under a fresh short code, retrying if the code is taken. */
+  /** Opens a room under a fresh short code, retrying if the code is taken. Rejects with a `NetError`. */
   openHost(): Promise<HostEndpoint>;
-  /** Connects to the room with this code. Rejects with a `NetError`. */
-  dial(code: string): Promise<Link>;
+  /**
+   * Connects to the room with this code. Rejects with a `NetError`. Aborting the signal gives
+   * up on the attempt and frees whatever it had set up.
+   */
+  dial(code: string, signal?: AbortSignal): Promise<Link>;
 }
 
 export type NetErrorKind =

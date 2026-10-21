@@ -27,6 +27,14 @@ export const NET = {
   helloTimeoutMs: 8000,
   /** A guest gives up on reaching the host after this long. */
   dialTimeoutMs: 20_000,
+  /** Registering with the matchmaking server (the broker) gives up after this long. */
+  brokerTimeoutMs: 10_000,
+  /** A direct connection to the host that has not opened this long after the broker answered is given up on. */
+  connectTimeoutMs: 15_000,
+  /** The host keeps at most this many half-open connections from players still connecting. */
+  pendingLinksMax: 16,
+  /** A fast-lane packet is dropped, not queued, when the channel already holds this many unsent messages. */
+  fastBacklogMax: 4,
   /** A guest gives up waiting for the host's answer after this long. */
   welcomeTimeoutMs: 15_000,
   /** A guest waits this long for the fast channel before it rides on the ordered one. */

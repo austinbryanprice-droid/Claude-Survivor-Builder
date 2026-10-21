@@ -191,7 +191,8 @@ export class LoopbackNetwork implements Transport {
     return Promise.reject(new NetError('error', 'No free room code.'));
   }
 
-  dial(code: string): Promise<Link> {
+  dial(code: string, signal?: AbortSignal): Promise<Link> {
+    if (signal?.aborted) return Promise.reject(new NetError('closed', 'Cancelled.'));
     const endpoint = this.hosts.get(code);
     if (!endpoint) return Promise.reject(new NetError('room-not-found', `No room ${code}.`));
     const id = ++this.serial;
@@ -200,10 +201,14 @@ export class LoopbackNetwork implements Transport {
     guestEnd.peer = hostEnd;
     hostEnd.peer = guestEnd;
     this.allLinks.push(guestEnd, hostEnd);
-    return new Promise((resolve) => {
-      this.scheduler.after(this.delay(), () => {
+    return new Promise((resolve, reject) => {
+      const cancel = this.scheduler.after(this.delay(), () => {
         endpoint.offer(hostEnd);
         resolve(guestEnd);
+      });
+      signal?.addEventListener('abort', () => {
+        cancel();
+        reject(new NetError('closed', 'Cancelled.'));
       });
     });
   }

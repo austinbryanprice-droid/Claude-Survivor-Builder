@@ -108,6 +108,7 @@ export class GuestSession implements GameSession {
 
   private cancelWelcome: (() => void) | null = null;
   private stopStep: (() => void) | null = null;
+  private stopDial: (() => void) | null = null;
 
   private readonly events = new Emitter<WorldEvent>();
   private readonly rejections = new Emitter<Rejection>();
@@ -266,12 +267,20 @@ export class GuestSession implements GameSession {
 
   private dialWithTimeout(code: string): Promise<Link> {
     return new Promise((resolve, reject) => {
+      const abort = new AbortController();
       let settled = false;
       const cancel = this.scheduler.after(NET.dialTimeoutMs, () => {
         settled = true;
+        abort.abort();
         reject(new NetError('timed-out', 'The host did not answer.'));
       });
-      this.transport.dial(code).then(
+      this.stopDial = () => {
+        cancel();
+        if (!settled) abort.abort();
+        settled = true;
+        this.stopDial = null;
+      };
+      this.transport.dial(code, abort.signal).then(
         (link) => {
           if (settled) {
             link.close();
@@ -279,12 +288,14 @@ export class GuestSession implements GameSession {
           }
           settled = true;
           cancel();
+          this.stopDial = null;
           resolve(link);
         },
         (error: unknown) => {
           if (settled) return;
           settled = true;
           cancel();
+          this.stopDial = null;
           reject(error);
         },
       );
@@ -528,6 +539,7 @@ export class GuestSession implements GameSession {
 
   private finish(info: CloseInfo): void {
     this.closedInfo = info;
+    this.stopDial?.();
     this.cancelWelcome?.();
     this.cancelWelcome = null;
     this.stopStep?.();
