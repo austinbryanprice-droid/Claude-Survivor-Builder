@@ -5,11 +5,13 @@ import { SampleWindow } from '../shared/frame-stats';
 import type { CollisionWorld } from '../shared/ground';
 import { angleDelta, clampPitch, wrapAngle, type LookState } from '../shared/look';
 import {
+  MOVEMENT,
   createPlayerInput,
   createPlayerState,
   horizontalSpeed,
   stepPlayer,
   teleportPlayer,
+  type MovementTuning,
   type PlayerState,
 } from '../shared/movement';
 import type { QualityName } from '../shared/quality';
@@ -27,6 +29,8 @@ const RADIANS_PER_PIXEL = 0.0022;
 const FALL_LIMIT = -10;
 /** The feet start this far above the ground and settle onto it. */
 const SPAWN_LIFT = 0.05;
+/** However worn down the player is, they never walk slower than this fraction of normal. */
+const MIN_SPEED_SCALE = 0.25;
 /** Frame gaps longer than this are a hidden tab or a breakpoint, not a slow frame. */
 const MAX_COUNTED_FRAME_MS = 1000;
 const TIMING_WINDOW = 240;
@@ -111,6 +115,14 @@ export interface Game {
   sweepExtras(): SweepExtras;
   /** Puts the player somewhere else and stops them; `yaw` turns the view too when given. */
   teleport(x: number, y: number, z: number, yaw?: number): void;
+  /**
+   * Slows the player's walking and sprinting to this fraction of normal (1 is normal; the game
+   * asks for less while the player's Energy is low). Jumping and falling are not touched. The
+   * scale never goes below a quarter.
+   */
+  setSpeedScale(scale: number): void;
+  /** The fraction of normal speed the player walks and sprints at now. */
+  readonly speedScale: number;
   /** Builds the world for another seed and puts the player at its start. */
   loadWorld(seed: number): void;
   /** Applies a graphics preset and remembers it in the settings. */
@@ -182,6 +194,23 @@ export function createGame({
   let photo: CameraPose | null = null;
   let bodyYaw = 0;
   let lastTime: number | null = null;
+
+  // How fast the player walks and sprints; it changes only when the game says the player is worn down.
+  let movement: MovementTuning = MOVEMENT;
+  let speedScale = 1;
+  const setSpeedScale = (scale: number): void => {
+    const next = Math.min(1, Math.max(MIN_SPEED_SCALE, Number.isFinite(scale) ? scale : 1));
+    if (next === speedScale) return;
+    speedScale = next;
+    movement =
+      next === 1
+        ? MOVEMENT
+        : {
+            ...MOVEMENT,
+            walkSpeed: MOVEMENT.walkSpeed * next,
+            sprintSpeed: MOVEMENT.sprintSpeed * next,
+          };
+  };
 
   const teleport = (x: number, y: number, z: number, yaw?: number): void => {
     teleportPlayer(player, x, y, z);
@@ -290,7 +319,7 @@ export function createGame({
     previous.z = player.z;
     input.readKeys(tickInput);
     tickInput.yaw = look.yaw;
-    stepPlayer(player, tickInput, TICK_SECONDS, collision);
+    stepPlayer(player, tickInput, TICK_SECONDS, collision, movement);
     if (player.y < FALL_LIMIT) toSpawn();
     rig.onTick(player);
     tickListeners.forEach((listener) => listener());
@@ -388,6 +417,10 @@ export function createGame({
     },
     sweepExtras: () => ({ timerQueries: stage.gpuTimer.supported, ...world.info }),
     teleport,
+    setSpeedScale,
+    get speedScale() {
+      return speedScale;
+    },
     loadWorld(nextSeed) {
       world.dispose();
       world = createWorld(nextSeed);

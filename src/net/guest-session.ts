@@ -22,6 +22,7 @@ import {
   seqNewer,
 } from '../shared/wire';
 import type { SurvivalView } from '../shared/survival-state';
+import type { VitalsView } from '../shared/vitals-state';
 import { Emitter } from './emitter';
 import type { Scheduler } from './scheduler';
 import { StallWatch } from './stall-watch';
@@ -37,6 +38,7 @@ import type {
   WorldBinding,
 } from './session';
 import { SurvivalMirror } from './survival-mirror';
+import { VitalsMirror } from './vitals-mirror';
 import { NetError, type Link, type Transport } from './transport';
 
 export interface GuestSessionOptions {
@@ -81,6 +83,7 @@ export class GuestSession implements GameSession {
   private readonly binding: WorldBinding;
   private readonly transport: Transport;
   private readonly mirror: SurvivalMirror;
+  private readonly vitalsMirror = new VitalsMirror();
 
   private phaseValue: SessionPhase = 'connecting';
   private closedInfo: CloseInfo | null = null;
@@ -167,6 +170,9 @@ export class GuestSession implements GameSession {
   }
   get survival(): SurvivalView {
     return this.mirror;
+  }
+  get vitals(): VitalsView {
+    return this.vitalsMirror;
   }
   get players(): readonly RosterEntry[] {
     return [...this.seats.values()]
@@ -421,6 +427,9 @@ export class GuestSession implements GameSession {
         break;
       case 'se':
         this.mirror.announce(frame.e);
+        break;
+      case 'vt':
+        this.vitalsMirror.apply(frame.hp[0], frame.hp[1], frame.en[0], frame.en[1], frame.chg);
         break;
       case 'pings':
         for (const [id, rtt] of frame.p) {

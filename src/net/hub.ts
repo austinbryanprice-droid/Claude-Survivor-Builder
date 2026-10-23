@@ -7,6 +7,7 @@ import type {
   WorldEvent,
 } from '../shared/protocol';
 import type { SurvivalEvent, SurvivalReading, SurvivalView } from '../shared/survival-state';
+import type { VitalsReading, VitalsView } from '../shared/vitals-state';
 import { Emitter } from './emitter';
 import type {
   Correction,
@@ -37,6 +38,9 @@ export class SessionHub implements GameSession {
   private readonly phases = new Emitter<SessionPhase>();
   private readonly corrections = new Emitter<Correction>();
   private readonly swaps = new Emitter<GameSession>();
+  private readonly vitalsView: VitalsView = {
+    read: (out: VitalsReading) => this.session.vitals.read(out),
+  };
   private readonly survivalEvents = new Emitter<SurvivalEvent>();
   private readonly survivalView: SurvivalView = {
     read: (out: SurvivalReading) => this.session.survival.read(out),
@@ -113,6 +117,9 @@ export class SessionHub implements GameSession {
   /** One view for the life of the hub: it reads whichever session is current and hears from each in turn. */
   get survival(): SurvivalView {
     return this.survivalView;
+  }
+  get vitals(): VitalsView {
+    return this.vitalsView;
   }
 
   sendCommand(command: BlockCommand): void {

@@ -156,6 +156,9 @@ describe('host control frames', () => {
     { t: 'se', e: { k: 'nightfall', n: 1 } },
     { t: 'se', e: { k: 'dawn', n: 12 } },
     { t: 'se', e: { k: 'overrun', n: 3 } },
+    { t: 'vt', hp: [100, 100], en: [100, 100], chg: false },
+    { t: 'vt', hp: [37, 100], en: [0, 100], chg: true },
+    { t: 'vt', hp: [0, 100], en: [25, 100], chg: false },
     {
       t: 'pings',
       p: [
@@ -239,6 +242,31 @@ describe('host control frames', () => {
       '{"t":"sv","tick":9,"run":true,"core":[0,0],"over":false}',
       '{"t":"sv","tick":9,"run":true,"core":[5,70000],"over":false}',
       '{"t":"sv","tick":9,"run":true,"core":null,"over":false}',
+    ]) {
+      expect(decodeHostFrame(text), text).toBeNull();
+    }
+  });
+
+  it("refuses a word about a player's meters that is missing, malformed or more than whole", () => {
+    for (const text of [
+      '{"t":"vt"}',
+      '{"t":"vt","hp":[50,100],"en":[50,100]}',
+      '{"t":"vt","hp":[50,100],"en":[50,100],"chg":1}',
+      '{"t":"vt","hp":[50,100],"chg":false}',
+      '{"t":"vt","en":[50,100],"chg":false}',
+      '{"t":"vt","hp":50,"en":[50,100],"chg":false}',
+      '{"t":"vt","hp":[50],"en":[50,100],"chg":false}',
+      '{"t":"vt","hp":[50,100,1],"en":[50,100],"chg":false}',
+      '{"t":"vt","hp":["50",100],"en":[50,100],"chg":false}',
+      '{"t":"vt","hp":[50.5,100],"en":[50,100],"chg":false}',
+      '{"t":"vt","hp":[-1,100],"en":[50,100],"chg":false}',
+      '{"t":"vt","hp":[101,100],"en":[50,100],"chg":false}',
+      '{"t":"vt","hp":[0,0],"en":[50,100],"chg":false}',
+      '{"t":"vt","hp":[50,70000],"en":[50,100],"chg":false}',
+      '{"t":"vt","hp":[50,100],"en":[-1,100],"chg":false}',
+      '{"t":"vt","hp":[50,100],"en":[101,100],"chg":false}',
+      '{"t":"vt","hp":[50,100],"en":[0,0],"chg":false}',
+      '{"t":"vt","hp":[50,100],"en":null,"chg":false}',
     ]) {
       expect(decodeHostFrame(text), text).toBeNull();
     }

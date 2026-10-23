@@ -20,6 +20,8 @@ export const HOTBAR_SLOTS = 8;
 /** A held mouse button waits this long (seconds) before it repeats, then repeats this often. */
 export const REPEAT_DELAY = 0.35;
 export const REPEAT_INTERVAL = 0.15;
+/** However worn down the player is, a held button repeats at no less than this fraction of its normal rate. */
+export const MIN_HAND_SCALE = 0.25;
 /** The same command is not sent twice within this long: the first answer may still be on its way. */
 export const RESEND_GUARD = 0.5;
 /** How long (seconds) a refusal stays on the screen after a click. */
@@ -86,6 +88,8 @@ export class BuildController {
     turn: 0,
   };
   private clock = 0;
+  /** How fast a held button repeats, as a fraction of normal; low Energy slows it. */
+  private repeatScale = 1;
   private notice: string | null = null;
   private noticeUntil = 0;
   private lastKey = '';
@@ -114,6 +118,11 @@ export class BuildController {
 
   get selected(): number {
     return this.selectedSlot;
+  }
+
+  /** How fast a held button repeats right now, as a fraction of normal (1 unless Energy is low). */
+  get handScale(): number {
+    return this.repeatScale;
   }
 
   /** The kind of shape the block slots make: a block, a slab or a wedge. */
@@ -174,6 +183,14 @@ export class BuildController {
     this.turnSteps = nextTurn(this.shapeKind, this.turnSteps);
   }
 
+  /**
+   * Slows how often a held button repeats to this fraction of normal (1 is normal), which is what
+   * low Energy does to the hands. A single click always acts at once.
+   */
+  setHandScale(scale: number): void {
+    this.repeatScale = Number.isFinite(scale) ? Math.min(1, Math.max(MIN_HAND_SCALE, scale)) : 1;
+  }
+
   toggleBuildMode(): void {
     this.buildMode = !this.buildMode;
     this.notice = null;
@@ -214,7 +231,7 @@ export class BuildController {
     });
     for (const button of ['primary', 'secondary'] as const) {
       if (this.held[button] < 0) continue;
-      this.held[button] -= dt;
+      this.held[button] -= dt * this.repeatScale;
       if (this.held[button] <= 0) {
         this.fire(button);
         this.held[button] = REPEAT_INTERVAL;

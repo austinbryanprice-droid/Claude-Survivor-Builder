@@ -3,6 +3,7 @@ import type { Flags } from '../shared/flags';
 import { nextQuality } from '../shared/quality';
 import { createReading, type SurvivalView } from '../shared/survival-state';
 import type { ViewFlags } from '../shared/view-flags';
+import type { VitalsView } from '../shared/vitals-state';
 import { createBenchPanel } from './bench-panel';
 import type { BuildHudSource } from './build-hud';
 import { el } from './dom';
@@ -18,6 +19,8 @@ import './hud.css';
 export interface Hud {
   /** Shows the run's clock and objective from this view, and a message when the light changes. */
   setSurvival(view: SurvivalView | null): void;
+  /** Shows the player's own Health, Energy and status icons from this view; null shows full bars. */
+  setVitals(view: VitalsView | null): void;
   dispose(): void;
 }
 
@@ -148,6 +151,9 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
       // The run takes the sky when it arrives, which the pause card's Time of day should show.
       pause.refresh();
       refreshRunLine();
+    },
+    setVitals(view) {
+      playerHud.setVitals(view);
     },
     dispose() {
       stopRunEvents?.();

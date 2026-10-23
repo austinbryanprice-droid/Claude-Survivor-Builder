@@ -241,6 +241,16 @@ export function decodeHostFrame(text: string): HostFrame | null {
       const event = readSurvivalEvent(raw.e);
       return event ? { t: 'se', e: event } : null;
     }
+    case 'vt': {
+      if (typeof raw.chg !== 'boolean') return null;
+      if (!Array.isArray(raw.hp) || raw.hp.length !== 2) return null;
+      if (!Array.isArray(raw.en) || raw.en.length !== 2) return null;
+      const [health, healthMax] = raw.hp as unknown[];
+      const [energy, energyMax] = raw.en as unknown[];
+      if (!isInt(healthMax, 1, MAX_U16) || !isInt(health, 0, healthMax)) return null;
+      if (!isInt(energyMax, 1, MAX_U16) || !isInt(energy, 0, energyMax)) return null;
+      return { t: 'vt', hp: [health, healthMax], en: [energy, energyMax], chg: raw.chg };
+    }
     case 'pings': {
       if (!Array.isArray(raw.p) || raw.p.length > NET.maxPlayers) return null;
       const pings: [PlayerId, number][] = [];

@@ -66,17 +66,30 @@ export interface HudCore {
   readonly tone: 'sound' | 'worn' | 'critical' | 'fallen';
 }
 
+/** One round status icon under the bars, with the words beside it. */
+export interface HudStatus {
+  readonly icon: IconId;
+  /** The words beside the icon, such as "Charging". */
+  readonly label: string;
+  /** Seconds left, shown after the label as "0:52"; absent for a status that lasts as long as its cause. */
+  readonly seconds?: number;
+  /** 'good' is the green circle with an arrow up, 'bad' the amber one with an arrow down. */
+  readonly tone: 'good' | 'bad';
+}
+
 export interface PlayerHudState {
   /** 0 to 1. */
   readonly health: number;
+  /** 'low' turns the bar red; absent is 'ok'. */
+  readonly healthTone?: 'ok' | 'low';
   /** Number of segments the health bar is divided into. */
   readonly healthSegments: number;
-  /** 0 to 1. */
-  readonly stamina: number;
+  /** 0 to 1: the slim bar under the health. */
+  readonly energy: number;
+  /** 'low' turns the bar amber and 'empty' makes its frame breathe; absent is 'ok'. */
+  readonly energyTone?: 'ok' | 'low' | 'empty';
   /** Round status icons under the bars, top to bottom. */
-  readonly statuses: readonly IconId[];
-  /** The timed buff next to the first status icon, such as "Rested". */
-  readonly buff: { readonly label: string; readonly seconds: number } | null;
+  readonly statuses: readonly HudStatus[];
   /** Which way the player faces, as a compass bearing in degrees. */
   readonly heading: number;
   readonly waypoints: readonly HudWaypoint[];
@@ -104,6 +117,8 @@ const STRIP_SPAN = 1080;
 const TICK_STEP = 45;
 /** At most this many waypoints are drawn at once. */
 const MAX_WAYPOINTS = 4;
+/** A drop in health smaller than this share of the bar is rounding, not a wound. */
+const HURT_EPSILON = 0.0005;
 
 const ROUGH_FILTER = /* html */ `
 <svg class="ph-sprite" width="0" height="0" aria-hidden="true" focusable="false">
@@ -128,7 +143,7 @@ interface WaypointRefs {
 }
 
 /**
- * The in-game HUD, after the Enshrouded reference: segmented health and stamina bars in torn
+ * The in-game HUD, after the Enshrouded reference: segmented health and Energy bars in torn
  * dark frames, round status icons, a compass strip with a quest marker, an objective banner and
  * an eight-slot hotbar. It is a pure view: `update` takes the whole state and touches the DOM
  * only where something changed.
@@ -136,11 +151,12 @@ interface WaypointRefs {
 export class PlayerHud {
   readonly root: HTMLElement;
 
+  private readonly hurt: HTMLElement;
+  private readonly health: HTMLElement;
   private readonly healthFills: HTMLElement[] = [];
-  private readonly staminaFill: HTMLElement;
+  private readonly energy: HTMLElement;
+  private readonly energyFill: HTMLElement;
   private readonly statusColumn: HTMLElement;
-  private readonly buff: HTMLElement;
-  private readonly buffText: HTMLElement;
   private readonly strip: HTMLElement;
   private readonly waypointLayer: HTMLElement;
   private readonly waypoints: WaypointRefs[] = [];
@@ -164,9 +180,12 @@ export class PlayerHud {
   private readonly stopResize: () => void;
 
   private lastHealth = '';
-  private lastStamina = -1;
+  private lastHealthFraction = Number.NaN;
+  private lastHealthTone = '';
+  private healthHits = 0;
+  private lastEnergy = -1;
+  private lastEnergyTone = '';
   private lastStatuses = '';
-  private lastBuff = '';
   private lastHeading = Number.NaN;
   private lastClock = '';
   private lastClockFill = -1;
@@ -185,27 +204,26 @@ export class PlayerHud {
     this.root.setAttribute('aria-hidden', 'true');
     this.root.insertAdjacentHTML('beforeend', ICON_SPRITE + ROUGH_FILTER);
 
-    // Vitals: health in segments over a shorter stamina bar, in one torn frame.
+    // A wound reddens the edges of the screen for a moment.
+    this.hurt = el('div', 'ph-hurt');
+
+    // Vitals: health in segments over a shorter Energy bar, in one torn frame.
     const vitals = el('div', 'ph-vitals');
-    const health = el('div', 'ph-frame ph-health');
+    this.health = el('div', 'ph-frame ph-health');
     for (let i = 0; i < segments; i++) {
       const segment = el('div', 'ph-seg');
       const fill = el('i', 'ph-fill');
       segment.append(fill);
-      health.append(segment);
+      this.health.append(segment);
       this.healthFills.push(fill);
     }
-    const stamina = el('div', 'ph-frame ph-stamina');
-    this.staminaFill = el('i', 'ph-stamina-fill');
-    this.staminaFill.append(el('b', 'ph-cap'));
-    stamina.append(this.staminaFill);
-    vitals.append(health, stamina);
+    this.energy = el('div', 'ph-frame ph-energy');
+    this.energyFill = el('i', 'ph-energy-fill');
+    this.energyFill.append(el('b', 'ph-cap'));
+    this.energy.append(this.energyFill);
+    vitals.append(this.health, this.energy);
 
     this.statusColumn = el('div', 'ph-statuses');
-    this.buff = el('div', 'ph-buff');
-    this.buff.append(el('span', 'ph-buff-arrow'));
-    this.buffText = el('span', 'ph-buff-text');
-    this.buff.append(this.buffText);
 
     // Compass: a strip of ticks that slides under a fixed window, plus waypoint markers.
     const compass = el('div', 'ph-compass');
@@ -272,9 +290,9 @@ export class PlayerHud {
 
     this.crosshair = el('div', 'ph-crosshair');
     this.root.append(
+      this.hurt,
       vitals,
       this.statusColumn,
-      this.buff,
       compass,
       this.clock,
       this.core,
@@ -344,31 +362,56 @@ export class PlayerHud {
         if (fill) fill.style.width = `${(f * 100).toFixed(2)}%`;
       });
     }
-    const stamina = clamp01(state.stamina);
-    if (Math.abs(stamina - this.lastStamina) > 0.002) {
-      this.lastStamina = stamina;
-      this.staminaFill.style.width = `${(stamina * 100).toFixed(2)}%`;
+    const tone = state.healthTone ?? 'ok';
+    if (tone !== this.lastHealthTone) {
+      this.lastHealthTone = tone;
+      this.health.dataset.tone = tone;
+    }
+    // A wound flashes the bar and the edges of the screen. Each has two animations that take turns,
+    // because setting the one that is already running would not restart it.
+    const health = clamp01(state.health);
+    if (health < this.lastHealthFraction - HURT_EPSILON) {
+      const turn = String(++this.healthHits % 2);
+      this.health.dataset.hit = turn;
+      this.hurt.dataset.hit = turn;
+    }
+    this.lastHealthFraction = health;
+
+    const energy = clamp01(state.energy);
+    if (Math.abs(energy - this.lastEnergy) > 0.002) {
+      this.lastEnergy = energy;
+      this.energyFill.style.width = `${(energy * 100).toFixed(2)}%`;
+    }
+    const energyTone = state.energyTone ?? 'ok';
+    if (energyTone !== this.lastEnergyTone) {
+      this.lastEnergyTone = energyTone;
+      this.energy.dataset.tone = energyTone;
     }
   }
 
   private updateStatuses(state: PlayerHudState): void {
-    const key = state.statuses.join(',');
-    if (key !== this.lastStatuses) {
-      this.lastStatuses = key;
-      this.statusColumn.replaceChildren(
-        ...state.statuses.map((id) => {
-          const circle = el('div', 'ph-status');
-          circle.innerHTML = iconMarkup(id);
-          return circle;
-        }),
-      );
-    }
-    const buff = state.buff ? `${state.buff.label} ${formatClock(state.buff.seconds)}` : '';
-    if (buff !== this.lastBuff) {
-      this.lastBuff = buff;
-      this.buff.hidden = buff === '';
-      this.buffText.textContent = buff;
-    }
+    const words = (status: HudStatus): string =>
+      status.seconds === undefined
+        ? status.label
+        : `${status.label} ${formatClock(status.seconds)}`;
+    const key = state.statuses
+      .map((status) => `${status.icon}|${status.tone}|${words(status)}`)
+      .join(',');
+    if (key === this.lastStatuses) return;
+    this.lastStatuses = key;
+    this.statusColumn.replaceChildren(
+      ...state.statuses.map((status) => {
+        const row = el('div', 'ph-status-row');
+        const circle = el('div', 'ph-status');
+        circle.dataset.tone = status.tone;
+        circle.innerHTML = iconMarkup(status.icon);
+        const label = el('span', 'ph-status-label');
+        label.dataset.tone = status.tone;
+        label.append(el('span', 'ph-status-arrow'), el('span', undefined, words(status)));
+        row.append(circle, label);
+        return row;
+      }),
+    );
   }
 
   private updateCompass(state: PlayerHudState): void {
