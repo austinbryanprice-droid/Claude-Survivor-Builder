@@ -12,6 +12,8 @@ import {
 } from '../../src/shared/blocks';
 import { AIM_REFUSAL } from '../../src/shared/build-aim';
 import {
+  BLASTER_COST,
+  BLASTER_NAME,
   BUILD_KEYS,
   BuildPromptTracker,
   NAME_SECONDS,
@@ -23,6 +25,7 @@ import {
   refusalText,
   type BuildHudInput,
 } from '../../src/ui/build-hud';
+import { VITALS } from '../../src/systems/survival/balance';
 import { ICON_IDS, ICON_SPRITE } from '../../src/ui/player-hud/icons';
 
 const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
@@ -36,6 +39,9 @@ function hands(overrides: Partial<BuildHudInput> = {}): BuildHudInput {
     piece: SCRAP,
     crosshair: 'none',
     refusal: null,
+    blaster: false,
+    hits: 0,
+    kill: false,
     ...overrides,
   };
 }
@@ -195,5 +201,42 @@ describe('the caption above the hotbar', () => {
       detail: 'Nothing to break there',
       tone: 'warn',
     });
+  });
+});
+
+describe('the caption of the pulse blaster', () => {
+  const blaster = { selected: 4, piece: 0, blaster: true, crosshair: 'blaster' as const };
+
+  it('names it, and says what a shot takes from the Energy bar', () => {
+    const tracker = new BuildPromptTracker();
+    expect(tracker.update(0.016, hands({ ...blaster, buildMode: true }))).toEqual({
+      title: BLASTER_NAME,
+      detail: BLASTER_COST,
+      tone: 'info',
+    });
+    expect(BLASTER_NAME).toBe('Pulse Blaster');
+    expect(BLASTER_COST).toContain(String(VITALS.energy.perShot));
+    expect(BLASTER_COST).toContain('Energy');
+  });
+
+  it('names it for a moment after it is chosen, outside Build Mode', () => {
+    const tracker = new BuildPromptTracker();
+    tracker.update(0.016, hands());
+    expect(tracker.update(0.016, hands(blaster))).toMatchObject({ title: BLASTER_NAME });
+    expect(tracker.update(NAME_SECONDS / 2, hands(blaster))).not.toBeNull();
+    expect(tracker.update(NAME_SECONDS, hands(blaster))).toBeNull();
+  });
+
+  it('puts a refusal under its name, in warning tone', () => {
+    const tracker = new BuildPromptTracker();
+    expect(tracker.update(0.016, hands({ ...blaster, refusal: 'not-ready' }))).toEqual({
+      title: BLASTER_NAME,
+      detail: 'Still connecting',
+      tone: 'warn',
+    });
+  });
+
+  it('has an icon of its own on the hotbar', () => {
+    expect(ICON_IDS).toContain('blaster');
   });
 });

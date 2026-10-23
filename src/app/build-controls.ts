@@ -5,6 +5,7 @@ import type { CellState } from '../shared/block-world';
 import { stateShape } from '../shared/blocks';
 import type { Vec3 } from '../shared/look';
 import { PLAYER } from '../shared/movement';
+import { SHOT_FLAG } from '../shared/shot';
 import type { ValleyView } from '../world/render/valley-view';
 import { BuildController, type BuildHudState, type BuildView } from './build-controller';
 import type { ValleyWorld } from './valley-world';
@@ -21,10 +22,10 @@ import type { ValleyWorld } from './valley-world';
 /** How long after the mouse is first captured the renderer prepares the blocks, if nothing asked sooner. */
 export const IDLE_WARM_UP_MS = 3000;
 
-/** The part of a session that building uses. */
+/** The part of a session that the player's hands use. */
 export type BuildSession = Pick<
   GameSession,
-  'phase' | 'sendCommand' | 'onRejected' | 'sampleRemotes'
+  'phase' | 'localId' | 'sendCommand' | 'fire' | 'onRejected' | 'onShot' | 'sampleRemotes'
 >;
 
 export interface BuildControlsOptions {
@@ -68,6 +69,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
   const { input } = game;
   let session: BuildSession | null = null;
   let stopRefusals: (() => void) | null = null;
+  let stopHits: (() => void) | null = null;
 
   const current = (): ValleyWorld => {
     const world = valley();
@@ -94,6 +96,11 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
     send(command) {
       if (!session || session.phase !== 'open') return false;
       session.sendCommand(command);
+      return true;
+    },
+    fire(origin, dir) {
+      if (!session || session.phase !== 'open') return false;
+      session.fire(origin, dir);
       return true;
     },
     bodies() {
@@ -230,14 +237,22 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
     setSession(next) {
       stopRefusals?.();
       stopRefusals = null;
+      stopHits?.();
+      stopHits = null;
       session = next;
       if (next) {
         stopRefusals = next.onRejected((rejection) => controller.noteRejection(rejection.reason));
+        // The host's word on the player's own shots is what the hit marker shows.
+        stopHits = next.onShot((shot) => {
+          if (shot.by !== next.localId || (shot.flags & SHOT_FLAG.enemy) === 0) return;
+          controller.noteHit((shot.flags & SHOT_FLAG.kill) !== 0);
+        });
       }
     },
     debug,
     dispose() {
       stopRefusals?.();
+      stopHits?.();
       stopFrames();
       stopLock();
       for (const stop of stops) stop();

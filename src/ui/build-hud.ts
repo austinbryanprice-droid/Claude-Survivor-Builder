@@ -12,6 +12,7 @@ import {
   type ShapeKind,
 } from '../shared/blocks';
 import { AIM_REFUSAL } from '../shared/build-aim';
+import { VITALS } from '../systems/survival/balance';
 import type { HotbarSlot, HudPrompt } from './player-hud/player-hud';
 import type { IconId } from './player-hud/icons';
 
@@ -29,9 +30,14 @@ export interface BuildHudInput {
   readonly kind: ShapeKind;
   /** The piece the selected slot makes in that kind, or 0 when the slot holds no block. */
   readonly piece: CellState;
-  readonly crosshair: 'none' | 'place' | 'blocked';
+  readonly crosshair: 'none' | 'place' | 'blocked' | 'blaster';
   /** Why a click would do nothing right now, as a code or as the host's words, or null. */
   readonly refusal: string | null;
+  /** The pulse blaster is in hand. */
+  readonly blaster: boolean;
+  /** How many of the player's shots have hit a machine so far, and whether the latest felled it. */
+  readonly hits: number;
+  readonly kill: boolean;
 }
 
 export interface BuildHudSource {
@@ -110,6 +116,10 @@ export function refusalText(code: string): string {
 /** How long the name of a newly chosen piece stays up outside Build Mode, in seconds. */
 export const NAME_SECONDS = 1.6;
 
+/** What the caption calls the blaster, and what it says a shot takes. */
+export const BLASTER_NAME = 'Pulse Blaster';
+export const BLASTER_COST = `Uses ${VITALS.energy.perShot} Energy a shot`;
+
 /** One line of a key list: the keys and what they do. */
 export interface KeyRow {
   readonly keys: readonly string[];
@@ -129,9 +139,9 @@ export const BUILD_KEYS: readonly KeyRow[] = [
 ];
 
 /**
- * Works out the caption above the hotbar. It names the piece in hand with its cost, in Build Mode
- * and for a moment after the choice changes, and shows why a click would do nothing, in red, for
- * as long as the controller reports it.
+ * Works out the caption above the hotbar. It names what is in hand (a piece with its cost, or the
+ * blaster with what a shot takes), in Build Mode and for a moment after the choice changes, and
+ * shows why a click would do nothing, in red, for as long as the controller reports it.
  */
 export class BuildPromptTracker {
   private lastSelected = -1;
@@ -154,7 +164,7 @@ export class BuildPromptTracker {
       this.nameLeft = Math.max(0, this.nameLeft - dt);
     }
 
-    const name = pieceName(state.piece);
+    const name = state.blaster ? BLASTER_NAME : pieceName(state.piece);
     const prompt = this.prompt;
     if (state.refusal !== null) {
       prompt.title = name;
@@ -164,7 +174,7 @@ export class BuildPromptTracker {
     }
     if (name === '' || (!state.buildMode && this.nameLeft <= 0)) return null;
     prompt.title = name;
-    prompt.detail = `Cost ${costText(state.piece)}`;
+    prompt.detail = state.blaster ? BLASTER_COST : `Cost ${costText(state.piece)}`;
     prompt.tone = 'info';
     return prompt;
   }

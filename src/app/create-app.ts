@@ -93,6 +93,9 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           },
           outpost: () => valley?.voxels.outpost ?? null,
           navigation: () => (valley ? valleyNavigation(valley) : null),
+          // A bolt stops at the blocks, the hills and the Core, which the ground the cursor aims at already includes.
+          rayWorld: () =>
+            valley ? { blocks: valley.voxels, ground: valley.collision.ground } : null,
           flags: readNetFlags(search, { secure: window.location.protocol === 'https:' }),
           buildId,
           night: view.night,

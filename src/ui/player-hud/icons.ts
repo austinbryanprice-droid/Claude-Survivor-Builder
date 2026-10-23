@@ -8,6 +8,7 @@
  */
 
 export type IconId =
+  | 'blaster'
   | 'blade'
   | 'pick'
   | 'hammer'
@@ -39,6 +40,7 @@ export type IconId =
   | 'wedge-energy';
 
 export const ICON_IDS: readonly IconId[] = [
+  'blaster',
   'blade',
   'pick',
   'hammer',
@@ -257,6 +259,18 @@ const SPRITE_BODY = /* html */ `
     <stop offset="0" stop-color="#f4fbff" stop-opacity="0.85"/><stop offset="1" stop-color="#9fc7d8" stop-opacity="0.55"/>
   </linearGradient>
 </defs>
+
+<symbol id="ph-i-blaster" viewBox="0 0 48 48">
+  <path d="M12 25 L23 25 L20.6 41.6 Q20.4 43.4 18.6 43.4 L12.2 43.4 Q10.2 43.4 10.4 41.6 Z" fill="url(#ph-steel-dark)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M12.6 30.4 L20.8 30.4 M12.1 34.8 L20.2 34.8 M11.6 39.2 L19.6 39.2" stroke="#10131a" stroke-opacity="0.5" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M5 13.5 Q5 10.5 8 10.5 L36 10.5 L36 27 L8 27 Q5 27 5 24 Z" fill="url(#ph-steel)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M36 13.5 L44.2 13.5 Q45.8 13.5 45.8 15.1 L45.8 22.4 Q45.8 24 44.2 24 L36 24 Z" fill="url(#ph-steel-dark)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M41.2 14.2 L41.2 23.3" stroke="#6ad7e6" stroke-width="2.2" stroke-linecap="round"/>
+  <rect x="10.5" y="14.8" width="17" height="7.6" rx="2.6" fill="url(#ph-core)" stroke="${INK}" stroke-width="1.3"/>
+  <path d="M12.8 17.2 L24.5 17.2" stroke="#fff" stroke-opacity="0.9" stroke-width="1.1" stroke-linecap="round"/>
+  <path d="M23.6 27 Q23.8 33.2 29.2 33.2 Q31.2 33.2 31.2 31.2 L31.2 27" fill="none" stroke="${INK}" stroke-width="1.7" stroke-linecap="round"/>
+  <path d="M8 12.6 L33 12.6" stroke="#f6faff" stroke-opacity="0.75" stroke-width="1" stroke-linecap="round"/>
+</symbol>
 
 <symbol id="ph-i-blade" viewBox="0 0 48 48">
   <path d="M39 5 L44 10 L22 33 L15 26 Z" fill="url(#ph-steel)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>

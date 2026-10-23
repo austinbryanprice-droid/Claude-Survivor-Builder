@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BLASTER_SLOT,
   BuildController,
   HOTBAR_MATERIALS,
   HOTBAR_SLOTS,
@@ -28,6 +29,7 @@ import { AIM_REFUSAL, BUILD_REACH } from '../../src/shared/build-aim';
 import type { Vec3 } from '../../src/shared/look';
 import { turnCount } from '../../src/shared/placement';
 import type { BlockCommand } from '../../src/shared/protocol';
+import { BLASTER } from '../../src/systems/survival/balance';
 import { createTerrainGround } from '../../src/world/terrain/collision';
 import { createWorld, type VoxelWorld } from '../../src/world/voxels/world';
 import { TEST_SEED, terrain } from './helpers/valley';
@@ -42,6 +44,9 @@ interface Rig {
   /** Whether the fake session accepts commands, and whether it applies them to the world at once. */
   readonly session: { open: boolean; apply: boolean };
   readonly bodies: Vec3[];
+  /** The shots fired, with the view each was aimed from, and whether the fake session takes them. */
+  readonly shots: { origin: Vec3; dir: Vec3 }[];
+  readonly gun: { ready: boolean };
   /** The ground height at the spot. */
   readonly surface: number;
   /** A view from `height` above the ground at the spot, looking straight down. */
@@ -55,6 +60,8 @@ function rig(): Rig {
   const warmUps = { count: 0 };
   const session = { open: true, apply: false };
   const bodies: Vec3[] = [];
+  const shots: { origin: Vec3; dir: Vec3 }[] = [];
+  const gun = { ready: true };
   const ports: BuildPorts = {
     blocks: () => world,
     ground: () => ground,
@@ -75,6 +82,11 @@ function rig(): Rig {
     warmUp: () => {
       warmUps.count++;
     },
+    fire(origin, dir) {
+      if (!gun.ready) return false;
+      shots.push({ origin: { ...origin }, dir: { ...dir } });
+      return true;
+    },
   };
   const surface = world.terrain.grid.groundAt(SPOT.x + 0.5, SPOT.z + 0.5);
   return {
@@ -84,6 +96,8 @@ function rig(): Rig {
     warmUps,
     session,
     bodies,
+    shots,
+    gun,
     surface,
     lookDown(height) {
       const origin = { x: SPOT.x + 0.5, y: surface + height, z: SPOT.z + 0.5 };
@@ -508,5 +522,151 @@ describe('placing slabs and wedges', () => {
     const shown = r.controller.target.state;
     r.controller.press('secondary');
     expect(r.sent[0]).toMatchObject({ type: 'place', state: shown });
+  });
+});
+
+describe('the pulse blaster', () => {
+  /** A rig with the blaster in hand, after a frame that aimed it along the view. */
+  function armed() {
+    const r = rig();
+    r.controller.selectSlot(BLASTER_SLOT);
+    const view: BuildView = {
+      origin: { x: 1.5, y: 20, z: -3 },
+      dir: { x: 0, y: 0, z: -1 },
+      eye: { x: 1.5, y: 19, z: -1 },
+    };
+    r.controller.update(0.016, view);
+    return { ...r, view };
+  }
+
+  it('lives in the slot after the materials, and only there is it in hand', () => {
+    const { controller } = rig();
+    expect(BLASTER_SLOT).toBe(HOTBAR_MATERIALS.length);
+    expect(BLASTER_SLOT).toBeLessThan(HOTBAR_SLOTS);
+    for (let slot = 0; slot < HOTBAR_SLOTS; slot++) {
+      controller.selectSlot(slot);
+      expect(controller.armed).toBe(slot === BLASTER_SLOT);
+      expect(controller.hudState().blaster).toBe(slot === BLASTER_SLOT);
+    }
+  });
+
+  it('fires along the line the camera looks on a left click, from where the camera is', () => {
+    const r = armed();
+    r.controller.press('primary');
+    expect(r.shots).toEqual([{ origin: r.view.origin, dir: r.view.dir }]);
+    expect(r.sent).toEqual([]);
+  });
+
+  it('breaks no block with a left click, though one is under the cursor, and places none with a right one', () => {
+    const r = rig();
+    const y = Math.floor(r.surface);
+    r.world.setBlock(SPOT.x, y, SPOT.z, packState(SHAPE.cube, MATERIAL.scrap));
+    r.controller.selectSlot(BLASTER_SLOT);
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('primary');
+    r.controller.release('primary');
+    r.controller.press('secondary');
+    expect(r.sent).toEqual([]);
+    expect(r.shots).toHaveLength(1);
+    // Put the blaster away and the same click breaks the block again.
+    r.controller.selectSlot(0);
+    r.controller.press('primary');
+    expect(r.sent).toEqual([{ type: 'break', x: SPOT.x, y, z: SPOT.z }]);
+    expect(r.shots).toHaveLength(1);
+  });
+
+  it('waits for the blaster to be ready between clicks', () => {
+    const r = armed();
+    r.controller.press('primary');
+    r.controller.release('primary');
+    r.controller.update(BLASTER.interval * 0.5, r.view);
+    r.controller.press('primary');
+    r.controller.release('primary');
+    expect(r.shots).toHaveLength(1);
+    r.controller.update(BLASTER.interval * 0.6, r.view);
+    r.controller.press('primary');
+    expect(r.shots).toHaveLength(2);
+  });
+
+  it('fires again and again while the button is held, at the blaster’s pace and not a builder’s', () => {
+    const r = armed();
+    r.controller.press('primary');
+    // Eighteen frames of 0.1 s. A repeat comes on the first frame after the interval has run out,
+    // here every fourth (0.4 s); a held click that broke blocks would come every other frame after the first.
+    for (let i = 0; i < 18; i++) r.controller.update(0.1, r.view);
+    expect(r.shots.length).toBe(1 + 4);
+    r.controller.release('primary');
+    for (let i = 0; i < 10; i++) r.controller.update(0.1, r.view);
+    expect(r.shots.length).toBe(1 + 4);
+    expect(BLASTER.interval).toBeGreaterThan(REPEAT_INTERVAL * 2);
+  });
+
+  it('shoots more slowly with tired hands', () => {
+    const r = armed();
+    r.controller.setHandScale(0.5);
+    r.controller.press('primary');
+    r.controller.release('primary');
+    r.controller.update(BLASTER.interval * 1.1, r.view);
+    r.controller.press('primary');
+    r.controller.release('primary');
+    expect(r.shots).toHaveLength(1);
+    r.controller.update(BLASTER.interval * 1.1, r.view);
+    r.controller.press('primary');
+    expect(r.shots).toHaveLength(2);
+  });
+
+  it('has nothing to aim with before the first frame has looked', () => {
+    const r = rig();
+    r.controller.selectSlot(BLASTER_SLOT);
+    r.controller.press('primary');
+    expect(r.shots).toEqual([]);
+    expect(r.controller.hudState().refusal).toBeNull();
+    r.controller.release('primary');
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('primary');
+    expect(r.shots).toHaveLength(1);
+  });
+
+  it('says so when there is nobody to fire at yet, and is ready the moment there is', () => {
+    const r = armed();
+    r.gun.ready = false;
+    r.controller.press('primary');
+    r.controller.release('primary');
+    expect(r.shots).toEqual([]);
+    expect(r.controller.hudState().refusal).toBe(NOT_READY);
+    r.gun.ready = true;
+    r.controller.press('primary');
+    expect(r.shots).toHaveLength(1);
+  });
+
+  it('draws its own sight on the crosshair, in Build Mode or not, and gives the cursor back with the slot', () => {
+    const r = rig();
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().crosshair).toBe('place');
+    r.controller.selectSlot(BLASTER_SLOT);
+    expect(r.controller.hudState().crosshair).toBe('blaster');
+    r.controller.toggleBuildMode();
+    expect(r.controller.hudState().crosshair).toBe('blaster');
+    r.controller.selectSlot(1);
+    expect(r.controller.hudState().crosshair).toBe('place');
+  });
+
+  it('counts the hits the host reports, and whether the latest felled its machine', () => {
+    const { controller } = rig();
+    expect(controller.hudState()).toMatchObject({ hits: 0, kill: false });
+    controller.noteHit(false);
+    expect(controller.hudState()).toMatchObject({ hits: 1, kill: false });
+    controller.noteHit(true);
+    expect(controller.hudState()).toMatchObject({ hits: 2, kill: true });
+    controller.noteHit(false);
+    expect(controller.hudState()).toMatchObject({ hits: 3, kill: false });
+  });
+
+  it('lets go of the trigger when the pointer is let go', () => {
+    const r = armed();
+    r.controller.press('primary');
+    r.controller.releaseAll();
+    for (let i = 0; i < 20; i++) r.controller.update(0.1, r.view);
+    expect(r.shots).toHaveLength(1);
   });
 });

@@ -35,6 +35,7 @@ const CONTROLS: Control[] = [
   { keys: ['V', 'F5'], label: 'First or third person' },
   { keys: ['LMB', 'RMB'], label: 'Break or place' },
   { keys: ['1–8', 'Wheel'], label: 'Choose a block' },
+  { keys: ['5'], label: 'Pulse blaster; LMB fires it' },
   { keys: ['Q', 'R'], label: 'Block, slab or wedge; turn it' },
   { keys: ['B'], label: 'Build Mode' },
   { keys: ['P', 'F3'], label: 'Graphics preset, frame times' },
