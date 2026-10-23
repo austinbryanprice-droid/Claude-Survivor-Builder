@@ -88,6 +88,18 @@ describe('what the HUD says about the run', () => {
     expect(messageFor({ k: 'nightfall', n: 3 })).toBe('Night 3 has fallen');
     expect(messageFor({ k: 'dawn', n: 3 })).toBe('Dawn breaks on day 4');
   });
+
+  it('warns of a wave with its place in the night and its size', () => {
+    expect(messageFor({ k: 'wave', n: 2, i: 1, of: 2, c: 4 })).toBe(
+      'Wave 1 of 2: 4 machines in ten seconds',
+    );
+    expect(messageFor({ k: 'wave', n: 9, i: 4, of: 4, c: 6 })).toBe(
+      'Wave 4 of 4: 6 machines in ten seconds',
+    );
+    expect(messageFor({ k: 'wave', n: 1, i: 1, of: 1, c: 1 })).toBe(
+      'Wave 1 of 1: 1 machine in ten seconds',
+    );
+  });
 });
 
 describe("the Outpost Core's gauge", () => {

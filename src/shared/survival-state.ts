@@ -88,12 +88,25 @@ export function nightsSurvived(cycle: number): number {
 export type SurvivalEvent =
   /** Night `n` has begun. */
   | { readonly k: 'nightfall'; readonly n: number }
+  /** Wave `i` of the `of` on night `n` comes out of the ground in ten seconds, `c` machines strong. */
+  | {
+      readonly k: 'wave';
+      readonly n: number;
+      readonly i: number;
+      readonly of: number;
+      readonly c: number;
+    }
   /** Night `n` is over and day `n + 1` has begun. */
   | { readonly k: 'dawn'; readonly n: number }
   /** The run has ended: the Core fell during day or night `n`, so `n - 1` nights were survived. */
   | { readonly k: 'overrun'; readonly n: number };
 
-export const SURVIVAL_EVENT_KINDS: readonly SurvivalEvent['k'][] = ['nightfall', 'dawn', 'overrun'];
+export const SURVIVAL_EVENT_KINDS: readonly SurvivalEvent['k'][] = [
+  'nightfall',
+  'wave',
+  'dawn',
+  'overrun',
+];
 
 /**
  * The survival loop as a screen sees it. The host reads it straight from the simulation and a
