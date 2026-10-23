@@ -38,9 +38,22 @@ function field() {
   const shooter = { x: flat.core.x - 4, y: FLOOR + 0.5, z: flat.core.z };
   const west: Vec3 = { x: -1, y: 0, z: 0 };
   const out = createShotOutcome();
-  const shoot = (dir: Vec3 = west, from: Vec3 = shooter, bodies: readonly EnemyPose[] = poses()) =>
-    sim.fire(PLAYER, from, dir, bodies, bodies.length, out);
-  return { flat, sim, machines, id, poses, shooter, west, out, shoot };
+  /** Pulls the trigger as it is, with whatever the blaster has ready. */
+  const trigger = (
+    dir: Vec3 = west,
+    from: Vec3 = shooter,
+    bodies: readonly EnemyPose[] = poses(),
+  ) => sim.fire(PLAYER, from, dir, bodies, bodies.length, out);
+  /** Lets the blaster get ready (without moving the machines), then fires. */
+  const shoot = (
+    dir: Vec3 = west,
+    from: Vec3 = shooter,
+    bodies: readonly EnemyPose[] = poses(),
+  ) => {
+    sim.playerVitals(PLAYER)!.step(BLASTER.interval, null);
+    return trigger(dir, from, bodies);
+  };
+  return { flat, sim, machines, id, poses, shooter, west, out, shoot, trigger };
 }
 
 describe('the pulse blaster in the simulation', () => {
@@ -169,5 +182,47 @@ describe('the pulse blaster in the simulation', () => {
     expect(sim.fire(PLAYER, { x: 0, y: 5, z: 0 }, { x: 1, y: 0, z: 0 }, [], 0, out)).toBe(true);
     expect(out.flags).toBe(0);
     expect(out.x).toBeCloseTo(BLASTER.range, 9);
+  });
+  it('keeps two shots ready, and then waits for the hands', () => {
+    const { sim, trigger } = field();
+    const hands = sim.playerVitals(PLAYER)!;
+    expect(trigger()).toBe(true);
+    expect(trigger()).toBe(true);
+    expect(trigger()).toBe(false);
+    // Not quite an interval is not enough; a whole one is.
+    hands.step(BLASTER.interval * 0.9, null);
+    expect(trigger()).toBe(false);
+    hands.step(BLASTER.interval * 0.2, null);
+    expect(trigger()).toBe(true);
+    expect(trigger()).toBe(false);
+    // Time does not bank more than the burst.
+    hands.step(60, null);
+    expect(trigger()).toBe(true);
+    expect(trigger()).toBe(true);
+    expect(trigger()).toBe(false);
+  });
+
+  it('takes nothing from the shooter for a shot it refuses', () => {
+    const { sim, trigger } = field();
+    trigger();
+    trigger();
+    const before = sim.playerVitals(PLAYER)!.energy;
+    for (let i = 0; i < 20; i++) expect(trigger()).toBe(false);
+    expect(sim.playerVitals(PLAYER)!.energy).toBe(before);
+  });
+
+  it('is slower in the hands of someone with no Energy left', () => {
+    const { sim, trigger } = field();
+    const hands = sim.playerVitals(PLAYER)!;
+    hands.set({ energy: 0 });
+    trigger();
+    trigger();
+    // Half the rate: one interval is not enough, two are.
+    hands.step(BLASTER.interval, null);
+    expect(trigger()).toBe(false);
+    hands.step(BLASTER.interval, null);
+    expect(trigger()).toBe(true);
+    // And an empty bar does not lock the blaster: it still fires.
+    expect(hands.energy).toBe(0);
   });
 });

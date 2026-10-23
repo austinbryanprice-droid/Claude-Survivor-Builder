@@ -1,6 +1,7 @@
 import { ClockSync } from '../shared/clock-sync';
 import type { EnemyPose } from '../shared/enemy-state';
 import { RemoteTrack, createPoseOut } from '../shared/interpolation';
+import type { Vec3 } from '../shared/look';
 import { NET } from '../shared/net-config';
 import {
   closeInfo,
@@ -14,6 +15,7 @@ import {
   type RemotePose,
   type WorldEvent,
 } from '../shared/protocol';
+import { SHOT_FLAG, type ShotEvent } from '../shared/shot';
 import {
   KIND_ENEMIES,
   decodeEdits,
@@ -23,6 +25,7 @@ import {
   encodeFrame,
   encodeGuestState,
   packetKind,
+  roundTo,
   seqNewer,
 } from '../shared/wire';
 import type { SurvivalView } from '../shared/survival-state';
@@ -129,6 +132,7 @@ export class GuestSession implements GameSession {
 
   private readonly events = new Emitter<WorldEvent>();
   private readonly rejections = new Emitter<Rejection>();
+  private readonly shots = new Emitter<ShotEvent>();
   private readonly playerChanges = new Emitter<void>();
   private readonly phases = new Emitter<SessionPhase>();
   private readonly corrections = new Emitter<Correction>();
@@ -206,11 +210,31 @@ export class GuestSession implements GameSession {
     this.link.sendControl(encodeFrame({ t: 'cmd', id, c: command }));
   }
 
+  /**
+   * Sends a shot to the host, stamped with the moment of the host's clock that the machines on
+   * this screen are drawn at, so the host can judge it against what the shooter saw.
+   */
+  fire(origin: Vec3, dir: Vec3): void {
+    if (this.phaseValue !== 'open' || !this.link || !this.sync.ready) return;
+    const at = Math.round(this.sync.remoteNow(this.scheduler.now()) - NET.enemyDelayMs);
+    this.link.sendControl(
+      encodeFrame({
+        t: 'fire',
+        o: [roundTo(origin.x, 100), roundTo(origin.y, 100), roundTo(origin.z, 100)],
+        d: [roundTo(dir.x, 10_000), roundTo(dir.y, 10_000), roundTo(dir.z, 10_000)],
+        at,
+      }),
+    );
+  }
+
   onEvent(listener: (event: WorldEvent) => void): Unsubscribe {
     return this.events.on(listener);
   }
   onRejected(listener: (rejection: Rejection) => void): Unsubscribe {
     return this.rejections.on(listener);
+  }
+  onShot(listener: (shot: ShotEvent) => void): Unsubscribe {
+    return this.shots.on(listener);
   }
   onPlayers(listener: () => void): Unsubscribe {
     return this.playerChanges.on(listener);
@@ -444,6 +468,18 @@ export class GuestSession implements GameSession {
         break;
       case 'vt':
         this.vitalsMirror.apply(frame.hp[0], frame.hp[1], frame.en[0], frame.en[1], frame.chg);
+        break;
+      case 'sh':
+        // A shot heard of before the world is built has nothing to be drawn in.
+        if (this.phaseValue !== 'open') break;
+        this.shots.emit({
+          by: frame.p,
+          x: frame.e[0],
+          y: frame.e[1],
+          z: frame.e[2],
+          flags: frame.f,
+          enemy: frame.f & SHOT_FLAG.enemy ? frame.h : 0,
+        });
         break;
       case 'pings':
         for (const [id, rtt] of frame.p) {

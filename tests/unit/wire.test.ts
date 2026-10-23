@@ -26,6 +26,7 @@ import {
   encodeGuestState,
   encodeRelay,
   packetKind,
+  roundTo,
   seqNewer,
 } from '../../src/shared/wire';
 
@@ -52,6 +53,8 @@ describe('guest control frames', () => {
     { t: 'hello', v: NET.protocolVersion, build: 'abc1234', token: TOKEN, name: 'Ada' },
     { t: 'cmd', id: 7, c: { type: 'place', x: -3, y: 12, z: 40, state: 257 } },
     { t: 'cmd', id: 8, c: { type: 'break', x: 0, y: 0, z: 0 } },
+    { t: 'fire', o: [1.5, 11.62, -3.25], d: [0, 0, -1], at: 123456 },
+    { t: 'fire', o: [-300.25, 2, 40.5], d: [0.7071, -0.7071, 0], at: 0 },
     { t: 'ping', n: 12, rtt: 34.5 },
     { t: 'bye' },
   ];
@@ -98,6 +101,35 @@ describe('guest control frames', () => {
     expect(
       decodeGuestFrame('{"t":"cmd","id":1,"c":{"type":"break","x":1e999,"y":0,"z":0}}'),
     ).toBeNull();
+  });
+
+  it('rejects a shot whose camera, direction or moment is missing, malformed or absurd', () => {
+    const base = { t: 'fire', o: [1, 2, 3], d: [0, 0, 1], at: 5000 };
+    expect(decodeGuestFrame(JSON.stringify(base))).toEqual(base);
+    for (const bad of [
+      { o: undefined },
+      { o: [1, 2] },
+      { o: [1, 2, 3, 4] },
+      { o: [1, 2, '3'] },
+      { o: [1, null, 3] },
+      { o: [1, 2, NET.move.limit + 1] },
+      { o: 7 },
+      { d: undefined },
+      { d: [0, 1] },
+      { d: [0, 'up', 0] },
+      { d: [0, 0, 2.5] },
+      { d: [3, 0, 0] },
+      { d: null },
+      { at: undefined },
+      { at: '5000' },
+      { at: null },
+      { at: 1e13 },
+    ]) {
+      const text = JSON.stringify({ ...base, ...bad });
+      expect(decodeGuestFrame(text), text).toBeNull();
+    }
+    expect(decodeGuestFrame('{"t":"fire","o":[1,2,3],"d":[0,0,1e999],"at":5}')).toBeNull();
+    expect(decodeGuestFrame('{"t":"fire","o":[1,2,3],"d":[0,0,1]}')).toBeNull();
   });
 
   it('rejects a hello with a weak token or a huge name', () => {
@@ -164,6 +196,10 @@ describe('host control frames', () => {
     { t: 'vt', hp: [100, 100], en: [100, 100], chg: false },
     { t: 'vt', hp: [37, 100], en: [0, 100], chg: true },
     { t: 'vt', hp: [0, 100], en: [25, 100], chg: false },
+    { t: 'sh', p: 2, e: [3.5, 10, -12.25], f: 1, h: 17 },
+    { t: 'sh', p: 1, e: [-40.25, 12.5, 7], f: 3, h: 9 },
+    { t: 'sh', p: 3, e: [0, 10, 40], f: 4, h: 0 },
+    { t: 'sh', p: 3, e: [0, 14.75, 40], f: 0, h: 0 },
     {
       t: 'pings',
       p: [
@@ -273,6 +309,38 @@ describe('host control frames', () => {
       '{"t":"vt","hp":[50,100],"en":[0,0],"chg":false}',
       '{"t":"vt","hp":[50,100],"en":null,"chg":false}',
     ]) {
+      expect(decodeHostFrame(text), text).toBeNull();
+    }
+  });
+
+  it('refuses a word about a shot with a missing or malformed shooter, end point, flags or target', () => {
+    const base = { t: 'sh', p: 2, e: [3.5, 10, -12.25], f: 1, h: 17 };
+    expect(decodeHostFrame(JSON.stringify(base))).toEqual(base);
+    for (const bad of [
+      { p: undefined },
+      { p: 0 },
+      { p: -1 },
+      { p: 1.5 },
+      { p: 70000 },
+      { p: '2' },
+      { e: undefined },
+      { e: [1, 2] },
+      { e: [1, 2, 3, 4] },
+      { e: [1, 2, 'x'] },
+      { e: [1, null, 3] },
+      { e: [NET.move.limit + 1, 0, 0] },
+      { f: undefined },
+      { f: -1 },
+      { f: 8 },
+      { f: 1.5 },
+      { f: '1' },
+      { h: undefined },
+      { h: -1 },
+      { h: 70000 },
+      { h: 1.5 },
+      { h: null },
+    ]) {
+      const text = JSON.stringify({ ...base, ...bad });
       expect(decodeHostFrame(text), text).toBeNull();
     }
   });
@@ -597,5 +665,17 @@ describe('enemy packets', () => {
       if (bytes.length > 0 && i % 2 === 0) bytes[0] = KIND_ENEMIES;
       expect(() => decodeEnemies(bytes)).not.toThrow();
     }
+  });
+});
+
+describe('rounding for the wire', () => {
+  it('rounds to a grid and leaves a number on it alone', () => {
+    expect(roundTo(1.23456, 100)).toBe(1.23);
+    expect(roundTo(-1.2349, 100)).toBe(-1.23);
+    expect(roundTo(-1.2351, 100)).toBe(-1.24);
+    expect(roundTo(0.70710678, 10_000)).toBe(0.7071);
+    expect(roundTo(12.5, 100)).toBe(12.5);
+    expect(roundTo(0, 100)).toBe(0);
+    expect(roundTo(-0.0004, 100)).toBeCloseTo(0, 12);
   });
 });

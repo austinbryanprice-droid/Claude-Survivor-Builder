@@ -116,6 +116,18 @@ export type GuestFrame =
       readonly name: string;
     }
   | { readonly t: 'cmd'; readonly id: number; readonly c: BlockCommand }
+  /**
+   * A shot of the pulse blaster: where the camera is (`o`) and the unit vector it looks along
+   * (`d`), and the moment of the host's clock, in milliseconds, that the machines on this screen
+   * were drawn at (`at`), so the host can judge the shot against them. The host answers everyone
+   * with an `sh` frame.
+   */
+  | {
+      readonly t: 'fire';
+      readonly o: readonly [x: number, y: number, z: number];
+      readonly d: readonly [x: number, y: number, z: number];
+      readonly at: number;
+    }
   /** `rtt` is the round trip this guest measured last time, so the host can show everyone's ping. */
   | { readonly t: 'ping'; readonly n: number; readonly rtt: number }
   | { readonly t: 'bye' };
@@ -184,6 +196,17 @@ export type HostFrame =
       readonly hp: readonly [points: number, max: number];
       readonly en: readonly [points: number, max: number];
       readonly chg: boolean;
+    }
+  /**
+   * A shot the host decided, sent to everyone, the shooter included: who fired (`p`), where the bolt
+   * ended (`e`), `SHOT_FLAG` bits for what became of it (`f`) and the machine it struck, or 0 (`h`).
+   */
+  | {
+      readonly t: 'sh';
+      readonly p: PlayerId;
+      readonly e: readonly [x: number, y: number, z: number];
+      readonly f: number;
+      readonly h: number;
     }
   /** Every guest's ping, so the room list can show them. */
   | { readonly t: 'pings'; readonly p: readonly (readonly [PlayerId, number])[] }

@@ -1,5 +1,6 @@
 import type { BlockWorld } from '../shared/block-world';
 import type { EnemyPose } from '../shared/enemy-state';
+import type { Vec3 } from '../shared/look';
 import type {
   BlockCommand,
   CloseInfo,
@@ -10,6 +11,7 @@ import type {
   RemotePose,
   WorldEvent,
 } from '../shared/protocol';
+import type { ShotEvent } from '../shared/shot';
 import type { SurvivalView, Unsubscribe } from '../shared/survival-state';
 import type { VitalsView } from '../shared/vitals-state';
 
@@ -101,6 +103,13 @@ export interface GameSession {
   sendCommand(command: BlockCommand): void;
 
   /**
+   * Fires the pulse blaster from the camera at `origin` along the unit vector `dir`. Fire and
+   * forget: the host judges the shot against the machines as this screen drew them, and everyone,
+   * the shooter included, hears what became of it through `onShot`.
+   */
+  fire(origin: Vec3, dir: Vec3): void;
+
+  /**
    * Tells the session whether the local player is playing right now (the mouse is captured).
    * Alone in the world the survival clock is held while nobody is playing; in a room it runs as
    * long as anyone else is there. Guests ignore it: the host decides.
@@ -109,6 +118,8 @@ export interface GameSession {
 
   onEvent(listener: (event: WorldEvent) => void): Unsubscribe;
   onRejected(listener: (rejection: Rejection) => void): Unsubscribe;
+  /** The host decided a shot of the pulse blaster: anyone's, the local player's included. */
+  onShot(listener: (shot: ShotEvent) => void): Unsubscribe;
   /** The room list changed (someone joined, left, or a ping moved). */
   onPlayers(listener: () => void): Unsubscribe;
   onPhase(listener: (phase: SessionPhase) => void): Unsubscribe;

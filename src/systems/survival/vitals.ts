@@ -1,7 +1,7 @@
 import { MOVEMENT, PLAYER } from '../../shared/movement';
 import type { VitalsReading } from '../../shared/vitals-state';
 import { outpostDistance, type Outpost } from '../../world/outpost';
-import { VITALS } from './balance';
+import { BLASTER, VITALS } from './balance';
 
 /** How low Energy is: 0 while it is not low, rising to 1 with none left. */
 function lowness(fraction: number): number {
@@ -22,6 +22,8 @@ export function handScaleFor(fraction: number): number {
 
 /** A player on the ground moving faster than this many times their walking speed is sprinting. */
 const SPRINT_FACTOR = 1.1;
+/** Shots are counted in fractions of a shot; this close to a whole one is a whole one. */
+const SHOT_EPSILON = 1e-6;
 
 /**
  * One player's Health and Energy, as the host keeps them. Pure and stepped by the survival
@@ -38,6 +40,9 @@ export class PlayerVitals {
   private inField = false;
   /** Seconds since the last wound. */
   private sinceHurt = Infinity;
+
+  /** Shots the blaster has ready: a full burst to begin with, one spent on each shot and won back as the hands allow. */
+  private shots: number = BLASTER.burst;
 
   // What the host last saw of the player. Until it has seen them they are not sprinting and not at the Core.
   private placed = false;
@@ -102,6 +107,17 @@ export class PlayerVitals {
     this.energyPoints = Math.max(0, this.energyPoints - amount);
   }
 
+  /**
+   * Whether the blaster may fire now, and if so one shot is spent. The blaster is ready again
+   * `BLASTER.interval` seconds after a shot, later the lower the Energy (low Energy slows the
+   * hands), and up to `BLASTER.burst` shots are kept, so two that were held up on the way both land.
+   */
+  takeShot(): boolean {
+    if (this.shots < 1 - SHOT_EPSILON) return false;
+    this.shots = Math.max(0, this.shots - 1);
+    return true;
+  }
+
   /** Sets the meters outright, for tests and the debug page. A missing value is left as it is. */
   set(values: { health?: number; energy?: number }): void {
     if (values.health !== undefined) {
@@ -119,6 +135,11 @@ export class PlayerVitals {
   step(dt: number, core: Outpost | null): void {
     const energy = VITALS.energy;
     this.sinceHurt += dt;
+
+    this.shots = Math.min(
+      BLASTER.burst,
+      this.shots + (dt * handScaleFor(this.energy / VITALS.maxEnergy)) / BLASTER.interval,
+    );
 
     const scale = speedScaleFor(this.energy / VITALS.maxEnergy);
     let drain = energy.idlePerSecond;

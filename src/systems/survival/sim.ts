@@ -206,7 +206,8 @@ export class SurvivalSim {
    * first block, hill or Core in its way and hurts the first of the first `count` of `bodies` it
    * meets before that: they are where the machines were on the screen the player aimed on, so the
    * host passes the poses of a moment ago and a shot that looked true is one. The shot costs the
-   * player Energy. Returns false, and does nothing, for someone not here or once the run is over.
+   * player Energy. Returns false, and does nothing, for someone not here, once the run is over, or
+   * for a shot that comes before the blaster is ready again.
    */
   fire(
     id: number,
@@ -217,7 +218,7 @@ export class SurvivalSim {
     out: ShotOutcome,
   ): boolean {
     const vitals = this.players.get(id);
-    if (!vitals || this.fell) return false;
+    if (!vitals || this.fell || !vitals.takeShot()) return false;
     const trace = traceShot(
       this.ray,
       origin,

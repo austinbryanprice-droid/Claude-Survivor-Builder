@@ -4,7 +4,7 @@
  */
 export const NET = {
   /** Bumped whenever a message changes shape; a host and a guest on different versions refuse each other. */
-  protocolVersion: 5,
+  protocolVersion: 6,
   maxPlayers: 4,
 
   /** The local player's state is sent about this often (about 20 Hz). */
@@ -36,8 +36,24 @@ export const NET = {
   enemyHostDelayMs: 70,
   /** The most machines one packet carries: more than a night will ever field. */
   maxEnemies: 128,
-  /** How many reports of the machines the mirror keeps. */
-  enemyHistory: 8,
+  /**
+   * How many reports of the machines the mirror keeps: a guest's at ten a second, the host's at
+   * twenty. The host's is also what it rewinds to when it decides a shot, so it holds at least
+   * `maxRewindMs` of history.
+   */
+  enemyHistory: 12,
+  /**
+   * A shot is judged against the machines as they were on the shooter's screen, which is the
+   * shooter's draw delay plus the trip to the host behind the host's present. No further back than
+   * this: a shooter with a worse connection than that aims a little behind.
+   */
+  maxRewindMs: 500,
+  /**
+   * A shot starts where the shooter's camera is, which in third person is behind them and which the
+   * host's idea of where they stand trails. A shot claimed from farther than this from the shooter's
+   * eyes starts from the eyes.
+   */
+  shotOriginSlack: 6,
 
   pingIntervalMs: 2000,
   /**
