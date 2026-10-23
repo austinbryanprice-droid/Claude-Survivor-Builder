@@ -1,5 +1,6 @@
 import type { BlockWorld } from '../shared/block-world';
 import { ClockSync } from '../shared/clock-sync';
+import { createEnemyState, type EnemyPose, type EnemyState } from '../shared/enemy-state';
 import { RemoteTrack, createPoseOut } from '../shared/interpolation';
 import { MoveGuard } from '../shared/move-guard';
 import { PLAYER } from '../shared/movement';
@@ -7,6 +8,7 @@ import { cleanName, defaultName } from '../shared/names';
 import { NET } from '../shared/net-config';
 import {
   HOST_PLAYER_ID,
+  NO_PLAYER,
   closeInfo,
   createPlayerSample,
   type BlockCommand,
@@ -27,13 +29,16 @@ import {
   decodeGuestFrame,
   decodeGuestState,
   encodeEdits,
+  encodeEnemies,
   encodeFrame,
   encodeRelay,
   seqNewer,
   type RelayEntry,
 } from '../shared/wire';
+import type { NavCell } from '../systems/survival/nav';
 import type { SurvivalSim } from '../systems/survival/sim';
 import { Emitter } from './emitter';
+import { EnemyMirror } from './enemy-mirror';
 import type { Scheduler } from './scheduler';
 import { StallWatch } from './stall-watch';
 import type {
@@ -194,6 +199,18 @@ export class HostSession implements GameSession {
   private coreSent = -1;
   private lastSurvivalSend = -Infinity;
   private readonly survivalQueue: SurvivalEvent[] = [];
+  /** Where the machines were after each step, drawn from the same way a guest draws them from the host's packets. */
+  private readonly enemyMirror = new EnemyMirror();
+  private readonly enemyStates: EnemyState[] = Array.from(
+    { length: NET.maxEnemies },
+    createEnemyState,
+  );
+  private enemySeq = 0;
+  private lastEnemySend = -Infinity;
+  /** How many machines the guests were last told about; a list that has just emptied still has to be sent. */
+  private enemiesSent = 0;
+  /** The blocks the machines chewed through, between the simulation and the world. */
+  private readonly gnawed: NavCell[] = [];
 
   private endpoint: HostEndpoint | null = null;
   private brokerOnline = true;
@@ -351,6 +368,10 @@ export class HostSession implements GameSession {
       used++;
     }
     return this.poses;
+  }
+
+  sampleEnemies(): readonly EnemyPose[] {
+    return this.enemyMirror.sample(this.scheduler.now() - NET.enemyHostDelayMs);
   }
 
   close(): void {
@@ -680,8 +701,7 @@ export class HostSession implements GameSession {
       return;
     }
     const state = command.type === 'place' ? command.state : 0;
-    const world = this.binding.current();
-    if (!world.setBlock(command.x, command.y, command.z, state)) {
+    if (!this.applyEdit(command.x, command.y, command.z, state, member.id)) {
       this.counters.rejections++;
       if (member.link && commandId !== null) {
         this.sendTo(member, encodeFrame({ t: 'rej', id: commandId, r: REFUSAL.failed }));
@@ -691,18 +711,21 @@ export class HostSession implements GameSession {
       return;
     }
     this.sim?.playerBuilt(member.id);
-    const event: BlockSetEvent = {
-      type: 'set',
-      x: command.x,
-      y: command.y,
-      z: command.z,
-      state,
-      by: member.id,
-    };
+  }
+
+  /**
+   * Changes a cell and tells everyone: the one path every change to the world takes, whether a
+   * player asked for it or the machines chewed through a block. False when the world refused.
+   */
+  private applyEdit(x: number, y: number, z: number, state: number, by: PlayerId): boolean {
+    if (!this.binding.current().setBlock(x, y, z, state)) return false;
+    this.sim?.blockChanged(x, y, z);
+    const event: BlockSetEvent = { type: 'set', x, y, z, state, by };
     this.eventSeq++;
     const frame = encodeFrame({ t: 'ev', s: this.eventSeq, e: event });
     for (const other of this.members.values()) if (other.link) this.sendTo(other, frame);
     this.events.emit(event);
+    return true;
   }
 
   /** The host's rules on top of the world's own: who is asking, how fast, from where, and who is in the way. */
@@ -880,7 +903,9 @@ export class HostSession implements GameSession {
     if (running) {
       this.observePlayers(sim);
       sim.advance(dt);
+      this.breakGnawed(sim);
     }
+    this.reportEnemies(sim, now, guests);
 
     sim.drainEvents(this.survivalQueue);
     for (const event of this.survivalQueue) {
@@ -908,6 +933,34 @@ export class HostSession implements GameSession {
         if (due) this.sendVitals(member, now);
       }
     }
+  }
+
+  /** Breaks the blocks the machines have chewed through, as the world's own change: everyone sees it go. */
+  private breakGnawed(sim: SurvivalSim): void {
+    sim.drainBreaks(this.gnawed);
+    for (const cell of this.gnawed) this.applyEdit(cell.x, cell.y, cell.z, 0, NO_PLAYER);
+    this.gnawed.length = 0;
+  }
+
+  /**
+   * Notes where the machines are for the host's own screen, and tells the guests ten times a
+   * second: all of them, in one packet. A list that has just emptied is sent at once so the guests
+   * clear their screens; after that, an empty one only about once a second, which is enough to put
+   * right a guest whose packet was lost.
+   */
+  private reportEnemies(sim: SurvivalSim, now: number, guests: boolean): void {
+    const machines = sim.enemies;
+    if (!machines) return;
+    const count = machines.write(this.enemyStates);
+    this.enemyMirror.push(now, this.enemyStates, count);
+    if (!guests || now - this.lastEnemySend < NET.enemyIntervalMs) return;
+    if (count === 0 && this.enemiesSent === 0 && now - this.lastEnemySend < NET.enemyKeepAliveMs) {
+      return;
+    }
+    this.lastEnemySend = now;
+    this.enemiesSent = count;
+    const packet = encodeEnemies(this.enemySeq++, now, this.enemyStates, count);
+    for (const member of this.members.values()) member.link?.sendState(packet);
   }
 
   /** Tells the simulation where every player we have heard from is, so sprinting costs Energy and the Core's field can charge them. */

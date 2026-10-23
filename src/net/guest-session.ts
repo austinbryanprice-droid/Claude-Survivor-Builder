@@ -1,4 +1,5 @@
 import { ClockSync } from '../shared/clock-sync';
+import type { EnemyPose } from '../shared/enemy-state';
 import { RemoteTrack, createPoseOut } from '../shared/interpolation';
 import { NET } from '../shared/net-config';
 import {
@@ -14,16 +15,20 @@ import {
   type WorldEvent,
 } from '../shared/protocol';
 import {
+  KIND_ENEMIES,
   decodeEdits,
+  decodeEnemies,
   decodeHostFrame,
   decodeRelay,
   encodeFrame,
   encodeGuestState,
+  packetKind,
   seqNewer,
 } from '../shared/wire';
 import type { SurvivalView } from '../shared/survival-state';
 import type { VitalsView } from '../shared/vitals-state';
 import { Emitter } from './emitter';
+import { EnemyMirror } from './enemy-mirror';
 import type { Scheduler } from './scheduler';
 import { StallWatch } from './stall-watch';
 import type {
@@ -65,6 +70,8 @@ const REMEMBERED_COMMANDS = 64;
 const MAX_TRACKS = 8;
 const GOODBYE_GRACE_MS = 400;
 const STEP_MS = 500;
+/** What a guest that is not in the world yet draws. */
+const NO_ENEMIES: readonly EnemyPose[] = [];
 
 const REASON_FOR_ERROR: Record<string, CloseReason> = {
   'broker-unreachable': 'broker-unreachable',
@@ -84,6 +91,7 @@ export class GuestSession implements GameSession {
   private readonly transport: Transport;
   private readonly mirror: SurvivalMirror;
   private readonly vitalsMirror = new VitalsMirror();
+  private readonly enemyMirror = new EnemyMirror();
 
   private phaseValue: SessionPhase = 'connecting';
   private closedInfo: CloseInfo | null = null;
@@ -98,6 +106,7 @@ export class GuestSession implements GameSession {
   private readonly tracks = new Map<PlayerId, RemoteTrack>();
   private readonly sync = new ClockSync();
   private lastRelaySeq: number | null = null;
+  private lastEnemySeq: number | null = null;
 
   private readonly parts = new Map<number, EditRecord[]>();
   private readonly queued: { seq: number; event: WorldEvent }[] = [];
@@ -226,6 +235,11 @@ export class GuestSession implements GameSession {
     this.link.sendState(
       encodeGuestState({ epoch: this.epoch, seq: this.sendSeq++ & 0xffff, time: now, sample }),
     );
+  }
+
+  sampleEnemies(): readonly EnemyPose[] {
+    if (this.phaseValue !== 'open' || !this.sync.ready) return NO_ENEMIES;
+    return this.enemyMirror.sample(this.sync.remoteNow(this.scheduler.now()) - NET.enemyDelayMs);
   }
 
   sampleRemotes(): readonly RemotePose[] {
@@ -517,6 +531,10 @@ export class GuestSession implements GameSession {
   }
 
   private onState(bytes: Uint8Array): void {
+    if (packetKind(bytes) === KIND_ENEMIES) {
+      this.onEnemies(bytes);
+      return;
+    }
     const packet = decodeRelay(bytes);
     if (!packet) {
       this.counters.badFrames++;
@@ -540,6 +558,24 @@ export class GuestSession implements GameSession {
       }
       track.push(packet.hostTime - entry.age, entry.sample);
     }
+  }
+
+  /** The host's word on where the machines are. Reports that arrive out of order are dropped, like players'. */
+  private onEnemies(bytes: Uint8Array): void {
+    const packet = decodeEnemies(bytes);
+    if (!packet) {
+      this.counters.badFrames++;
+      return;
+    }
+    const now = this.scheduler.now();
+    this.lastHeard = now;
+    if (this.lastEnemySeq !== null && !seqNewer(packet.seq, this.lastEnemySeq)) {
+      this.counters.staleDropped++;
+      return;
+    }
+    this.lastEnemySeq = packet.seq;
+    this.sync.observe(now, packet.hostTime);
+    this.enemyMirror.push(packet.hostTime, packet.entries, packet.entries.length);
   }
 
   // --------------------------------------------------------------------------------------------
@@ -584,6 +620,7 @@ export class GuestSession implements GameSession {
     this.queued.length = 0;
     this.parts.clear();
     this.tracks.clear();
+    this.enemyMirror.clear();
     this.setPhase('closed');
     this.playerChanges.emit();
   }

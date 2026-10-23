@@ -1,4 +1,5 @@
 import type { BlockWorld } from '../shared/block-world';
+import type { EnemyPose } from '../shared/enemy-state';
 import type {
   BlockCommand,
   CloseInfo,
@@ -126,6 +127,12 @@ export interface GameSession {
    * them before the next call.
    */
   sampleRemotes(): readonly RemotePose[];
+
+  /**
+   * Where to draw the machines that come for the Core right now. The array and the poses in it are
+   * reused: read them before the next call.
+   */
+  sampleEnemies(): readonly EnemyPose[];
 
   /** Leaves the room, or closes it when hosting. Safe to call more than once. */
   close(): void;

@@ -596,6 +596,133 @@ test.describe('multiplayer', () => {
     }
   });
 
+  test("the host's crawlers walk on every screen, and wound the player they bite, and nobody else", async ({
+    browser,
+    baseURL,
+  }) => {
+    const host = await openPlayer(browser, baseURL, 'Host');
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and a machine is only listed when one is drawn.
+    const slow = { timeout: 60_000 };
+    const march = { timeout: 120_000 };
+    const machinesOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.enemies());
+    const idsOf = async (p: Player) => (await machinesOf(p)).map((m) => m.id).sort((a, b) => a - b);
+    const healthOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.vitals().health);
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) {
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+      }
+      // At night, so nothing mends the Core while it is bitten.
+      await host.page.evaluate((to) => {
+        const mp = window.__ashbound!.mp!;
+        mp.warp(to - mp.clock().elapsed);
+      }, DAY_SECONDS + 1);
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await clockOf(p)).phase, { message: `${p.name} sees the night` })
+          .toBe('night');
+      }
+
+      // Five come in on the host's ring, and every screen draws the same five.
+      expect(await host.page.evaluate(() => window.__ashbound!.mp!.spawnCrawlers(5))).toBe(5);
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await machinesOf(p)).length, {
+            ...slow,
+            message: `${p.name} sees five`,
+          })
+          .toBe(5);
+      }
+      const named = await idsOf(host);
+      expect(named).toHaveLength(5);
+      await expect.poll(() => idsOf(ada), { ...slow, message: 'the same five' }).toEqual(named);
+
+      // They walk, and the guest watches them come: closer on both screens a while on.
+      const core = await host.page.evaluate(() => {
+        const world = window.__ashbound!.game.world as unknown as {
+          voxels: { outpost: { x: number; z: number } };
+        };
+        const { x, z } = world.voxels.outpost;
+        return { x, z };
+      });
+      const nearestOf = async (p: Player) =>
+        Math.min(...(await machinesOf(p)).map((m) => Math.hypot(m.x - core.x, m.z - core.z)));
+      const before = await nearestOf(ada);
+      expect(before).toBeGreaterThan(25);
+      for (const p of everyone) {
+        await expect
+          .poll(() => nearestOf(p), { ...march, message: `${p.name} watches them come` })
+          .toBeLessThan(before - 8);
+      }
+
+      // Two more come out of the ground beside Ada, on the side away from the host: they are hers to
+      // deal with, and the bites are on her bar and on nobody else's.
+      const adaAt = await ada.page.evaluate(() => window.__ashbound!.mp!.position());
+      const hostAt = await host.page.evaluate(() => window.__ashbound!.mp!.position());
+      const away = Math.hypot(adaAt.x - hostAt.x, adaAt.z - hostAt.z) || 1;
+      const ux = (adaAt.x - hostAt.x) / away;
+      const uz = (adaAt.z - hostAt.z) / away;
+      const beside = await host.page.evaluate(
+        ([x, z, ux, uz]) => {
+          const mp = window.__ashbound!.mp!;
+          // The first spot on open ground (the lake is not): along the line away from the host, then to the sides.
+          for (const [along, across] of [
+            [5, 0],
+            [6, 2],
+            [6, -2],
+            [4, 3],
+            [4, -3],
+            [7, 0],
+          ]) {
+            const id = mp.spawnCrawlerAt(
+              x! + ux! * along! - uz! * across!,
+              z! + uz! * along! + ux! * across!,
+            );
+            if (id !== null) return id;
+          }
+          return null;
+        },
+        [adaAt.x, adaAt.z, ux, uz] as const,
+      );
+      expect(beside).not.toBeNull();
+      await expect
+        .poll(() => healthOf(ada), { ...march, message: 'Ada is bitten' })
+        .toBeLessThan(100);
+      expect(await healthOf(host)).toBe(100);
+      await expect(ada.page.locator('.ph-hurt')).toHaveAttribute('data-hit', '1', slow);
+      await expect(host.page.locator('.ph-hurt')).not.toHaveAttribute('data-hit', /.*/);
+
+      // And the Core, which every screen reads from the host.
+      const fullCore = (await clockOf(host)).coreMax;
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await clockOf(p)).coreHealth, {
+            ...march,
+            message: `${p.name} sees the Core bitten`,
+          })
+          .toBeLessThan(fullCore);
+      }
+
+      // A field the host clears is clear on every screen.
+      await host.page.evaluate(() => window.__ashbound!.mp!.clearEnemies());
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await machinesOf(p)).length, {
+            ...slow,
+            message: `${p.name} sees none`,
+          })
+          .toBe(0);
+      }
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
   test('closing the host shows everyone the message, and they can carry on alone', async ({
     browser,
     baseURL,

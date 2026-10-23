@@ -358,3 +358,37 @@ Headless Chromium on software GL at 1280 by 720, Balanced, `freeze=1`, taken wit
 | [vitals-empty](phase-4/vitals-empty.jpg)           | No Energy: "Out of energy", the frame of the bar breathing dark red. Walking is at 65 percent and a held click at half the rate.                                                     |
 | [vitals-charging](phase-4/vitals-charging.jpg)     | Beside the Core at night with 17 Energy: "Charging" above "Low energy", the one lifting as the other lasts.                                                                          |
 | [vitals-states](phase-4/vitals-states.jpg)         | The corner cut out of each of the six and enlarged.                                                                                                                                  |
+
+## Phase 4d: the crawler
+
+The first machine sets how the rest of them will look: low and dark against the lit ground, so that at a distance it is a silhouette with a few lights on it, and close up a small walker you can read at a glance. It is drawn from code like the Core (no assets, so `CREDITS.md` is unchanged) and in the Core's palette: dark steel, amber trim, and a hot light where the sensors are. The choices are in [decisions](decisions.md#phase-4d-the-crawler-2026-10-23).
+
+### The crawler
+
+- **Shape.** A hull of dark blue-grey steel 0.9 blocks long with a plate and a thin amber spine on its back, the engine behind it, a head in front with a red strip for an eye and a pair of pale jaws, and six legs of bars with amber joints that spread to 1.7 blocks across. It stands 0.7 blocks high: below a player's waist, so a crowd of them reads as something on the ground, not as people.
+- **Steel and lights.** The steel is the Core's steel, fairly metallic, so the low sun puts warm edges on it and the night makes it navy. The joints and the spine glow a little and breathe; the eye is the brightest point on the machine, so a crowd at night reads as a field of red points before it reads as shapes. A hit lights the whole machine white-hot for a moment, and the lights flicker as its health fails.
+- **Movement.** The legs step in two tripods (front-left, middle-right and back-left, then the others). The stride follows how far the machine has walked and the swing follows its speed, so one that is slowing shuffles and one that has stopped stands. A bite is a lunge of the body with the jaws snapping, and a machine arrives by rising out of the ground over 0.6 seconds, so a spawn does not pop. Each differs in size by up to 5 percent from its id.
+- **Cost.** One instanced mesh of 720 triangles a machine: one draw call, and one more into the sun's shadow map, however many there are. The field is not culled (one bounding sphere would have to cover the whole valley), so a full field of 100 costs the same wherever the camera looks: 72 thousand triangles in the camera's pass and as many again in the shadow pass, about 144 thousand on top of a Balanced frame of about 750 thousand (every pass counted, as in the tables above), a fifth at the worst. The vertex work is a handful of arithmetic operations a vertex. No real GPU has timed it yet.
+
+### Screenshots
+
+Headless Chromium on software GL at 1280 by 720, Balanced, `freeze=1`, taken with the page's `?debug` hooks (`__ashbound.mp.spawnCrawlerAt`, `spawnCrawlers`, `warp`, `hurtCore`). The machines are put where they stand while the run is held, so each picture is exact. A software frame takes seconds and a crawler walks a long way in that time, so the pack on the road is walked in hops of the clock (`mp.warp`) and photographed on the first frame after a hop, while the legs are mid-stride; the night pictures hold the camera with `game.setPhoto`, off the player, so the machines are not drawn to it.
+
+![The crawlers in six pictures: close up, on the march, at a wall, through the gap, at the Core, and a field of seventy-two](phase-4/crawlers-states.jpg)
+
+| Image                                            | What to look at                                                                                                                                                                                                                        |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [crawlers-closeup](phase-4/crawlers-closeup.jpg) | Three of them at golden hour from a few steps away, facing the camera: the hull, the amber spine and joints, the red strip of the eye, the legs spread to either side. The amber is the Core's amber, and it reads yellow in this sun. |
+| [crawlers-march](phase-4/crawlers-march.jpg)     | The first night's dusk: a pack of six on the road to the Core, the reactor at the right edge. The legs are mid-stride, and the amber is what finds them in the grass.                                                                  |
+| [crawlers-wall](phase-4/crawlers-wall.jpg)       | A ring of scrap blocks round the Core and five crawlers at its western side, chewing. The Core is whole (1000) and nothing has broken through yet.                                                                                     |
+| [crawlers-breach](phase-4/crawlers-breach.jpg)   | Some seconds later: two blocks are gone, the machines are through the gap and at the Core's foot, and the crystal has turned amber at 405.                                                                                             |
+| [crawlers-bite](phase-4/crawlers-bite.jpg)       | At the Core's west face, a row of them against its foot, the crystal cyan at 595 on its way down.                                                                                                                                      |
+| [crawlers-crowd](phase-4/crawlers-crowd.jpg)     | Seventy-two round the Core from the south-east rim, near the full field of a hundred: the eyes and the amber read as a swarm of lights before they read as shapes.                                                                     |
+| [crawlers-states](phase-4/crawlers-states.jpg)   | The six together.                                                                                                                                                                                                                      |
+
+### Known gaps in the crawler
+
+- The body stays level on a slope, so the feet can sink into the ground or hover over it by a few tenths of a block on the steepest ground a crawler climbs. A ground height for each foot would fix it; nothing in the picture says it matters yet.
+- There is no sound (Phase 6), no health bar, and no way to kill one until the blaster (4e): a hit shows only as the flash, and failing health as the flicker of the lights.
+- There is only one kind. The armored, flying and breacher machines of the spec come with Phase 5, and stand in as crawlers until then.
+- Seen only in software-rendered pictures. How the glow of the joints and the eye sits with the bloom on a real display is for the first look on a real GPU.

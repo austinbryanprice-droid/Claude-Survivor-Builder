@@ -4,7 +4,7 @@
  */
 export const NET = {
   /** Bumped whenever a message changes shape; a host and a guest on different versions refuse each other. */
-  protocolVersion: 4,
+  protocolVersion: 5,
   maxPlayers: 4,
 
   /** The local player's state is sent about this often (about 20 Hz). */
@@ -26,6 +26,18 @@ export const NET = {
   coreIntervalMs: 200,
   /** A guest hears of a change to its own Health or Energy within this long (and not more often). */
   vitalsIntervalMs: 250,
+  /** The host sends where every machine is this often (10 Hz), as one packet. */
+  enemyIntervalMs: 100,
+  /** With no machines to report it still says so this often, so a guest that lost the news does not keep drawing ghosts. */
+  enemyKeepAliveMs: 1000,
+  /** A guest draws the machines this far behind the newest packet, so two packets usually bracket the draw time. */
+  enemyDelayMs: 150,
+  /** The host draws them this far behind its own newest step, which it takes every `relayIntervalMs`. */
+  enemyHostDelayMs: 70,
+  /** The most machines one packet carries: more than a night will ever field. */
+  maxEnemies: 128,
+  /** How many reports of the machines the mirror keeps. */
+  enemyHistory: 8,
 
   pingIntervalMs: 2000,
   /**

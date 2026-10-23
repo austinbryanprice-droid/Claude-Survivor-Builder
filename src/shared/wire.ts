@@ -1,3 +1,10 @@
+import {
+  ENEMY_FLAGS_MASK,
+  ENEMY_HEALTH_FULL,
+  ENEMY_KIND_COUNT,
+  createEnemyState,
+  type EnemyState,
+} from './enemy-state';
 import { PITCH_LIMIT, wrapAngle } from './look';
 import { cleanName, isToken } from './names';
 import { NET } from './net-config';
@@ -492,6 +499,84 @@ export function decodeRelay(bytes: Uint8Array): RelayPacket | null {
     const id = view.getUint16(at, true);
     if (!sample || id === 0) return null;
     entries.push({ id, age: view.getInt16(at + 2, true), sample });
+  }
+  return { seq: view.getUint16(2, true), hostTime: view.getUint32(4, true), entries };
+}
+
+// ----------------------------------------------------------------------------------------------
+// The machines: every one of them in a single packet, on the fast channel.
+// ----------------------------------------------------------------------------------------------
+
+export const KIND_ENEMIES = 3;
+
+/** Enemy positions are fixed point with 1/16 of a block of resolution, in a signed 16-bit field. */
+const ENEMY_POS_SCALE = 16;
+const ENEMY_HEADER = 8;
+const ENEMY_BYTES = 12;
+
+/** What the host says about the machines: all of them, as of one moment. */
+export interface EnemiesPacket {
+  /** Counts up with every packet and wraps at 65536, so stale ones can be dropped. */
+  seq: number;
+  /** The host's clock in milliseconds when the states were true. */
+  hostTime: number;
+  entries: EnemyState[];
+}
+
+/** The most bytes an enemy packet has. */
+export const ENEMIES_PACKET_MAX = ENEMY_HEADER + NET.maxEnemies * ENEMY_BYTES;
+
+/** Packs the first `count` of `states`, which is all of the machines, into a packet. */
+export function encodeEnemies(
+  seq: number,
+  hostTime: number,
+  states: readonly EnemyState[],
+  count: number,
+): Uint8Array {
+  const n = Math.min(count, states.length, NET.maxEnemies);
+  const bytes = new Uint8Array(ENEMY_HEADER + n * ENEMY_BYTES);
+  const view = new DataView(bytes.buffer);
+  view.setUint8(0, KIND_ENEMIES);
+  view.setUint8(1, n);
+  view.setUint16(2, seq & MAX_U16, true);
+  view.setUint32(4, Math.max(0, Math.round(hostTime)) >>> 0, true);
+  for (let i = 0; i < n; i++) {
+    const state = states[i] as EnemyState;
+    const at = ENEMY_HEADER + i * ENEMY_BYTES;
+    view.setUint16(at, state.id & MAX_U16, true);
+    view.setUint8(at + 2, state.kind & 0xff);
+    view.setUint8(at + 3, state.flags & ENEMY_FLAGS_MASK);
+    view.setInt16(at + 4, clampInt(state.x * ENEMY_POS_SCALE, -32768, 32767), true);
+    view.setInt16(at + 6, clampInt(state.y * ENEMY_POS_SCALE, -32768, 32767), true);
+    view.setInt16(at + 8, clampInt(state.z * ENEMY_POS_SCALE, -32768, 32767), true);
+    const yaw = (wrapAngle(state.yaw) + Math.PI) / TWO_PI;
+    view.setUint8(at + 10, Math.round(yaw * 256) & 0xff);
+    view.setUint8(at + 11, clampInt(state.health, 1, ENEMY_HEALTH_FULL));
+  }
+  return bytes;
+}
+
+export function decodeEnemies(bytes: Uint8Array): EnemiesPacket | null {
+  if (bytes.length < ENEMY_HEADER) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (view.getUint8(0) !== KIND_ENEMIES) return null;
+  const count = view.getUint8(1);
+  if (count > NET.maxEnemies || bytes.length !== ENEMY_HEADER + count * ENEMY_BYTES) return null;
+  const entries: EnemyState[] = [];
+  for (let i = 0; i < count; i++) {
+    const at = ENEMY_HEADER + i * ENEMY_BYTES;
+    const state = createEnemyState();
+    state.id = view.getUint16(at, true);
+    state.kind = view.getUint8(at + 2);
+    state.flags = view.getUint8(at + 3) & ENEMY_FLAGS_MASK;
+    state.x = view.getInt16(at + 4, true) / ENEMY_POS_SCALE;
+    state.y = view.getInt16(at + 6, true) / ENEMY_POS_SCALE;
+    state.z = view.getInt16(at + 8, true) / ENEMY_POS_SCALE;
+    state.yaw = (view.getUint8(at + 10) / 256) * TWO_PI - Math.PI;
+    state.health = view.getUint8(at + 11);
+    // An enemy with no id, of a kind this build does not know, or with no health left is not one the host sent.
+    if (state.id === 0 || state.kind >= ENEMY_KIND_COUNT || state.health === 0) return null;
+    entries.push(state);
   }
   return { seq: view.getUint16(2, true), hostTime: view.getUint32(4, true), entries };
 }

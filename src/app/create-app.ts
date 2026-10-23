@@ -4,6 +4,7 @@ import { readFlags } from '../shared/flags';
 import { readNetFlags } from '../shared/net-flags';
 import { createReading } from '../shared/survival-state';
 import { readViewFlags } from '../shared/view-flags';
+import { valleyNavigation } from '../systems/survival/valley-nav';
 import { createHud, type Hud } from '../ui/hud';
 import { loadSettings } from '../ui/settings-store';
 import type { CoreLook } from '../world/render/core-render';
@@ -91,6 +92,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
             return valley.voxels;
           },
           outpost: () => valley?.voxels.outpost ?? null,
+          navigation: () => (valley ? valleyNavigation(valley) : null),
           flags: readNetFlags(search, { secure: window.location.protocol === 'https:' }),
           buildId,
           night: view.night,

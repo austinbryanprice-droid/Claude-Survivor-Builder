@@ -60,6 +60,23 @@ export class PlayerVitals {
     return this.inField;
   }
 
+  /** True while the player has Health left: someone at none is down, and the machines leave them be. */
+  get alive(): boolean {
+    return this.healthPoints > 0;
+  }
+
+  /**
+   * Writes where the player's feet were when the host last saw them into `out`. False before the
+   * host has seen them at all, which leaves `out` as it was.
+   */
+  position(out: { x: number; y: number; z: number }): boolean {
+    if (!this.placed) return false;
+    out.x = this.x;
+    out.y = this.y;
+    out.z = this.z;
+    return true;
+  }
+
   /** Where the player is and how fast they cross the ground (blocks per second), as the host last saw them. */
   observe(x: number, y: number, z: number, speed: number, onGround: boolean): void {
     this.placed = true;

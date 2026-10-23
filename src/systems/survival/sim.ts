@@ -9,6 +9,8 @@ import {
 import type { VitalsReading } from '../../shared/vitals-state';
 import type { Outpost } from '../../world/outpost';
 import { SURVIVAL, VITALS } from './balance';
+import { EnemySim, type Target } from './enemies';
+import { NavGrid, type NavCell, type NavWorld } from './nav';
 import { PlayerVitals } from './vitals';
 
 const CYCLE_TICKS = CYCLE_SECONDS * SIM_HZ;
@@ -24,13 +26,20 @@ export interface SurvivalOptions {
   coreHealth?: number;
   /** Where the Core stands, for its charge field. Without it no one is ever charged. */
   core?: Outpost | null;
+  /**
+   * The ground the machines walk, as the valley gives it. Without it (or without a Core to walk to)
+   * there are no machines.
+   */
+  nav?: NavWorld | null;
+  /** The world's seed, which the machines' spawns are drawn from: the same seed plays the same nights. */
+  seed?: number;
 }
 
 /**
- * The host's survival simulation: the day and night clock, the Outpost Core and each player's
- * Health and Energy now, and the machines and the waves as the later parts arrive. It is pure (no
- * DOM, no three.js, no network) and it advances in fixed 20 Hz steps, so a Worker, a test and the
- * browser all play the same run.
+ * The host's survival simulation: the day and night clock, the Outpost Core, each player's Health
+ * and Energy and the machines that come for the Core now, and the waves as the later parts arrive.
+ * It is pure (no DOM, no three.js, no network) and it advances in fixed 20 Hz steps, so a Worker,
+ * a test and the browser all play the same run.
  *
  * Time is counted in whole steps. The caller feeds it real time with `advance`, which turns it
  * into steps, and decides whether the run is held (single-player with the mouse free) by simply
@@ -46,12 +55,28 @@ export class SurvivalSim {
   private readonly core: Outpost | null;
   private readonly players = new Map<number, PlayerVitals>();
   private readonly pending: SurvivalEvent[] = [];
+  private readonly machines: EnemySim | null;
+  /** The players the machines can go after in this step, kept between steps so a step allocates nothing. */
+  private readonly targets: Target[] = [];
+  private readonly feet = { x: 0, y: 0, z: 0 };
 
   constructor(options: SurvivalOptions = {}) {
     this.tickValue = Math.max(0, Math.round((options.startAt ?? 0) * SIM_HZ));
     const max = SURVIVAL.core.maxHealth;
     this.health = Math.min(max, Math.max(1, options.coreHealth ?? max));
     this.core = options.core ?? null;
+    this.machines =
+      options.nav && this.core
+        ? new EnemySim(new NavGrid(options.nav, this.core), {
+            core: this.core,
+            seed: options.seed ?? 0,
+          })
+        : null;
+  }
+
+  /** The machines that come for the Core, or null where the world gave the run no ground for them to walk. */
+  get enemies(): EnemySim | null {
+    return this.machines;
   }
 
   /** Steps taken since the run began. */
@@ -152,6 +177,19 @@ export class SurvivalSim {
     return this.players.get(id)?.read(out) ?? null;
   }
 
+  /** A block was placed or broken: the machines' map reads the cell again. */
+  blockChanged(x: number, y: number, z: number): void {
+    this.machines?.blockChanged(x, y, z);
+  }
+
+  /**
+   * Moves the blocks the machines have chewed through since the last call into `out`. The host
+   * breaks them as it breaks any block, and then tells the run with `blockChanged`.
+   */
+  drainBreaks(out: NavCell[]): void {
+    this.machines?.drainBreaks(out);
+  }
+
   /** Moves everything that happened since the last call into `out` (oldest first). */
   drainEvents(out: SurvivalEvent[]): void {
     for (const event of this.pending) out.push(event);
@@ -184,5 +222,21 @@ export class SurvivalSim {
       this.health = Math.min(SURVIVAL.core.maxHealth, this.health + MEND_PER_STEP);
     }
     for (const vitals of this.players.values()) vitals.step(SIM_STEP_SECONDS, this.core);
+    if (this.machines) this.stepMachines(this.machines);
+  }
+
+  /** Moves the machines one step, with the players who are in the world and standing as their prey. */
+  private stepMachines(machines: EnemySim): void {
+    let count = 0;
+    for (const [id, vitals] of this.players) {
+      if (!vitals.alive || !vitals.position(this.feet)) continue;
+      const target = (this.targets[count] ??= { id: 0, x: 0, y: 0, z: 0 });
+      target.id = id;
+      target.x = this.feet.x;
+      target.y = this.feet.y;
+      target.z = this.feet.z;
+      count++;
+    }
+    machines.step(SIM_STEP_SECONDS, this.targets, count, this);
   }
 }
