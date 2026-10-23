@@ -438,3 +438,32 @@ Headless Chromium on software GL at 1280 by 720, Balanced, `freeze=1`, at the fi
 - A bolt in first person is a short streak along the line of sight, not a long beam: it leaves a hand at the edge of the view and flies away from the camera, so most of it is foreshortened. That is how it looks to the shooter; to everyone else it crosses their view.
 - No sound (Phase 6) and no damage numbers.
 - Seen only in software-rendered pictures. How wide the bolt reads and how the bloom takes the flashes on a real display is for the first look on a real GPU.
+
+## Phase 4f: the waves
+
+The waves add no art of their own: the machines are the crawlers of 4d, and the only new thing on the screen is a line of text. What 4f changes is when they come and from where, which a chart shows better than a photograph. The choices are in [decisions](decisions.md#phase-4f-the-waves-2026-10-23).
+
+### What the crew sees
+
+- **The warning.** A toast above the hotbar, in the style of the others (a dark rounded bar with light text), ten seconds before each wave: "Wave 1 of 3: 4 machines in ten seconds". It is one element that lives 1.6 seconds and is shared with the other messages (nightfall, dawn, the Core falling), so a second message replaces the first.
+- **The wave.** Four to seven crawlers, a few more later in the game, come out of the ground one after another at the edge of the valley, 46 blocks from the Core, all on one side of it, and walk the cheapest way to it. They are the instanced mesh of 4d, so a bigger night costs the same draw call.
+
+### Screenshots
+
+Headless Chromium on software GL at 1280 by 720, Balanced, `freeze=1`, `?debug&night=4`, driven with the page's debug hooks (`__ashbound.mp.warp` to reach the warning and the machines, `enemies()` to read where they are). The march picture is held in golden light (`time=golden`) because the sky would otherwise follow the clock into the night over the jumps of the clock that walk the machines, and the camera is held above the grass, which hides a crawler from the ground. The chart is drawn from the positions of every machine of each wave, read off the running game right after the last of the wave came out of the ground, not from the plan.
+
+![The waves in four pictures](phase-4/waves-states.jpg)
+
+| Image                                      | What to look at                                                                                                                                                                                   |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [waves-warning](phase-4/waves-warning.jpg) | Night 4, four seconds in: the toast "Wave 1 of 3: 4 machines in ten seconds" above the hotbar, the Core whole and the clock at 3:56.                                                              |
+| [waves-march](phase-4/waves-march.jpg)     | The first wave of night 4, nine seconds after it came out of the ground: four crawlers crossing the clearing from the west toward the Core (the reactor at the right edge), seen from above.      |
+| [waves-sides](phase-4/waves-sides.jpg)     | Where each wave of night 4 (three waves) and night 9 (four) came in: the Core in the middle, the ring 46 blocks out, each wave a colour. Each keeps to one side, and the next comes from another. |
+| [waves-states](phase-4/waves-states.jpg)   | The four together.                                                                                                                                                                                |
+
+### Known gaps in the waves
+
+- The warning is one line that is gone in 1.6 seconds. A wave indicator that stays on the HUD and the rising stinger the spec asks for ten seconds ahead are Phase 6.
+- A machine appears at the edge of the valley with no effect, usually out of sight in the forest. A flash or a plume of dust where it comes up is polish for Phase 6; for now the warning is the only sign of a wave coming.
+- The armored, flying and base-targeting kinds are drawn and fight as crawlers until Phase 5.
+- Seen only in software-rendered pictures, and the crowd of a late night (six waves of seven or more) has not been looked at.
