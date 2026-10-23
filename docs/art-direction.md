@@ -389,6 +389,52 @@ Headless Chromium on software GL at 1280 by 720, Balanced, `freeze=1`, taken wit
 ### Known gaps in the crawler
 
 - The body stays level on a slope, so the feet can sink into the ground or hover over it by a few tenths of a block on the steepest ground a crawler climbs. A ground height for each foot would fix it; nothing in the picture says it matters yet.
-- There is no sound (Phase 6), no health bar, and no way to kill one until the blaster (4e): a hit shows only as the flash, and failing health as the flicker of the lights.
+- There is no sound (Phase 6) and no health bar: a hit shows as the flash, and failing health as the flicker of the lights. What hurts one is the pulse blaster, drawn in [Phase 4e](#phase-4e-the-blasters-light).
 - There is only one kind. The armored, flying and breacher machines of the spec come with Phase 5, and stand in as crawlers until then.
 - Seen only in software-rendered pictures. How the glow of the joints and the eye sits with the bloom on a real display is for the first look on a real GPU.
+
+## Phase 4e: the blaster's light
+
+The pulse blaster is the first thing in the game that is drawn only as light: the bolt, the sparks where it lands and the burst of a machine that falls are added on top of the picture and glow, and nothing in the scene is lit by them. The palette is the game's own: a white-hot core with a breath of colour round it, the amber of the Core's trim and the crawler's joints where a machine is hit, and the shooter's seat colour wherever else a bolt ends, so that in a game of four every bolt says whose it is. Nothing here is an asset, so `CREDITS.md` is unchanged. The choices are in [decisions](decisions.md#phase-4e-the-pulse-blaster-2026-10-23).
+
+### The light
+
+- **The bolt.** A streak that leaves the gun with its tail behind it: the head flies at 170 blocks a second and the tail trails 8 blocks, tapering to nothing, a white core in a halo of the shooter's colour. It is drawn the same few pixels wide wherever it is, with a core of three or four and a halo of about ten at 720p (wider with distance, so a far bolt still shows and a near one never fills the screen), and it fades in over its first four blocks, so that it does not begin as a smear in front of the player. A bolt shows for at least a tenth of a second, however near its mark. A shot at the longest range, 40 blocks, takes a quarter of a second to arrive, and what happens where it lands waits for it.
+- **The muzzle.** A four-pointed flash for 0.08 seconds and four sparks, where the gun is held: 0.55 blocks ahead of the eyes, a quarter of a block to the right and a fifth below, which is the lower right of the view in first person and the avatar's right hand in third.
+- **The strike.** Where a bolt ends: a flash that swells to a block and a quarter across in 0.14 seconds and ten sparks thrown back off the mark, which leap, fall and go out in about half a second. Amber on a machine, the shooter's colour on a block, the ground or the Core.
+- **The kill.** When a machine falls, the burst: a hot core and a flash that swells to over three blocks across in 0.22 seconds, and thirty sparks flung every way at once, in a deep orange. It plays where the machine stood, and the machine is gone at that moment. Far flashes and sparks are drawn larger (up to two and a half times) so that they still read, and none is larger on the screen than a few dozen pixels, so one at the camera does not fill it.
+- **Cost.** Two instanced meshes, one for the bolts and one for the sparks and flashes, so a firefight is two draw calls whatever it holds, added into the HDR target above the bloom's threshold. Nothing is lit by them and nothing casts a shadow. Everything an effect does while it plays (the streak flying, the flash swelling, a spark's flight and fall) is worked out in the vertex shader from the moment it was born, so the CPU writes a few numbers when something happens and nothing while it plays out. The buffers are rings of 64 bolts and 768 sparks, each one quad, so 832 quads (1,664 triangles) at the very most, and the meshes are in the scene from the start, drawing nothing, so the first shot of a session builds no programs.
+
+### In the hands
+
+- **Slot 5.** The blaster's icon, a pale pistol with a cyan-lit barrel, takes the fifth place of the hotbar on the plain dark slot the tools use (the blocks sit on the cyan blueprint grid), and is picked like any slot. Slots 6 to 8 stay the placeholders they were.
+- **The sight.** A thin white ring with a dot at the middle and a tick at each quarter, so that it reads as a weapon and not as the build cursor, and the caption above the hotbar says "Pulse Blaster" and "Uses 0.6 Energy a shot" for a moment after the choice.
+- **The hit marker.** Four ticks cross the ring of the sight for a quarter of a second when a shot hits a machine: white and small for a hit, larger and amber for the kill. It is a fade and not a movement, so it stays when the player asks for less motion.
+- **The start card.** The keys list gains the blaster without a new row, so the card still fits a 1280 by 720 window without scrolling: the labels of the click and choose rows now read "Break or place; LMB fires the pulse blaster" and "Choose a block, or 5 for the pulse blaster", on two lines each. (A line of its own made the card 25 px too tall.)
+
+### Screenshots
+
+Headless Chromium on software GL at 1280 by 720, Balanced, `freeze=1`, at the first night's dusk (the day picture and the HUD ones by day), taken with the page's `?debug` hooks (`__ashbound.mp.fire`, `fireAtMachine`, `spawnCrawlerAt`, `warp`). A bolt's light lives a fifth of a second and a software frame takes several seconds, so the page's animation clock was replaced for the pictures: each frame advances it by a sixtieth of a second, and the clock is stopped for the photograph, so every picture holds an effect at an exact age. The hit marker is held a little way into its flash for the same reason.
+
+![The blaster in six pictures](phase-4/blaster-states.jpg)
+
+| Image                                          | What to look at                                                                                                                                                                                                |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [blaster-bolt](phase-4/blaster-bolt.jpg)       | A shot seen from the side, three frames after the click: the flash at the muzzle on the left, the streak with its white core and a bright head, and the crawler on the right already lit white-hot by the hit. |
+| [blaster-strike](phase-4/blaster-strike.jpg)   | Two frames later the head has reached the machine: the flash on it, the tail still behind.                                                                                                                     |
+| [blaster-kill](phase-4/blaster-kill.jpg)       | The third shot: the burst where the machine stood, a bright core with sparks flung every way. It is a tenth of a second old, so the sparks are still close.                                                    |
+| [blaster-first](phase-4/blaster-first.jpg)     | First person, the frame after the click: the flash and four sparks at the lower right where the gun is held, and the bolt leaving along the line of sight to the ring of the sight.                            |
+| [blaster-third](phase-4/blaster-third.jpg)     | Third person, the same moment: the flash at the avatar's right hand.                                                                                                                                           |
+| [blaster-day](phase-4/blaster-day.jpg)         | The side view by day (Day 1, 8:00): a pale yellow line over the green of the grass, less punch than at dusk and still easy to follow.                                                                          |
+| [blaster-hud](phase-4/blaster-hud.jpg)         | Key 5 by day: slot 5 lit, the sight with its four ticks, and "Pulse Blaster, Uses 0.6 Energy a shot" above the hotbar.                                                                                         |
+| [blaster-hitmark](phase-4/blaster-hitmark.jpg) | The sight enlarged: the white ticks of a hit, and the larger amber ticks of the kill.                                                                                                                          |
+| [blaster-card](phase-4/blaster-card.jpg)       | The start card at 1280 by 720 with the two relabelled rows, and nothing cut off at the foot.                                                                                                                   |
+| [blaster-states](phase-4/blaster-states.jpg)   | Six of them together.                                                                                                                                                                                          |
+
+### Known gaps in the blaster's light
+
+- There is no gun in the hands or on the avatar. First person shows only the flash at the lower right, and third person the flash at the hand; there is no recoil, and the avatars do not raise an arm. A model, with its own flash and a reload, belongs with the other tools of Phase 5.
+- A shot lights nothing: the scene has no point lights, so the ground under a strike and the machine it hits do not brighten, and the glow is the bloom's alone (as with the Core's crystal). A fake, a patch of light that fades, is the likely answer if it is missed.
+- A bolt in first person is a short streak along the line of sight, not a long beam: it leaves a hand at the edge of the view and flies away from the camera, so most of it is foreshortened. That is how it looks to the shooter; to everyone else it crosses their view.
+- No sound (Phase 6) and no damage numbers.
+- Seen only in software-rendered pictures. How wide the bolt reads and how the bloom takes the flashes on a real display is for the first look on a real GPU.
