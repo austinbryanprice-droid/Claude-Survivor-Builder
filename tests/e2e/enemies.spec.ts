@@ -15,7 +15,7 @@ const wait = expect.configure({ timeout: STATE_TIMEOUT });
 /** `expect.poll` with the patience of a march: the machines only move as fast as the clock. */
 const poll = <T>(read: () => Promise<T>, timeout = STATE_TIMEOUT) => expect.poll(read, { timeout });
 /** Night 1, from its first second: nothing mends the Core, and the light is the one the machines come in. */
-const QUERY = '?debug&quality=low&freeze=1&stats=0&night=1';
+const QUERY = '?debug&quality=low&freeze=1&stats=0&night=1&waves=0';
 
 async function open(page: Page): Promise<string[]> {
   const problems: string[] = [];
