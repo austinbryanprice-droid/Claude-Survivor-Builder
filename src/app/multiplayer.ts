@@ -1,4 +1,5 @@
 import type { Object3D } from 'three';
+import { createEnemyRenderer } from '../engine/enemy-render';
 import type { MaterialRegistry } from '../engine/materials';
 import { createRemotePlayers } from '../engine/remote-players';
 import { HostSession } from '../net/host-session';
@@ -61,6 +62,17 @@ export interface MultiplayerDebug {
   };
   /** The avatars on screen right now. */
   remotes(): { id: number; name: string; slot: number; x: number; y: number; z: number }[];
+  /** The machines on screen right now, with Health as a fraction of the full bar. */
+  enemies(): { id: number; kind: number; x: number; y: number; z: number; health: number }[];
+  /**
+   * Sends this many crawlers in from the ring round the Core, and returns how many came (fewer when the
+   * field is full or the ring is walled off). Only a host (or single-player) can; others return 0.
+   */
+  spawnCrawlers(count: number): number;
+  /** Puts one crawler at a spot on open ground and returns its id, or null where there is no room. Only a host (or single-player) can. */
+  spawnCrawlerAt(x: number, z: number): number | null;
+  /** Removes every machine from the field. Only a host (or single-player) can. */
+  clearEnemies(): void;
   /** A fingerprint of every player-made block in the world being played. */
   blocks(): BlockDigest;
   block(x: number, y: number, z: number): CellState;
@@ -132,6 +144,8 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
   const sync = new PlayerSync(hub, options.player);
   const remotes = createRemotePlayers({ registry: options.registry });
   options.scene.add(remotes.object);
+  const enemies = createEnemyRenderer({ registry: options.registry });
+  options.scene.add(enemies.object);
 
   const panel = createRoomPanel({
     lobby,
@@ -207,6 +221,21 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       stats: { ...hub.stats },
     }),
     remotes: () => remotes.list(),
+    enemies: () => enemies.list(),
+    spawnCrawlers: (count) => {
+      const session = hub.current;
+      return session instanceof HostSession ? (session.survivalSim?.enemies?.spawn(count) ?? 0) : 0;
+    },
+    spawnCrawlerAt: (x, z) => {
+      const session = hub.current;
+      return session instanceof HostSession
+        ? (session.survivalSim?.enemies?.spawnAt(x, z) ?? null)
+        : null;
+    },
+    clearEnemies: () => {
+      const session = hub.current;
+      if (session instanceof HostSession) session.survivalSim?.enemies?.clear();
+    },
     blocks: () => digestBlocks(options.world.world()),
     block: (x, y, z) => options.world.world().getBlock(x, y, z),
     place: (x, y, z, state) => hub.sendCommand({ type: 'place', x, y, z, state }),
@@ -256,6 +285,7 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     update(dt) {
       sync.update(dt);
       remotes.update(dt, hub.sampleRemotes());
+      enemies.update(dt, hub.sampleEnemies());
     },
     dispose() {
       window.removeEventListener('pagehide', onPageHide);
@@ -269,6 +299,7 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       sync.dispose();
       options.scene.remove(remotes.object);
       remotes.dispose();
+      enemies.dispose();
       lobby.dispose();
     },
   };
