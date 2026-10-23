@@ -1,4 +1,10 @@
-import { Group, type InstancedBufferGeometry, type Mesh } from 'three';
+import {
+  DoubleSide,
+  Group,
+  type InstancedBufferGeometry,
+  type Mesh,
+  type ShaderMaterial,
+} from 'three';
 import { describe, expect, it } from 'vitest';
 import { FX_COLOR, createShotFx } from '../../src/engine/shot-fx';
 
@@ -39,13 +45,18 @@ describe('the bolts of the blaster', () => {
     expect(fx.live()).toEqual({ bolts: 0, sparks: 0 });
   });
 
+  it('are drawn on both faces, because the ribbon is turned to the camera in the shader and winds either way', () => {
+    const { bolts } = setup();
+    expect((bolts.material as ShaderMaterial).side).toBe(DoubleSide);
+  });
+
   it('fly from the gun to the mark and are gone once the streak has passed', () => {
     const { fx, boltCount } = setup();
     fx.bolt(ORIGIN, { x: 0, y: 0, z: -40 }, CYAN);
     fx.update(0.016);
     expect(fx.live().bolts).toBe(1);
     expect(boltCount()).toBe(1);
-    // 40 blocks and a streak of six, at 170 a second: a little over a quarter of a second.
+    // 40 blocks and a streak of eight, at 170 a second: a little over a quarter of a second.
     fx.update(0.2);
     expect(fx.live().bolts).toBe(1);
     fx.update(0.1);
@@ -99,6 +110,48 @@ describe('the bolts of the blaster', () => {
     fx.bolt(ORIGIN, { x: -5, y: 0, z: -10 }, CYAN);
     fx.update(0.016);
     expect(boltCount()).toBe(3);
+  });
+});
+
+describe('the landing of a bolt', () => {
+  it('is told to whoever asked: the head takes the length at the speed of the light', () => {
+    const { fx } = setup();
+    // The head flies the 34 blocks at 170 a second, whatever the length of the streak behind it.
+    expect(fx.bolt(ORIGIN, { x: 0, y: 0, z: -34 }, CYAN)).toBeCloseTo(34 / 170, 6);
+    // So near that the flight would be over in a couple of frames, it is slowed to last a tenth of a second.
+    const near = fx.bolt(ORIGIN, { x: 0, y: 0, z: -1 }, CYAN);
+    expect(near).toBeGreaterThan(1 / 170);
+    expect(near).toBeLessThan(0.1);
+    expect(fx.bolt(ORIGIN, ORIGIN, CYAN)).toBe(0);
+  });
+
+  it('holds the sparks and the burst back until it arrives', () => {
+    const { fx, spark, sparkCount } = setup();
+    const arrives = fx.bolt(ORIGIN, { x: 0, y: 0, z: -34 }, CYAN);
+    fx.impact({ x: 0, y: 0, z: -34 }, AWAY, CYAN, arrives);
+    fx.burst({ x: 0, y: 0, z: -34 }, arrives);
+    // Everything is written, and everything is counted as on its way, so that the draw keeps going.
+    expect(fx.live().sparks).toBe(11 + 32);
+    expect(spark('iLife')[0]).toBeCloseTo(arrives, 6);
+    expect(spark('iLife')[11 * 4]).toBeCloseTo(arrives, 6);
+    fx.update(arrives * 0.5);
+    expect(sparkCount()).toBe(43);
+    // The shader works out that a spark born in the future is not there yet: nothing else is needed.
+    fx.update(arrives * 0.5 + 0.01);
+    expect(fx.live().sparks).toBe(43);
+    fx.update(1.5);
+    expect(fx.live().sparks).toBe(0);
+    expect(sparkCount()).toBe(0);
+  });
+
+  it('is not held to a delay that makes no sense', () => {
+    const { fx, spark } = setup();
+    fx.impact(ORIGIN, AWAY, CYAN, -3);
+    expect(spark('iLife')[0]).toBe(0);
+    fx.impact(ORIGIN, AWAY, CYAN, Number.NaN);
+    expect(spark('iLife')[11 * 4]).toBe(0);
+    fx.burst(ORIGIN, Infinity);
+    expect(spark('iLife')[22 * 4]).toBe(0);
   });
 });
 

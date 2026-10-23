@@ -47,7 +47,11 @@ export interface ShotLogEntry {
 }
 
 export interface ShotEffects {
-  /** The local player fired from the camera at `origin` along the unit vector `dir`: draw the bolt now. */
+  /**
+   * The local player fired from the camera at `origin` along the unit vector `dir`: draw the bolt now.
+   * Call it before the shot goes to the session: a host hears its own shot before `fire` returns, and
+   * the burst of a kill waits for the bolt that this draws.
+   */
   predict(origin: Vec3, dir: Vec3): void;
   /** The host decided a shot, anyone's, the local player's included. */
   hear(shot: ShotEvent): void;
@@ -62,6 +66,9 @@ const REMEMBERED_SHOTS = 24;
 /** The way a bolt is taken to leave when nothing says: down, so that its sparks leap up. */
 const DOWN: Vec3 = { x: 0, y: -1, z: 0 };
 
+/** The longest the host's word on a kill waits for the bolt to land: more than any flight takes (the gun's range, at the speed of its light), so only a stale landing is cut short. */
+const LONGEST_WAIT = 0.5;
+
 export function createShotEffects({
   fx,
   session,
@@ -74,6 +81,10 @@ export function createShotEffects({
   const way: Vec3 = { x: 0, y: 0, z: 0 };
   const trace = createShotTrace();
   const shots: ShotLogEntry[] = [];
+  /** The light's own clock, in seconds, so that the host's word can wait for a bolt that is still on its way. */
+  let now = 0;
+  /** When the player's latest bolt lands, on that clock. */
+  let landing = 0;
 
   const aimAlong = (v: Vec3): void => {
     way.x = v.x;
@@ -99,9 +110,10 @@ export function createShotEffects({
     return false;
   };
 
-  /** Draws a bolt from the gun of `by` to `mark`, and what it did there. */
-  const fly = (by: PlayerId, flags: number, aim: Vec3 | null): void => {
+  /** Draws a bolt from the gun of `by` to `mark`, and what it does there once it lands. Returns the seconds it takes to. */
+  const fly = (by: PlayerId, flags: number, aim: Vec3 | null): number => {
     const color = colorOf(by);
+    let arrives = 0;
     if (takeGun(by)) {
       const length = Math.hypot(mark.x - gun.x, mark.y - gun.y, mark.z - gun.z);
       if (length > 0.01) {
@@ -112,12 +124,13 @@ export function createShotEffects({
         aimAlong(aim ?? DOWN);
       }
       fx.muzzle(gun, way, color);
-      fx.bolt(gun, mark, color);
+      arrives = fx.bolt(gun, mark, color);
     } else {
       aimAlong(aim ?? DOWN);
     }
-    if (flags & SHOT_FLAG.enemy) fx.impact(mark, way, FX_COLOR.hit);
-    else if (flags & SHOT_FLAG.world) fx.impact(mark, way, color);
+    if (flags & SHOT_FLAG.enemy) fx.impact(mark, way, FX_COLOR.hit, arrives);
+    else if (flags & SHOT_FLAG.world) fx.impact(mark, way, color, arrives);
+    return arrives;
   };
 
   const remember = (by: PlayerId, flags: number, predicted: boolean): void => {
@@ -142,7 +155,7 @@ export function createShotEffects({
       mark.x = origin.x + dir.x * trace.distance;
       mark.y = origin.y + dir.y * trace.distance;
       mark.z = origin.z + dir.z * trace.distance;
-      fly(session.localId, trace.flags, dir);
+      landing = now + fly(session.localId, trace.flags, dir);
       remember(session.localId, trace.flags, true);
     },
 
@@ -151,16 +164,19 @@ export function createShotEffects({
       mark.y = shot.y;
       mark.z = shot.z;
       if (shot.by === session.localId) {
-        // The click drew this bolt already. What the host adds is the end of a machine.
-        if (shot.flags & SHOT_FLAG.kill) fx.burst(mark);
+        // The click drew this bolt already. What the host adds is the end of a machine, which falls
+        // when the bolt that felled it lands: on a fast link the word can come back before that.
+        if (shot.flags & SHOT_FLAG.kill)
+          fx.burst(mark, Math.min(Math.max(0, landing - now), LONGEST_WAIT));
       } else {
-        fly(shot.by, shot.flags, null);
-        if (shot.flags & SHOT_FLAG.kill) fx.burst(mark);
+        const arrives = fly(shot.by, shot.flags, null);
+        if (shot.flags & SHOT_FLAG.kill) fx.burst(mark, arrives);
       }
       remember(shot.by, shot.flags, false);
     },
 
     update(dt) {
+      now += Math.max(0, dt);
       fx.update(dt);
     },
 

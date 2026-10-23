@@ -16,21 +16,36 @@ interface At {
   z: number;
 }
 
+/** How fast the stand-in's bolts fly, in blocks a second. */
+const FLIGHT_SPEED = 100;
+
+/** How long the stand-in's bolt takes to fly from where it began to where it ended. */
+function flightOf(bolt: { from: At; to: At }): number {
+  return (
+    Math.hypot(bolt.to.x - bolt.from.x, bolt.to.y - bolt.from.y, bolt.to.z - bolt.from.z) /
+    FLIGHT_SPEED
+  );
+}
+
 /** A stand-in for the light: it remembers what it was asked to draw. */
 function fakeFx() {
   const calls = {
     bolt: [] as { from: At; to: At; color: string }[],
     muzzle: [] as { at: At; dir: At; color: string }[],
-    impact: [] as { at: At; dir: At; color: string }[],
-    burst: [] as At[],
+    impact: [] as { at: At; dir: At; color: string; delay: number | undefined }[],
+    burst: [] as { at: At; delay: number | undefined }[],
     update: [] as number[],
   };
   const fx: ShotFx = {
     object: new Group(),
-    bolt: (from, to, color) => calls.bolt.push({ from: { ...from }, to: { ...to }, color }),
+    bolt: (from, to, color) => {
+      calls.bolt.push({ from: { ...from }, to: { ...to }, color });
+      return Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z) / FLIGHT_SPEED;
+    },
     muzzle: (at, dir, color) => calls.muzzle.push({ at: { ...at }, dir: { ...dir }, color }),
-    impact: (at, dir, color) => calls.impact.push({ at: { ...at }, dir: { ...dir }, color }),
-    burst: (at) => calls.burst.push({ ...at }),
+    impact: (at, dir, color, delay) =>
+      calls.impact.push({ at: { ...at }, dir: { ...dir }, color, delay }),
+    burst: (at, delay) => calls.burst.push({ at: { ...at }, delay }),
     update: (dt) => calls.update.push(dt),
     live: () => ({ bolts: calls.bolt.length, sparks: 0 }),
     dispose: () => undefined,
@@ -172,6 +187,10 @@ describe('the player’s own shot, drawn at the click', () => {
     expect(calls.impact).toHaveLength(1);
     expect(calls.impact[0]?.color).toBe(FX_COLOR.hit);
     expect(effects.debug().shots[0]?.flags).toBe(SHOT_FLAG.enemy);
+    // The sparks wait for the bolt to get there.
+    const flight = flightOf(bolt);
+    expect(calls.impact[0]?.delay).toBeCloseTo(flight, 6);
+    expect(flight).toBeGreaterThan(0.05);
     // The host has not spoken: nothing falls apart yet.
     expect(calls.burst).toHaveLength(0);
   });
@@ -214,8 +233,56 @@ describe('what the host adds to the player’s own shot', () => {
 
     effects.hear({ by: 1, x: 1, y: 11, z: -9, flags: SHOT_FLAG.enemy | SHOT_FLAG.kill, enemy: 5 });
     expect(calls.bolt).toHaveLength(0);
-    expect(calls.burst).toEqual([{ x: 1, y: 11, z: -9 }]);
+    expect(calls.burst.map((burst) => burst.at)).toEqual([{ x: 1, y: 11, z: -9 }]);
     expect(effects.debug().shots.map((shot) => shot.predicted)).toEqual([false, false]);
+  });
+
+  it('waits for the bolt that is still on its way before it falls apart', () => {
+    const { effects, calls } = setup({ enemies: [crawler(5, 0, -10)] });
+    effects.predict(EYE, towardMachine(10));
+    const flight = flightOf(calls.bolt[0] as (typeof calls.bolt)[number]);
+    // The host answers a frame later, with the bolt not yet there.
+    effects.update(0.02);
+    effects.hear({
+      by: 1,
+      x: 0,
+      y: 10.5,
+      z: -9.4,
+      flags: SHOT_FLAG.enemy | SHOT_FLAG.kill,
+      enemy: 5,
+    });
+    expect(calls.burst).toHaveLength(1);
+    expect(calls.burst[0]?.delay).toBeCloseTo(flight - 0.02, 6);
+  });
+
+  it('falls apart at once when the word comes after the bolt has landed', () => {
+    const { effects, calls } = setup({ enemies: [crawler(5, 0, -10)] });
+    effects.predict(EYE, towardMachine(10));
+    effects.update(0.3);
+    effects.hear({
+      by: 1,
+      x: 0,
+      y: 10.5,
+      z: -9.4,
+      flags: SHOT_FLAG.enemy | SHOT_FLAG.kill,
+      enemy: 5,
+    });
+    expect(calls.burst[0]?.delay).toBe(0);
+  });
+
+  it('does not make a stale landing hold a machine up', () => {
+    const { effects, calls } = setup();
+    // The only bolt on record is at the end of its range, 40 blocks off, and a long way back.
+    effects.predict(EYE, AHEAD);
+    effects.hear({
+      by: 1,
+      x: 0,
+      y: 10.5,
+      z: -9.4,
+      flags: SHOT_FLAG.enemy | SHOT_FLAG.kill,
+      enemy: 5,
+    });
+    expect(calls.burst[0]?.delay as number).toBeLessThanOrEqual(0.5);
   });
 });
 
@@ -236,6 +303,15 @@ describe('other players’ shots, drawn when the host reports them', () => {
     expect(effects.debug().shots[0]).toMatchObject({ by: 2, predicted: false });
   });
 
+  it('land when the bolt does: the sparks and the burst wait for its flight', () => {
+    const { effects, calls } = setup({ remotes: [SEEN] });
+    effects.hear({ by: 2, x: 4, y: 11, z: -22, flags: SHOT_FLAG.enemy | SHOT_FLAG.kill, enemy: 9 });
+    const bolt = calls.bolt[0] as (typeof calls.bolt)[number];
+    const flight = flightOf(bolt);
+    expect(calls.impact[0]?.delay).toBeCloseTo(flight, 6);
+    expect(calls.burst[0]?.delay).toBeCloseTo(flight, 6);
+  });
+
   it('throw amber sparks off a machine they hit and burst it when it falls', () => {
     const { effects, calls } = setup({ remotes: [SEEN] });
     effects.hear({ by: 2, x: 4, y: 11, z: -12, flags: SHOT_FLAG.enemy, enemy: 9 });
@@ -244,7 +320,7 @@ describe('other players’ shots, drawn when the host reports them', () => {
     expect(calls.burst).toHaveLength(0);
     effects.hear({ by: 2, x: 4, y: 11, z: -12, flags: SHOT_FLAG.enemy | SHOT_FLAG.kill, enemy: 9 });
     expect(calls.impact).toHaveLength(2);
-    expect(calls.burst).toEqual([{ x: 4, y: 11, z: -12 }]);
+    expect(calls.burst.map((burst) => burst.at)).toEqual([{ x: 4, y: 11, z: -12 }]);
   });
 
   it('throw sparks in the shooter’s color off a block or the ground', () => {
@@ -262,6 +338,9 @@ describe('other players’ shots, drawn when the host reports them', () => {
     expect(calls.muzzle).toHaveLength(0);
     expect(calls.impact).toHaveLength(1);
     expect(calls.burst).toHaveLength(1);
+    // With no bolt to wait for, they show at once.
+    expect(calls.impact[0]?.delay).toBe(0);
+    expect(calls.burst[0]?.delay).toBe(0);
   });
 
   it('use the first seat’s color for a shooter nobody knows', () => {

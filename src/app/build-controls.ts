@@ -103,8 +103,9 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
     },
     fire(origin, dir) {
       if (!session || session.phase !== 'open') return false;
-      session.fire(origin, dir);
+      // The bolt is drawn first: when this screen is the host's, its word on the shot is back before `fire` returns.
       for (const listener of fireListeners) listener(origin, dir);
+      session.fire(origin, dir);
       return true;
     },
     bodies() {

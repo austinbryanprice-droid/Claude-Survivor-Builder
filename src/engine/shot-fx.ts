@@ -2,12 +2,16 @@ import {
   AdditiveBlending,
   BufferAttribute,
   Color,
+  DoubleSide,
   DynamicDrawUsage,
+  FrontSide,
   Group,
   InstancedBufferAttribute,
   InstancedBufferGeometry,
   Mesh,
   ShaderMaterial,
+  Vector2,
+  type Side,
 } from 'three';
 import { createRng } from '../shared/hash';
 import type { Vec3 } from '../shared/look';
@@ -32,14 +36,23 @@ const SPARK_CAPACITY = 768;
 /** Blocks a second that the head of a bolt flies at. */
 const BOLT_SPEED = 170;
 /** How far behind the head the streak reaches, in blocks. */
-const BOLT_TRAIL = 6;
-/** Half the width of a bolt at the gun, in blocks; it swells with the distance so that a far bolt still shows. */
-const BOLT_WIDTH = 0.045;
+const BOLT_TRAIL = 8;
+/**
+ * Half the width of a bolt, in blocks for each block it is from the camera: the same few pixels
+ * across wherever it is, so that a far bolt still shows and one at the camera does not fill the screen.
+ */
+const BOLT_WIDTH = 0.0075;
+/** A bolt is no thinner than it would be this many blocks from the camera. */
+const BOLT_NEAREST = 2.5;
+/** A bolt fades in over this many blocks from the gun, so that it does not begin as a smear in front of the player. */
+const BOLT_FADE_IN = [0.3, 4] as const;
 /** A bolt stays on screen at least this long, however near its mark: the shortest shots would last two frames. */
 const BOLT_MIN_LIFE = 0.1;
 
 /** How fast a spark falls faster, in blocks a second every second. */
 const GRAVITY = 14;
+/** The largest a flash or spark is drawn, as a share of its distance from the camera: a few dozen pixels across. */
+const NEAREST_SIZE = 0.043;
 
 /** Seconds of quiet after which the clock starts over, so that it never grows large enough to blur the shaders' sums. */
 const CLOCK_RESET = 600;
@@ -104,8 +117,8 @@ const SPRAY = {
 
 /** The flash each effect opens with: how long it lasts and how large it swells, in blocks. */
 const FLASH = {
-  muzzle: { life: 0.08, size: 0.4 },
-  impact: { life: 0.14, size: 0.55 },
+  muzzle: { life: 0.08, size: 0.22 },
+  impact: { life: 0.14, size: 0.6 },
   burst: { life: 0.22, size: 1.6 },
   burstCore: { life: 0.12, size: 0.9 },
 } as const;
@@ -118,9 +131,12 @@ attribute vec3 iColor;
 
 uniform float uTime;
 
+uniform float uNearest;
+
 varying vec2 vUv;       // x: 0 at the tail, 1 at the head; y: -1 to 1 across
 varying vec3 vColor;
 varying float vFade;
+varying float vAlong;   // blocks from the gun
 
 void main() {
   vec3 span = iTo - iFrom;
@@ -131,15 +147,17 @@ void main() {
   float tail = clamp(flown - iBolt.z, 0.0, len);
   float alive = step(0.0, flown) * step(flown, len + iBolt.z);
 
-  vec3 center = iFrom + dir * mix(tail, head, position.x);
+  float along = mix(tail, head, position.x);
+  vec3 center = iFrom + dir * along;
   vec3 toCamera = cameraPosition - center;
   vec3 across = cross(dir, toCamera);
   float acrossLength = length(across);
   across = acrossLength > 0.0001 ? across / acrossLength : vec3(0.0, 1.0, 0.0);
-  float width = iBolt.w * (1.0 + length(toCamera) * 0.03) * mix(0.4, 1.0, position.x);
+  float width = iBolt.w * clamp(length(toCamera), uNearest, 80.0) * mix(0.4, 1.0, position.x);
   vec3 wp = center + across * position.y * width;
 
   vUv = position.xy;
+  vAlong = along;
   vColor = iColor;
   // The streak shortens as the tail catches up with the head, and dims as it does.
   vFade = 1.0 - 0.85 * clamp((flown - len) / iBolt.z, 0.0, 1.0);
@@ -149,18 +167,20 @@ void main() {
 
 const BOLT_FRAGMENT = /* glsl */ `
 uniform vec3 uCore;
+uniform vec2 uFadeIn;
 
 varying vec2 vUv;
 varying vec3 vColor;
 varying float vFade;
+varying float vAlong;
 
 void main() {
   float across = 1.0 - abs(vUv.y);
   float core = pow(across, 5.0);
   float halo = pow(across, 1.6);
-  // Brightest at the head, dying away along the streak.
-  float along = pow(vUv.x, 1.4);
-  vec3 light = vColor * halo * 2.4 + uCore * core * 5.0;
+  // Brightest at the head, dying away along the streak, and not there at all at the gun.
+  float along = pow(vUv.x, 1.1) * smoothstep(uFadeIn.x, uFadeIn.y, vAlong);
+  vec3 light = vColor * halo * 2.8 + uCore * core * 6.0;
   gl_FragColor = vec4(light * along * vFade, 1.0);
 }
 `;
@@ -173,6 +193,7 @@ attribute vec3 iColor;
 
 uniform float uTime;
 uniform float uGravity;
+uniform float uNearestSize;
 
 varying vec2 vCorner;
 varying vec3 vColor;
@@ -189,7 +210,9 @@ void main() {
   vec3 center = iOrigin.xyz + iVelocity * age;
   center.y -= 0.5 * pull * age * age;
   // A flash hangs in front of whatever it lit, so that the wall it struck does not cut it in half.
-  center += normalize(cameraPosition - center) * 0.15 * flash;
+  vec3 toCamera = cameraPosition - center;
+  float dist = length(toCamera);
+  center += toCamera / max(dist, 0.001) * 0.15 * flash;
 
   // A spark is a streak along the way it is going; a flash is a round star.
   vec3 velocity = iVelocity;
@@ -198,8 +221,11 @@ void main() {
   float speed = length(seen.xy);
   vec2 axis = speed > 0.001 ? seen.xy / speed : vec2(1.0, 0.0);
   float stretch = 1.0 + (1.0 - flash) * min(speed * 0.05, 3.0);
-  // Flashes swell quickly and then hold; sparks cool and shrink.
-  float size = iLife.z * mix(1.0 - 0.7 * t, 0.35 + 0.65 * sqrt(clamp(t * 4.0, 0.0, 1.0)), flash);
+  // Flashes swell quickly and then hold; sparks cool and shrink. Far ones are drawn larger, so that
+  // they still read, and none is larger on the screen than a few dozen pixels, so that one at the
+  // camera does not fill it.
+  float swell = mix(1.0 - 0.7 * t, 0.35 + 0.65 * sqrt(clamp(t * 4.0, 0.0, 1.0)), flash);
+  float size = min(iLife.z * swell * clamp(dist / 10.0, 1.0, 2.5), dist * uNearestSize);
 
   vec2 corner = position.xy;
   vec4 mv = viewMatrix * vec4(center, 1.0);
@@ -227,8 +253,8 @@ void main() {
   float soft = pow(1.0 - r, 2.0);
   float hot = pow(1.0 - r, 6.0);
   // A flash has four points of light, a spark has none.
-  float armX = pow(max(0.0, 1.0 - abs(vCorner.y) * 6.0), 2.0) * (1.0 - abs(vCorner.x));
-  float armY = pow(max(0.0, 1.0 - abs(vCorner.x) * 6.0), 2.0) * (1.0 - abs(vCorner.y));
+  float armX = pow(max(0.0, 1.0 - abs(vCorner.y) * 6.0), 2.0) * pow(1.0 - abs(vCorner.x), 2.0);
+  float armY = pow(max(0.0, 1.0 - abs(vCorner.x) * 6.0), 2.0) * pow(1.0 - abs(vCorner.y), 2.0);
   float star = (armX + armY) * vFlash;
   vec3 light = vColor * soft * 2.0 + uCore * (hot * 4.0 + star * 2.5);
   gl_FragColor = vec4(light * vFade, 1.0);
@@ -237,17 +263,21 @@ void main() {
 
 export interface ShotFx {
   readonly object: Group;
-  /** A bolt from `from` to `to`, in the color of whoever fired it. It flies from the one to the other and fades. */
-  bolt(from: Vec3, to: Vec3, color: string): void;
+  /**
+   * A bolt from `from` to `to`, in the color of whoever fired it. It flies from the one to the other
+   * and fades. Returns the seconds its head takes to arrive, which is the `delay` for what it does there
+   * (0 for a bolt that goes nowhere).
+   */
+  bolt(from: Vec3, to: Vec3, color: string): number;
   /** The flash at a muzzle at `at`, with a few sparks thrown along `dir`, the way the bolt leaves. */
   muzzle(at: Vec3, dir: Vec3, color: string): void;
-  /** A bolt landing at `at`, flying along `dir`: a flash and sparks thrown back the way it came. */
-  impact(at: Vec3, dir: Vec3, color: string): void;
-  /** A machine falling apart at `at`. */
-  burst(at: Vec3): void;
+  /** A bolt landing at `at`, flying along `dir`: a flash and sparks thrown back the way it came, `delay` seconds from now. */
+  impact(at: Vec3, dir: Vec3, color: string, delay?: number): void;
+  /** A machine falling apart at `at`, `delay` seconds from now. */
+  burst(at: Vec3, delay?: number): void;
   /** Lets `dt` seconds pass for the effects that are playing. */
   update(dt: number): void;
-  /** How many bolts and sparks (flashes included) are playing now, for tests and the debug hook. */
+  /** How many bolts and sparks (flashes included) are playing now or about to, for tests and the debug hook. */
   live(): { bolts: number; sparks: number };
   dispose(): void;
 }
@@ -333,21 +363,28 @@ export function createShotFx({ seed = 0x5107 }: ShotFxOptions = {}): ShotFx {
     sparkAttributes,
   );
 
-  const glowing = (vertexShader: string, fragmentShader: string): ShaderMaterial =>
+  const glowing = (vertexShader: string, fragmentShader: string, side: Side): ShaderMaterial =>
     new ShaderMaterial({
       vertexShader,
       fragmentShader,
+      side,
       uniforms: {
         uTime: clock,
         uGravity: { value: GRAVITY },
         uCore: { value: new Color(FX_COLOR.core) },
+        uNearest: { value: BOLT_NEAREST },
+        uFadeIn: { value: new Vector2(BOLT_FADE_IN[0], BOLT_FADE_IN[1]) },
+        uNearestSize: { value: NEAREST_SIZE },
       },
       blending: AdditiveBlending,
       transparent: true,
       depthWrite: false,
     });
-  const boltMaterial = glowing(BOLT_VERTEX, BOLT_FRAGMENT);
-  const sparkMaterial = glowing(SPARK_VERTEX, SPARK_FRAGMENT);
+  // A bolt's ribbon is turned to face the camera in the vertex shader, and which way round it then
+  // winds depends on which side of the bolt the camera is: both faces are drawn, or half the shots
+  // would be invisible. A spark is built in view space and always winds the one way.
+  const boltMaterial = glowing(BOLT_VERTEX, BOLT_FRAGMENT, DoubleSide);
+  const sparkMaterial = glowing(SPARK_VERTEX, SPARK_FRAGMENT, FrontSide);
 
   // The meshes are always in the scene, drawing nothing when nothing plays, so the first shot of a
   // session does not wait on the graphics driver to build their programs.
@@ -401,16 +438,18 @@ export function createShotFx({ seed = 0x5107 }: ShotFxOptions = {}): ShotFx {
     size: number,
     flash: boolean,
     color: Triple,
+    delay: number,
   ): void => {
     const i = nextSpark;
+    const born = time + delay;
     nextSpark = (nextSpark + 1) % SPARK_CAPACITY;
     sparksWritten = Math.min(SPARK_CAPACITY, sparksWritten + 1);
     sparkOrigin.set([at.x, at.y, at.z, flash ? 0 : 1], i * 4);
     sparkVelocity.set(velocity, i * 3);
-    sparkLife.set([time, life, size, flash ? 1 : 0], i * 4);
+    sparkLife.set([born, life, size, flash ? 1 : 0], i * 4);
     sparkColor.set(color, i * 3);
-    sparkEnd[i] = time + life;
-    sparksUntil = Math.max(sparksUntil, time + life);
+    sparkEnd[i] = born + life;
+    sparksUntil = Math.max(sparksUntil, born + life);
     sparksChanged = true;
   };
 
@@ -420,7 +459,13 @@ export function createShotFx({ seed = 0x5107 }: ShotFxOptions = {}): ShotFx {
     least + random() * (most - least);
 
   /** Throws `look.count` sparks from `at`, mostly the way `along` points, taking the colors in turn. */
-  const spray = (at: Vec3, along: Triple, look: Spray, colors: readonly Triple[]): void => {
+  const spray = (
+    at: Vec3,
+    along: Triple,
+    look: Spray,
+    colors: readonly Triple[],
+    delay: number,
+  ): void => {
     for (let n = 0; n < look.count; n++) {
       sphere(scatter);
       unit(
@@ -437,19 +482,23 @@ export function createShotFx({ seed = 0x5107 }: ShotFxOptions = {}): ShotFx {
         between(look.size),
         false,
         colors[n % colors.length] as Triple,
+        delay,
       );
     }
   };
 
   const still: Triple = [0, 0, 0];
   const white = rgb(FX_COLOR.core);
+  /** A delay that can be trusted: a frame's worth of nonsense never schedules light for the far future. */
+  const wait = (delay: number | undefined): number =>
+    delay !== undefined && Number.isFinite(delay) ? Math.max(0, delay) : 0;
 
   return {
     object,
 
     bolt(from, to, color) {
       const length = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
-      if (!Number.isFinite(length) || length <= 0.01) return;
+      if (!Number.isFinite(length) || length <= 0.01) return 0;
       const travel = length + BOLT_TRAIL;
       const life = Math.max(BOLT_MIN_LIFE, travel / BOLT_SPEED);
       const i = nextBolt;
@@ -462,26 +511,30 @@ export function createShotFx({ seed = 0x5107 }: ShotFxOptions = {}): ShotFx {
       boltEnd[i] = time + life;
       boltsUntil = Math.max(boltsUntil, time + life);
       boltsChanged = true;
+      // The head is `length` along when `length / (blocks a second)` has passed.
+      return (length * life) / travel;
     },
 
     muzzle(at, dir, color) {
       const c = rgb(color);
-      spark(at, still, FLASH.muzzle.life, FLASH.muzzle.size, true, c);
-      spray(at, [dir.x, dir.y, dir.z], SPRAY.muzzle, [c]);
+      spark(at, still, FLASH.muzzle.life, FLASH.muzzle.size, true, c, 0);
+      spray(at, [dir.x, dir.y, dir.z], SPRAY.muzzle, [c], 0);
     },
 
-    impact(at, dir, color) {
+    impact(at, dir, color, delay) {
       const c = rgb(color);
-      spark(at, still, FLASH.impact.life, FLASH.impact.size, true, c);
-      spray(at, [-dir.x, -dir.y, -dir.z], SPRAY.impact, [c, c, white]);
+      const later = wait(delay);
+      spark(at, still, FLASH.impact.life, FLASH.impact.size, true, c, later);
+      spray(at, [-dir.x, -dir.y, -dir.z], SPRAY.impact, [c, c, white], later);
     },
 
-    burst(at) {
+    burst(at, delay) {
       const orange = rgb(FX_COLOR.burst);
       const amber = rgb(FX_COLOR.hit);
-      spark(at, still, FLASH.burst.life, FLASH.burst.size, true, orange);
-      spark(at, still, FLASH.burstCore.life, FLASH.burstCore.size, true, white);
-      spray(at, still, SPRAY.burst, [orange, amber, orange]);
+      const later = wait(delay);
+      spark(at, still, FLASH.burst.life, FLASH.burst.size, true, orange, later);
+      spark(at, still, FLASH.burstCore.life, FLASH.burstCore.size, true, white, later);
+      spray(at, still, SPRAY.burst, [orange, amber, orange], later);
     },
 
     update(dt) {
