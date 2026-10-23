@@ -2,6 +2,7 @@ import type { Object3D } from 'three';
 import { createEnemyRenderer } from '../engine/enemy-render';
 import type { MaterialRegistry } from '../engine/materials';
 import { createRemotePlayers } from '../engine/remote-players';
+import { createShotFx } from '../engine/shot-fx';
 import { HostSession } from '../net/host-session';
 import { Lobby, type LobbyGame, type LobbyState } from '../net/lobby';
 import { PeerTransport } from '../net/peer-transport';
@@ -10,6 +11,9 @@ import { systemScheduler } from '../net/scheduler';
 import type { NetStats, Rejection, SessionPhase, SessionRole } from '../net/session';
 import { digestBlocks, type BlockDigest } from '../shared/block-digest';
 import type { CellState } from '../shared/block-world';
+import type { EnemyPose } from '../shared/enemy-state';
+import { lookDirection, type Vec3 } from '../shared/look';
+import { PLAYER } from '../shared/movement';
 import {
   buildInviteLink,
   describeNetwork,
@@ -17,11 +21,14 @@ import {
   type NetFlags,
 } from '../shared/net-flags';
 import { createPlayerSample, type PlayerId, type PlayerSample } from '../shared/protocol';
+import type { RayWorld } from '../shared/raycast';
 import { createReading, type SurvivalReading } from '../shared/survival-state';
 import { createVitalsReading, type VitalsReading } from '../shared/vitals-state';
+import { hitboxOf } from '../systems/survival/balance';
 import { createRoomPanel } from '../ui/room-panel';
 import { browserStore } from './browser-storage';
 import { PlayerSync, type LocalPlayer } from './player-sync';
+import { createShotEffects, type ShotLogEntry } from './shot-effects';
 
 /**
  * Multiplayer for the game page. It joins the pieces: the lobby (host, join, leave), the player's
@@ -39,6 +46,8 @@ export interface MultiplayerOptions {
   world: LobbyGame;
   /** Height of the ground at a point, for the debug hook's "build next to me". */
   groundAt(x: number, z: number): number;
+  /** What stops a bolt of the pulse blaster in the world being played now (its blocks, ground and Core), or null where there is none. */
+  rayWorld(): RayWorld | null;
   /** The scene node the other players' avatars are added to, and the materials they are lit with. */
   scene: Object3D;
   registry: MaterialRegistry;
@@ -64,6 +73,20 @@ export interface MultiplayerDebug {
   remotes(): { id: number; name: string; slot: number; x: number; y: number; z: number }[];
   /** The machines on screen right now, with Health as a fraction of the full bar. */
   enemies(): { id: number; kind: number; x: number; y: number; z: number; health: number }[];
+  /** The latest shots of the pulse blaster drawn on this screen, anyone's, newest last, and the light playing now. */
+  shots(): { shots: ShotLogEntry[]; live: { bolts: number; sparks: number } };
+  /**
+   * Fires the pulse blaster from the player's eyes along their view, as a click does, and draws the
+   * bolt at once. The host's rules still apply (Energy, the rate of fire). The tests use it where a
+   * click would need the mouse captured, and so would start the run.
+   */
+  fire(): void;
+  /**
+   * Fires the pulse blaster at the middle of the machine nearest the player, as this screen has it
+   * (the guest's own mirror, the way a player aims at what they see), and returns that machine's id.
+   * Returns null, and fires nothing, while there is no machine to aim at.
+   */
+  fireAtMachine(): number | null;
   /**
    * Sends this many crawlers in from the ring round the Core, and returns how many came (fewer when the
    * field is full or the ring is walled off). Only a host (or single-player) can; others return 0.
@@ -114,6 +137,8 @@ export interface MultiplayerDebug {
 export interface Multiplayer {
   readonly lobby: Lobby;
   readonly debug: MultiplayerDebug;
+  /** The local player fired from the camera at `origin` along the unit vector `dir`: draws the bolt now, without waiting for the host. */
+  predictShot(origin: Vec3, dir: Vec3): void;
   /** Call once per rendered frame. `dt` is the frame time in seconds. */
   update(dt: number): void;
   dispose(): void;
@@ -146,6 +171,15 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
   options.scene.add(remotes.object);
   const enemies = createEnemyRenderer({ registry: options.registry });
   options.scene.add(enemies.object);
+  const shotFx = createShotFx();
+  options.scene.add(shotFx.object);
+  const shots = createShotEffects({
+    fx: shotFx,
+    session: hub,
+    rayWorld: options.rayWorld,
+    player: options.player,
+  });
+  const stopShots = hub.onShot((shot) => shots.hear(shot));
 
   const panel = createRoomPanel({
     lobby,
@@ -222,6 +256,39 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     }),
     remotes: () => remotes.list(),
     enemies: () => enemies.list(),
+    shots: () => shots.debug(),
+    fire: () => {
+      if (hub.phase !== 'open') return;
+      const me = here();
+      const origin = { x: me.x, y: me.y + PLAYER.eyeHeight, z: me.z };
+      const dir = lookDirection(me.yaw, me.pitch, { x: 0, y: 0, z: 0 });
+      shots.predict(origin, dir);
+      hub.fire(origin, dir);
+    },
+    fireAtMachine: () => {
+      if (hub.phase !== 'open') return null;
+      const me = here();
+      const origin = { x: me.x, y: me.y + PLAYER.eyeHeight, z: me.z };
+      let nearest: EnemyPose | null = null;
+      let least = Infinity;
+      for (const machine of hub.sampleEnemies()) {
+        const away = Math.hypot(machine.x - origin.x, machine.z - origin.z);
+        if (away < least) {
+          least = away;
+          nearest = machine;
+        }
+      }
+      if (!nearest) return null;
+      const middle = nearest.y + (hitboxOf(nearest.kind)?.height ?? 1) / 2;
+      const dx = nearest.x - origin.x;
+      const dy = middle - origin.y;
+      const dz = nearest.z - origin.z;
+      const length = Math.hypot(dx, dy, dz) || 1;
+      const dir = { x: dx / length, y: dy / length, z: dz / length };
+      shots.predict(origin, dir);
+      hub.fire(origin, dir);
+      return nearest.id;
+    },
     spawnCrawlers: (count) => {
       const session = hub.current;
       return session instanceof HostSession ? (session.survivalSim?.enemies?.spawn(count) ?? 0) : 0;
@@ -282,10 +349,12 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
   return {
     lobby,
     debug,
+    predictShot: (origin, dir) => shots.predict(origin, dir),
     update(dt) {
       sync.update(dt);
       remotes.update(dt, hub.sampleRemotes());
       enemies.update(dt, hub.sampleEnemies());
+      shots.update(dt);
     },
     dispose() {
       window.removeEventListener('pagehide', onPageHide);
@@ -295,11 +364,13 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       stopPresence();
       stopRejected();
       stopEvents();
+      stopShots();
       panel.dispose();
       sync.dispose();
       options.scene.remove(remotes.object);
       remotes.dispose();
       enemies.dispose();
+      shotFx.dispose();
       lobby.dispose();
     },
   };

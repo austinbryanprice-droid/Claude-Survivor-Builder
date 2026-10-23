@@ -723,6 +723,137 @@ test.describe('multiplayer', () => {
     }
   });
 
+  test("a guest's shots hurt the host's crawler: both screens draw them, the Energy is the guest's, and the kill reaches everyone", async ({
+    browser,
+    baseURL,
+  }) => {
+    const host = await openPlayer(browser, baseURL, 'Host');
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and a machine is only listed when one is drawn.
+    const slow = { timeout: 60_000 };
+    const machinesOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.enemies());
+    const shotsOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.shots().shots);
+    const energyOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.vitals().energy);
+    const handsOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.build!.hands());
+    const fireAtIt = () => ada.page.evaluate(() => window.__ashbound!.mp!.fireAtMachine());
+    const felled = async (p: Player) =>
+      (await shotsOf(p)).filter((shot) => (shot.flags & 2) !== 0).length;
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) {
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+      }
+      const adaId = (await session(ada)).localId;
+
+      // One crawler comes out of the ground beside Ada, on the side away from the host.
+      const adaAt = await ada.page.evaluate(() => window.__ashbound!.mp!.position());
+      const hostAt = await host.page.evaluate(() => window.__ashbound!.mp!.position());
+      const away = Math.hypot(adaAt.x - hostAt.x, adaAt.z - hostAt.z) || 1;
+      const ux = (adaAt.x - hostAt.x) / away;
+      const uz = (adaAt.z - hostAt.z) / away;
+      const crawler = await host.page.evaluate(
+        ([x, z, ux, uz]) => {
+          const mp = window.__ashbound!.mp!;
+          // The first spot on open ground (the lake is not): along the line away from the host, then to the sides.
+          for (const [along, across] of [
+            [6, 0],
+            [7, 2],
+            [7, -2],
+            [5, 3],
+            [5, -3],
+            [8, 0],
+          ]) {
+            const id = mp.spawnCrawlerAt(
+              x! + ux! * along! - uz! * across!,
+              z! + uz! * along! + ux! * across!,
+            );
+            if (id !== null) return id;
+          }
+          return null;
+        },
+        [adaAt.x, adaAt.z, ux, uz] as const,
+      );
+      expect(crawler).not.toBeNull();
+
+      // Both batteries are set to the same point between two whole numbers (Energy reads in whole
+      // points, rounded up, and a shot is under one). They then drift down together with the idle
+      // drain, so what counts is the difference.
+      const hostId = (await session(host)).localId;
+      await host.page.evaluate(
+        ([ids]) => {
+          const mp = window.__ashbound!.mp!;
+          for (const id of ids!) mp.setVitals({ energy: 50.5 }, id);
+        },
+        [[hostId, adaId]] as const,
+      );
+      await expect
+        .poll(() => energyOf(ada), { ...slow, message: 'Ada hears her battery' })
+        .toBeLessThanOrEqual(51);
+      const hostBefore = await energyOf(host);
+      const adaBefore = await energyOf(ada);
+
+      // The first shot goes the moment her screen has the machine to aim at.
+      await expect
+        .poll(fireAtIt, { ...slow, message: 'Ada has the crawler in her sights' })
+        .toBe(crawler);
+      // The second, with the bank of two; the third once the host's bucket has filled a little.
+      expect(await fireAtIt()).toBe(crawler);
+      await ada.page.waitForTimeout(600);
+      expect(await fireAtIt()).toBe(crawler);
+
+      // Her click drew each bolt at once; the host's word on it comes back as an echo. The host's
+      // screen draws all three from Ada's gun, as they landed.
+      await expect
+        .poll(async () => (await shotsOf(host)).filter((s) => s.by === adaId).length, {
+          ...slow,
+          message: "the host sees Ada's three shots",
+        })
+        .toBe(3);
+      await expect
+        .poll(async () => (await shotsOf(ada)).length, { ...slow, message: 'Ada logs six' })
+        .toBe(6);
+      expect((await shotsOf(ada)).filter((s) => s.predicted)).toHaveLength(3);
+      for (const p of everyone) {
+        // Every one of them struck the machine (flag 1), and one of them felled it (flag 2).
+        for (const shot of await shotsOf(p)) expect(shot.flags & 1, `${p.name}: a hit`).toBe(1);
+        await expect
+          .poll(() => felled(p), { ...slow, message: `${p.name} sees it fall once` })
+          .toBe(1);
+        await expect
+          .poll(async () => (await machinesOf(p)).length, {
+            ...slow,
+            message: `${p.name} sees it gone`,
+          })
+          .toBe(0);
+      }
+
+      // The marker is Ada's alone, and the hot one: it was her shot that felled it.
+      await expect
+        .poll(() => handsOf(ada), { ...slow, message: 'Ada sees her hits' })
+        .toMatchObject({ hits: 3, kill: true });
+      expect(await handsOf(host)).toMatchObject({ hits: 0, kill: false });
+      await expect(ada.page.locator('.ph-hitmark')).toHaveAttribute('data-kill', '', slow);
+      await expect(host.page.locator('.ph-hitmark')).not.toHaveAttribute('data-hit', /.*/);
+
+      // Three shots cost three shots of Ada's Energy and none of the host's: 1.8 points, which the
+      // whole-point readings show as one or two more than the host's.
+      const paidMoreThanHost = async () =>
+        adaBefore - (await energyOf(ada)) - (hostBefore - (await energyOf(host)));
+      await expect
+        .poll(paidMoreThanHost, { ...slow, message: 'Ada pays for her shots' })
+        .toBeGreaterThanOrEqual(1);
+      expect(await paidMoreThanHost()).toBeLessThanOrEqual(3);
+      expect(await ada.page.evaluate(() => window.__ashbound!.mp!.rejections())).toEqual([]);
+      expect(await host.page.evaluate(() => window.__ashbound!.mp!.rejections())).toEqual([]);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
   test('closing the host shows everyone the message, and they can carry on alone', async ({
     browser,
     baseURL,

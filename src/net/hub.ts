@@ -1,4 +1,5 @@
 import type { EnemyPose } from '../shared/enemy-state';
+import type { Vec3 } from '../shared/look';
 import type {
   BlockCommand,
   CloseInfo,
@@ -7,6 +8,7 @@ import type {
   RemotePose,
   WorldEvent,
 } from '../shared/protocol';
+import type { ShotEvent } from '../shared/shot';
 import type { SurvivalEvent, SurvivalReading, SurvivalView } from '../shared/survival-state';
 import type { VitalsReading, VitalsView } from '../shared/vitals-state';
 import { Emitter } from './emitter';
@@ -35,6 +37,7 @@ export class SessionHub implements GameSession {
 
   private readonly events = new Emitter<WorldEvent>();
   private readonly rejections = new Emitter<Rejection>();
+  private readonly shots = new Emitter<ShotEvent>();
   private readonly playerChanges = new Emitter<void>();
   private readonly phases = new Emitter<SessionPhase>();
   private readonly corrections = new Emitter<Correction>();
@@ -84,6 +87,7 @@ export class SessionHub implements GameSession {
     this.unbind = [
       session.onEvent((event) => this.events.emit(event)),
       session.onRejected((rejection) => this.rejections.emit(rejection)),
+      session.onShot((shot) => this.shots.emit(shot)),
       session.onPlayers(() => this.playerChanges.emit()),
       session.onPhase((phase) => this.phases.emit(phase)),
       session.onCorrection((correction) => this.corrections.emit(correction)),
@@ -126,6 +130,9 @@ export class SessionHub implements GameSession {
   sendCommand(command: BlockCommand): void {
     this.session.sendCommand(command);
   }
+  fire(origin: Vec3, dir: Vec3): void {
+    this.session.fire(origin, dir);
+  }
   setLocalActive(active: boolean): void {
     this.localActive = active;
     this.session.setLocalActive(active);
@@ -148,6 +155,9 @@ export class SessionHub implements GameSession {
   }
   onRejected(listener: (rejection: Rejection) => void): Unsubscribe {
     return this.rejections.on(listener);
+  }
+  onShot(listener: (shot: ShotEvent) => void): Unsubscribe {
+    return this.shots.on(listener);
   }
   onPlayers(listener: () => void): Unsubscribe {
     return this.playerChanges.on(listener);

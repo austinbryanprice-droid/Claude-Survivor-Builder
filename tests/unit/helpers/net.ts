@@ -8,7 +8,7 @@ import {
 } from '../../../src/shared/protocol';
 import { decodeHostFrame, encodeFrame } from '../../../src/shared/wire';
 import { GuestSession } from '../../../src/net/guest-session';
-import { HostSession } from '../../../src/net/host-session';
+import { HostSession, type HostSessionOptions } from '../../../src/net/host-session';
 import { LoopbackNetwork, type LoopbackOptions } from '../../../src/net/loopback';
 import { ManualScheduler } from '../../../src/net/scheduler';
 import { fixedWorld, type WorldBinding } from '../../../src/net/session';
@@ -118,6 +118,8 @@ export interface RoomOptions extends Partial<Omit<LoopbackOptions, 'scheduler'>>
   survival?: boolean | SurvivalOptions;
   /** The world the host plays in, for a test whose simulation has to see the same blocks. */
   hostWorld?: TestWorld;
+  /** Where a player in each slot starts, for a test whose players have to stand on the ground it uses. */
+  spawnFor?: HostSessionOptions['spawnFor'];
 }
 
 /** A host and a loopback network on virtual time. */
@@ -134,6 +136,7 @@ export function makeRoom(options: RoomOptions = {}) {
     world: fixedWorld(hostWorld),
     name: 'Host',
     token: token(0),
+    spawnFor: options.spawnFor,
     survival: options.survival
       ? new SurvivalSim(options.survival === true ? {} : options.survival)
       : undefined,

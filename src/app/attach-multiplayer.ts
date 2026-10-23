@@ -2,6 +2,7 @@ import type { Game } from '../engine/game';
 import type { BlockWorld } from '../shared/block-world';
 import type { NetFlags } from '../shared/net-flags';
 import type { PlayerSample } from '../shared/protocol';
+import type { RayWorld } from '../shared/raycast';
 import { createReading, nightStart } from '../shared/survival-state';
 import type { NavWorld } from '../systems/survival/nav';
 import { SurvivalSim } from '../systems/survival/sim';
@@ -24,6 +25,8 @@ export interface AttachOptions {
   outpost(): Outpost | null;
   /** The ground the machines walk in the world being played now, or null where there is none. */
   navigation(): NavWorld | null;
+  /** What stops a bolt of the pulse blaster in the world being played now (its blocks, its ground and the Core), or null where there is none. */
+  rayWorld(): RayWorld | null;
   flags: NetFlags;
   buildId: string;
   /** Begin the run at the start of this night (the `?night=` switch), or at the first morning when null. */
@@ -44,6 +47,7 @@ export function attachMultiplayer({
   voxels,
   outpost,
   navigation,
+  rayWorld,
   flags,
   buildId,
   night,
@@ -88,10 +92,12 @@ export function attachMultiplayer({
           startAt: night === null ? 0 : nightStart(night),
           core: outpost(),
           nav: navigation(),
+          ray: rayWorld(),
           seed: game.world.seed,
         }),
     },
     groundAt: (x, z) => game.world.groundAt(x, z),
+    rayWorld,
     scene: game.stage.world,
     registry: game.stage.registry,
     input: game.input,

@@ -2,6 +2,7 @@ import type { BlockWorld } from '../shared/block-world';
 import { ClockSync } from '../shared/clock-sync';
 import { createEnemyState, type EnemyPose, type EnemyState } from '../shared/enemy-state';
 import { RemoteTrack, createPoseOut } from '../shared/interpolation';
+import type { Vec3 } from '../shared/look';
 import { MoveGuard } from '../shared/move-guard';
 import { PLAYER } from '../shared/movement';
 import { cleanName, defaultName } from '../shared/names';
@@ -23,6 +24,7 @@ import {
   type RemotePose,
   type WorldEvent,
 } from '../shared/protocol';
+import type { ShotEvent } from '../shared/shot';
 import type { SurvivalEvent, SurvivalReading, SurvivalView } from '../shared/survival-state';
 import { createVitalsReading, type VitalsReading, type VitalsView } from '../shared/vitals-state';
 import {
@@ -32,11 +34,12 @@ import {
   encodeEnemies,
   encodeFrame,
   encodeRelay,
+  roundTo,
   seqNewer,
   type RelayEntry,
 } from '../shared/wire';
 import type { NavCell } from '../systems/survival/nav';
-import type { SurvivalSim } from '../systems/survival/sim';
+import { createShotOutcome, type SurvivalSim } from '../systems/survival/sim';
 import { Emitter } from './emitter';
 import { EnemyMirror } from './enemy-mirror';
 import type { Scheduler } from './scheduler';
@@ -164,6 +167,10 @@ const IDLE_VITALS: VitalsView = {
 const GOODBYE_GRACE_MS = 400;
 /** A returning guest whose old link has been quiet this long takes its old seat back. */
 const TAKEOVER_SILENCE_MS = 3000;
+/** A shot aimed along a vector shorter than this has no direction to speak of. */
+const MIN_AIM_LENGTH = 0.5;
+/** Where a shot ends is told to this fine a grid: a hundredth of a block, which no screen can show. */
+const SHOT_GRID = 100;
 
 /**
  * The authority. It runs single-player (no room open), and opens a room on request. It owns the
@@ -211,6 +218,12 @@ export class HostSession implements GameSession {
   private enemiesSent = 0;
   /** The blocks the machines chewed through, between the simulation and the world. */
   private readonly gnawed: NavCell[] = [];
+  /** Scratch space for deciding a shot: what a guest's frame said, the line it flies along and how it ended. */
+  private readonly shotFrom: Vec3 = { x: 0, y: 0, z: 0 };
+  private readonly shotToward: Vec3 = { x: 0, y: 0, z: 0 };
+  private readonly muzzle: Vec3 = { x: 0, y: 0, z: 0 };
+  private readonly aim: Vec3 = { x: 0, y: 0, z: 0 };
+  private readonly outcome = createShotOutcome();
 
   private endpoint: HostEndpoint | null = null;
   private brokerOnline = true;
@@ -221,6 +234,7 @@ export class HostSession implements GameSession {
 
   private readonly events = new Emitter<WorldEvent>();
   private readonly rejections = new Emitter<Rejection>();
+  private readonly shots = new Emitter<ShotEvent>();
   private readonly playerChanges = new Emitter<void>();
   private readonly phases = new Emitter<SessionPhase>();
   private readonly corrections = new Emitter<Correction>();
@@ -315,6 +329,13 @@ export class HostSession implements GameSession {
     this.runCommand(this.members.get(HOST_PLAYER_ID) as Member, null, command);
   }
 
+  /** The host's own shots are judged against the machines as its own screen drew them, `NET.enemyHostDelayMs` behind its newest step. */
+  fire(origin: Vec3, dir: Vec3): void {
+    if (this.phaseValue !== 'open') return;
+    const host = this.members.get(HOST_PLAYER_ID) as Member;
+    this.runShot(host, origin, dir, this.scheduler.now() - NET.enemyHostDelayMs);
+  }
+
   setLocalActive(active: boolean): void {
     this.localActive = active;
   }
@@ -324,6 +345,9 @@ export class HostSession implements GameSession {
   }
   onRejected(listener: (rejection: Rejection) => void): Unsubscribe {
     return this.rejections.on(listener);
+  }
+  onShot(listener: (shot: ShotEvent) => void): Unsubscribe {
+    return this.shots.on(listener);
   }
   onPlayers(listener: () => void): Unsubscribe {
     return this.playerChanges.on(listener);
@@ -503,6 +527,15 @@ export class HostSession implements GameSession {
     switch (frame.t) {
       case 'cmd':
         this.runCommand(member, frame.id, frame.c);
+        break;
+      case 'fire':
+        this.shotFrom.x = frame.o[0];
+        this.shotFrom.y = frame.o[1];
+        this.shotFrom.z = frame.o[2];
+        this.shotToward.x = frame.d[0];
+        this.shotToward.y = frame.d[1];
+        this.shotToward.z = frame.d[2];
+        this.runShot(member, this.shotFrom, this.shotToward, frame.at);
         break;
       case 'ping':
         member.rtt = frame.rtt > 0 ? frame.rtt : member.rtt;
@@ -763,6 +796,76 @@ export class HostSession implements GameSession {
       return null;
     }
     return world.checkBreak(command.x, command.y, command.z);
+  }
+
+  // --------------------------------------------------------------------------------------------
+  // Shots.
+  // --------------------------------------------------------------------------------------------
+
+  /**
+   * Decides one shot of the pulse blaster and tells everyone what became of it. The bolt is judged
+   * against the machines as the shooter's screen drew them, `at` on this clock but no further back
+   * than `NET.maxRewindMs`, so a shot that looked true is true; the blow lands on the machine as it
+   * is now. Ignored: a shot with no direction, a guest's before the host has heard where it stands,
+   * and one the shooter's blaster is not ready for.
+   */
+  private runShot(member: Member, origin: Vec3, dir: Vec3, at: number): void {
+    const sim = this.sim;
+    if (!sim) return;
+    const length = Math.hypot(dir.x, dir.y, dir.z);
+    if (!(length >= MIN_AIM_LENGTH) || !Number.isFinite(length + origin.x + origin.y + origin.z)) {
+      return;
+    }
+    const aim = this.aim;
+    aim.x = dir.x / length;
+    aim.y = dir.y / length;
+    aim.z = dir.z / length;
+
+    const muzzle = this.muzzle;
+    muzzle.x = origin.x;
+    muzzle.y = origin.y;
+    muzzle.z = origin.z;
+    if (member.link) {
+      // A guest says where its camera is. The host trusts that only near where the guest stands,
+      // by the host's idea of it: a claim from farther away starts the bolt from the guest's eyes.
+      const sample = member.sample;
+      if (!sample) return;
+      const eyeY = sample.y + PLAYER.eyeHeight;
+      const dx = origin.x - sample.x;
+      const dy = origin.y - eyeY;
+      const dz = origin.z - sample.z;
+      if (dx * dx + dy * dy + dz * dz > NET.shotOriginSlack * NET.shotOriginSlack) {
+        muzzle.x = sample.x;
+        muzzle.y = eyeY;
+        muzzle.z = sample.z;
+      }
+    }
+
+    const now = this.scheduler.now();
+    const bodies = this.enemyMirror.sample(Math.min(now, Math.max(now - NET.maxRewindMs, at)));
+    const out = this.outcome;
+    if (!sim.fire(member.id, muzzle, aim, bodies, bodies.length, out)) return;
+
+    const shot: ShotEvent = {
+      by: member.id,
+      x: roundTo(out.x, SHOT_GRID),
+      y: roundTo(out.y, SHOT_GRID),
+      z: roundTo(out.z, SHOT_GRID),
+      flags: out.flags,
+      enemy: out.enemy,
+    };
+    if (this.hasGuests()) {
+      this.broadcast(
+        encodeFrame({
+          t: 'sh',
+          p: shot.by,
+          e: [shot.x, shot.y, shot.z],
+          f: shot.flags,
+          h: shot.enemy,
+        }),
+      );
+    }
+    this.shots.emit(shot);
   }
 
   // --------------------------------------------------------------------------------------------

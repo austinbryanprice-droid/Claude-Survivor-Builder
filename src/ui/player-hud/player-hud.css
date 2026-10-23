@@ -969,6 +969,138 @@
   background: rgb(255 130 108 / 95%);
 }
 
+/* The blaster's sight: a thin ring with a tick at each quarter, which reads as a weapon and not as the build cursor. */
+
+.ph-crosshair[data-state='blaster'] {
+  background: rgb(255 255 255 / 92%);
+}
+
+.ph-crosshair[data-state='blaster']::before {
+  inset: calc(var(--u) * -8px);
+  border-color: rgb(255 255 255 / 62%);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 30%);
+}
+
+.ph-crosshair[data-state='blaster']::after {
+  content: '';
+  position: absolute;
+  inset: calc(var(--u) * -17px);
+  background:
+    linear-gradient(rgb(255 255 255 / 85%), rgb(255 255 255 / 85%)) 50% 0 / calc(var(--u) * 1.6px)
+      calc(var(--u) * 5px) no-repeat,
+    linear-gradient(rgb(255 255 255 / 85%), rgb(255 255 255 / 85%)) 50% 100% /
+      calc(var(--u) * 1.6px) calc(var(--u) * 5px) no-repeat,
+    linear-gradient(rgb(255 255 255 / 85%), rgb(255 255 255 / 85%)) 0 50% / calc(var(--u) * 5px)
+      calc(var(--u) * 1.6px) no-repeat,
+    linear-gradient(rgb(255 255 255 / 85%), rgb(255 255 255 / 85%)) 100% 50% / calc(var(--u) * 5px)
+      calc(var(--u) * 1.6px) no-repeat;
+  filter: drop-shadow(0 0 1px rgb(0 0 0 / 70%));
+}
+
+/*
+ * The hit marker: four ticks that flash round the sight when a shot hits a machine, white for a
+ * hit and amber, larger, for a kill (two names, so the animation restarts on every hit). It is a
+ * fade, not a movement, so it stays when the player asks for less motion.
+ */
+
+.ph-hitmark {
+  position: absolute;
+  inset: calc(var(--u) * -2px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ph-hitmark i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: calc(var(--u) * 7px);
+  height: calc(var(--u) * 2px);
+  margin: calc(var(--u) * -1px) 0 0 calc(var(--u) * -3.5px);
+  border-radius: calc(var(--u) * 1px);
+  background: #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 55%);
+}
+
+.ph-hitmark i:nth-child(1) {
+  transform: rotate(45deg) translateX(calc(var(--u) * -9px));
+}
+
+.ph-hitmark i:nth-child(2) {
+  transform: rotate(135deg) translateX(calc(var(--u) * -9px));
+}
+
+.ph-hitmark i:nth-child(3) {
+  transform: rotate(225deg) translateX(calc(var(--u) * -9px));
+}
+
+.ph-hitmark i:nth-child(4) {
+  transform: rotate(315deg) translateX(calc(var(--u) * -9px));
+}
+
+.ph-hitmark[data-kill] i {
+  width: calc(var(--u) * 10px);
+  margin-left: calc(var(--u) * -5px);
+  background: #ffb347;
+  box-shadow:
+    0 0 0 1px rgb(60 20 0 / 65%),
+    0 0 calc(var(--u) * 6px) rgb(255 150 40 / 80%);
+}
+
+.ph-hitmark[data-hit='0'] {
+  animation: ph-hitmark-a 0.26s ease-out;
+}
+
+.ph-hitmark[data-hit='1'] {
+  animation: ph-hitmark-b 0.26s ease-out;
+}
+
+@keyframes ph-hitmark-a {
+  0% {
+    opacity: 1;
+    scale: 0.8;
+  }
+
+  100% {
+    opacity: 0;
+    scale: 1.25;
+  }
+}
+
+@keyframes ph-hitmark-b {
+  0% {
+    opacity: 1;
+    scale: 0.8;
+  }
+
+  100% {
+    opacity: 0;
+    scale: 1.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes ph-hitmark-a {
+    0% {
+      opacity: 1;
+    }
+
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes ph-hitmark-b {
+    0% {
+      opacity: 1;
+    }
+
+    100% {
+      opacity: 0;
+    }
+  }
+}
+
 /* In Build Mode the ring is always there, faintly, so the mode reads before anything is aimed at. */
 
 .ph-crosshair[data-build][data-state='none']::before {

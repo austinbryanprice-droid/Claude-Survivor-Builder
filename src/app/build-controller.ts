@@ -5,14 +5,15 @@ import type { GroundQuery } from '../shared/ground';
 import type { Vec3 } from '../shared/look';
 import { nextTurn, type PieceChoice } from '../shared/placement';
 import type { BlockCommand } from '../shared/protocol';
+import { BLASTER } from '../systems/survival/balance';
 
 /**
- * The player's building hands: which hotbar slot is selected, which kind of shape it makes and how
- * that is turned, whether Build Mode is on, what the cursor would do and the clicks that send it.
- * It holds no DOM and no three.js, and reaches the
+ * The player's hands: which hotbar slot is selected, which kind of shape it makes and how that is
+ * turned, whether Build Mode is on, what the cursor would do and the clicks that send it, and the
+ * pulse blaster in the slot after the blocks. It holds no DOM and no three.js, and reaches the
  * rest of the game through `BuildPorts`, so the tests can drive it with fakes. Nothing here
- * changes the world: a click becomes a command for the session, the host validates it, and the
- * world changes when the host's event comes back.
+ * changes the world: a click becomes a command (or a shot) for the session, the host validates it,
+ * and the world changes (or the machine is hurt) when the host's word comes back.
  */
 
 export const HOTBAR_SLOTS = 8;
@@ -33,10 +34,16 @@ export const NOT_READY = 'not-ready';
 /** The material each of the first hotbar slots builds with, in tier order; the slots after them hold no block. */
 export const HOTBAR_MATERIALS: readonly number[] = MATERIALS.map((material) => material.id);
 
+/** The slot after the materials holds the pulse blaster: with it in hand the left button fires it instead of breaking a block. */
+export const BLASTER_SLOT = HOTBAR_MATERIALS.length;
+
 export type Button = 'primary' | 'secondary';
 
-/** How the crosshair looks: plain, over a surface a click could build on, or over one it could not. */
-export type Crosshair = 'none' | 'place' | 'blocked';
+/**
+ * How the crosshair looks: plain, over a surface a click could build on, or over one it could not,
+ * or the blaster's sight while the blaster is in hand.
+ */
+export type Crosshair = 'none' | 'place' | 'blocked' | 'blaster';
 
 /** What the HUD needs to draw the building hands. */
 export interface BuildHudState {
@@ -51,6 +58,12 @@ export interface BuildHudState {
   readonly crosshair: Crosshair;
   /** Why a click would do nothing right now (a world rule such as 'occupied', or the host's words), or null. */
   readonly refusal: string | null;
+  /** The pulse blaster is in hand. */
+  readonly blaster: boolean;
+  /** How many of the player's shots the host has said hit a machine so far; a rise is a hit marker to show. */
+  readonly hits: number;
+  /** Whether the latest of those felled its machine. */
+  readonly kill: boolean;
 }
 
 /** Where the player is looking from, as the camera has it this frame. */
@@ -74,6 +87,8 @@ export interface BuildPorts {
   bodies(): readonly Vec3[];
   /** Called when Build Mode starts: bakes and compiles what the first block needs. */
   warmUp(): void;
+  /** Fires the pulse blaster from the camera at `origin` along the unit vector `dir`. False when there is nobody to ask yet. */
+  fire(origin: Vec3, dir: Vec3): boolean;
 }
 
 export class BuildController {
@@ -90,6 +105,16 @@ export class BuildController {
   private clock = 0;
   /** How fast a held button repeats, as a fraction of normal; low Energy slows it. */
   private repeatScale = 1;
+  /** Seconds of the hands' time until the blaster is ready again. */
+  private cooldown = 0;
+  /** Where the camera was and which way it looked at the last `update`: what a shot is aimed with. */
+  private readonly sight: { origin: Vec3; dir: Vec3 } = {
+    origin: { x: 0, y: 0, z: 0 },
+    dir: { x: 0, y: 0, z: 0 },
+  };
+  private sighted = false;
+  private hitCount = 0;
+  private lastKill = false;
   private notice: string | null = null;
   private noticeUntil = 0;
   private lastKey = '';
@@ -104,6 +129,9 @@ export class BuildController {
     piece: CellState;
     crosshair: Crosshair;
     refusal: string | null;
+    blaster: boolean;
+    hits: number;
+    kill: boolean;
   } = {
     selected: 0,
     buildMode: false,
@@ -112,6 +140,9 @@ export class BuildController {
     piece: 0,
     crosshair: 'none',
     refusal: null,
+    blaster: false,
+    hits: 0,
+    kill: false,
   };
 
   constructor(private readonly ports: BuildPorts) {}
@@ -137,6 +168,11 @@ export class BuildController {
 
   get inBuildMode(): boolean {
     return this.buildMode;
+  }
+
+  /** Whether the pulse blaster is in hand. */
+  get armed(): boolean {
+    return this.selectedSlot === BLASTER_SLOT;
   }
 
   /** The piece the selected slot makes in the chosen kind before the aim turns it, or 0 when the slot holds no block. */
@@ -199,8 +235,8 @@ export class BuildController {
 
   /** A mouse button went down: it acts once now and again while it stays down. */
   press(button: Button): void {
-    this.fire(button);
-    this.held[button] = REPEAT_DELAY;
+    this.act(button);
+    this.held[button] = this.repeatDelay(button);
   }
 
   release(button: Button): void {
@@ -217,9 +253,23 @@ export class BuildController {
     this.setNotice(reason);
   }
 
+  /** The host said one of the player's shots hit a machine (and felled it, if `kill`): the HUD marks it. */
+  noteHit(kill: boolean): void {
+    this.hitCount++;
+    this.lastKill = kill;
+  }
+
   /** Aims for this frame and repeats whatever a held button is doing. */
   update(dt: number, view: BuildView): void {
     this.clock += dt;
+    this.cooldown = Math.max(0, this.cooldown - dt * this.repeatScale);
+    this.sight.origin.x = view.origin.x;
+    this.sight.origin.y = view.origin.y;
+    this.sight.origin.z = view.origin.z;
+    this.sight.dir.x = view.dir.x;
+    this.sight.dir.y = view.dir.y;
+    this.sight.dir.z = view.dir.z;
+    this.sighted = true;
     updateAim(this.aim, {
       blocks: this.ports.blocks(),
       ground: this.ports.ground(),
@@ -233,8 +283,8 @@ export class BuildController {
       if (this.held[button] < 0) continue;
       this.held[button] -= dt * this.repeatScale;
       if (this.held[button] <= 0) {
-        this.fire(button);
-        this.held[button] = REPEAT_INTERVAL;
+        this.act(button);
+        this.held[button] = this.repeatInterval(button);
       }
     }
   }
@@ -248,7 +298,11 @@ export class BuildController {
     state.kind = this.shapeKind;
     state.turn = this.turnSteps;
     state.piece = this.piece;
-    if (!aim.hasPlace) state.crosshair = 'none';
+    state.blaster = this.armed;
+    state.hits = this.hitCount;
+    state.kill = this.lastKill;
+    if (this.armed) state.crosshair = 'blaster';
+    else if (!aim.hasPlace) state.crosshair = 'none';
     else if (!aim.placeRefusal) state.crosshair = 'place';
     else state.crosshair = this.buildMode ? 'blocked' : 'none';
     const showing = this.notice !== null && this.clock < this.noticeUntil;
@@ -258,9 +312,31 @@ export class BuildController {
     return state;
   }
 
-  private fire(button: Button): void {
-    if (button === 'primary') this.breakTarget();
-    else this.placePiece();
+  /** What a button does now: the left one fires the blaster when it is in hand and breaks a block otherwise; the right one places. */
+  private act(button: Button): void {
+    if (button === 'primary') {
+      if (this.armed) this.shoot();
+      else this.breakTarget();
+    } else this.placePiece();
+  }
+
+  /** How long a button is held before it repeats, and then how often: a blaster's pace is its own. */
+  private repeatDelay(button: Button): number {
+    return button === 'primary' && this.armed ? BLASTER.interval : REPEAT_DELAY;
+  }
+
+  private repeatInterval(button: Button): number {
+    return button === 'primary' && this.armed ? BLASTER.interval : REPEAT_INTERVAL;
+  }
+
+  /** Fires along the line the camera looked at the last frame, if the blaster is ready; the host has the final word. */
+  private shoot(): void {
+    if (!this.sighted || this.cooldown > 0) return;
+    if (!this.ports.fire(this.sight.origin, this.sight.dir)) {
+      this.setNotice(NOT_READY);
+      return;
+    }
+    this.cooldown = BLASTER.interval;
   }
 
   private placePiece(): void {

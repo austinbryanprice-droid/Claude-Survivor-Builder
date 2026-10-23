@@ -20,6 +20,7 @@ import type {
   WorldEvent,
 } from './protocol';
 import { createPlayerSample } from './protocol';
+import { SHOT_FLAGS_MASK } from './shot';
 import { SURVIVAL_EVENT_KINDS, type SurvivalEvent } from './survival-state';
 
 /**
@@ -98,6 +99,14 @@ function readEvent(raw: unknown): WorldEvent | null {
   return { type: 'set', x, y, z, state, by };
 }
 
+/** Three finite numbers, each no larger than `limit` in size. */
+function readVec3(raw: unknown, limit: number): [number, number, number] | null {
+  if (!Array.isArray(raw) || raw.length !== 3) return null;
+  const [x, y, z] = raw as unknown[];
+  if (!isNum(x, limit) || !isNum(y, limit) || !isNum(z, limit)) return null;
+  return [x, y, z];
+}
+
 function readSurvivalEvent(raw: unknown): SurvivalEvent | null {
   if (!isRecord(raw)) return null;
   const kind = SURVIVAL_EVENT_KINDS.find((candidate) => candidate === raw.k);
@@ -130,6 +139,11 @@ export function encodeFrame(frame: GuestFrame | HostFrame): string {
   return JSON.stringify(frame);
 }
 
+/** `value` rounded to a multiple of 1/`scale`, so a frame carries a short number and both ends read the same one. */
+export function roundTo(value: number, scale: number): number {
+  return Math.round(value * scale) / scale;
+}
+
 export function decodeGuestFrame(text: string): GuestFrame | null {
   const raw = parse(text);
   if (!raw) return null;
@@ -142,6 +156,12 @@ export function decodeGuestFrame(text: string): GuestFrame | null {
       const command = readCommand(raw.c);
       if (!command || !isInt(raw.id, 0, MAX_U31)) return null;
       return { t: 'cmd', id: raw.id, c: command };
+    }
+    case 'fire': {
+      const origin = readVec3(raw.o, NET.move.limit);
+      const direction = readVec3(raw.d, 2);
+      if (!origin || !direction || !isNum(raw.at, 1e12)) return null;
+      return { t: 'fire', o: origin, d: direction, at: raw.at };
     }
     case 'ping':
       if (!isInt(raw.n, 0, MAX_U31) || !isNum(raw.rtt, 600_000)) return null;
@@ -257,6 +277,12 @@ export function decodeHostFrame(text: string): HostFrame | null {
       if (!isInt(healthMax, 1, MAX_U16) || !isInt(health, 0, healthMax)) return null;
       if (!isInt(energyMax, 1, MAX_U16) || !isInt(energy, 0, energyMax)) return null;
       return { t: 'vt', hp: [health, healthMax], en: [energy, energyMax], chg: raw.chg };
+    }
+    case 'sh': {
+      const end = readVec3(raw.e, NET.move.limit);
+      if (!end || !isInt(raw.p, 1, MAX_U16) || !isInt(raw.h, 0, MAX_U16)) return null;
+      if (!isInt(raw.f, 0, SHOT_FLAGS_MASK)) return null;
+      return { t: 'sh', p: raw.p, e: end, f: raw.f, h: raw.h };
     }
     case 'pings': {
       if (!Array.isArray(raw.p) || raw.p.length > NET.maxPlayers) return null;

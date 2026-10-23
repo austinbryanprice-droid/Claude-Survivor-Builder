@@ -32,8 +32,19 @@ export interface HudPrompt {
   readonly tone: 'info' | 'warn';
 }
 
-/** How the crosshair looks: a plain dot, a cyan ring over a surface a click could build on, a red one over a surface it could not. */
-export type CrosshairState = 'none' | 'place' | 'blocked';
+/**
+ * How the crosshair looks: a plain dot, a cyan ring over a surface a click could build on, a red
+ * one over a surface it could not, or the sight of the pulse blaster while it is in hand.
+ */
+export type CrosshairState = 'none' | 'place' | 'blocked' | 'blaster';
+
+/** The marker that flashes round the crosshair when a shot hits a machine. */
+export interface HudHitMarker {
+  /** How many hits there have been so far: each rise flashes the marker once. */
+  readonly count: number;
+  /** Whether the latest hit felled its machine, which flashes it larger and hotter. */
+  readonly kill: boolean;
+}
 
 /** A marker on the compass, such as a quest destination. */
 export interface HudWaypoint {
@@ -105,6 +116,8 @@ export interface PlayerHudState {
   readonly prompt?: HudPrompt | null;
   /** Absent means a plain dot. */
   readonly crosshair?: CrosshairState;
+  /** The hit marker; absent never flashes it. */
+  readonly hitMarker?: HudHitMarker;
   /** Build Mode is on: the Build hint lights up and the crosshair gets its ring. */
   readonly buildMode?: boolean;
 }
@@ -176,6 +189,7 @@ export class PlayerHud {
   private readonly promptTitle: HTMLElement;
   private readonly promptDetail: HTMLElement;
   private readonly crosshair: HTMLElement;
+  private readonly hitmark: HTMLElement;
   private readonly buildHint: HTMLElement;
   private readonly stopResize: () => void;
 
@@ -197,6 +211,8 @@ export class PlayerHud {
   private lastSelected = -1;
   private lastPrompt = '';
   private lastCrosshair = '';
+  private lastHits = -1;
+  private hitTurns = 0;
   private lastBuildMode: boolean | null = null;
 
   constructor(parent: HTMLElement, segments = 3) {
@@ -289,6 +305,10 @@ export class PlayerHud {
     this.prompt.append(this.promptTitle, this.promptDetail);
 
     this.crosshair = el('div', 'ph-crosshair');
+    // Four ticks that flash round the crosshair on a hit; they sit inside it so they are always centered.
+    this.hitmark = el('div', 'ph-hitmark');
+    for (let i = 0; i < 4; i++) this.hitmark.append(el('i'));
+    this.crosshair.append(this.hitmark);
     this.root.append(
       this.hurt,
       vitals,
@@ -549,6 +569,16 @@ export class PlayerHud {
     if (crosshair !== this.lastCrosshair) {
       this.lastCrosshair = crosshair;
       this.crosshair.dataset.state = crosshair;
+    }
+    // A hit flashes the marker. Two animations take turns, because setting the one that is
+    // already running would not restart it. The first look is not a hit: the page just opened.
+    const hits = state.hitMarker;
+    if (hits) {
+      if (this.lastHits >= 0 && hits.count > this.lastHits) {
+        this.hitmark.toggleAttribute('data-kill', hits.kill);
+        this.hitmark.dataset.hit = String(++this.hitTurns % 2);
+      }
+      this.lastHits = hits.count;
     }
     const buildMode = state.buildMode === true;
     if (buildMode !== this.lastBuildMode) {

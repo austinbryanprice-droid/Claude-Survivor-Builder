@@ -80,6 +80,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
   // game alone.
   let multiplayer: Multiplayer | null = null;
   let stopVitals: (() => void) | null = null;
+  let stopFire: (() => void) | null = null;
   let disposed = false;
   if (!flags.bench) {
     void import('./attach-multiplayer')
@@ -93,6 +94,9 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           },
           outpost: () => valley?.voxels.outpost ?? null,
           navigation: () => (valley ? valleyNavigation(valley) : null),
+          // A bolt stops at the blocks, the hills and the Core, which the ground the cursor aims at already includes.
+          rayWorld: () =>
+            valley ? { blocks: valley.voxels, ground: valley.collision.ground } : null,
           flags: readNetFlags(search, { secure: window.location.protocol === 'https:' }),
           buildId,
           night: view.night,
@@ -101,6 +105,9 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
         });
         // Blocks are placed and broken by asking the session, which is the host's rules in solo play too.
         building.setSession(multiplayer.lobby.hub);
+        // A shot of the blaster is drawn at the click, from what this screen shows, before the host has answered.
+        const shooting = multiplayer;
+        stopFire = building.onFire((origin, dir) => shooting.predictShot(origin, dir));
         // The clock by the compass and the objective come from the run, which lives in the session.
         const survival = multiplayer.lobby.hub.survival;
         hud.setSurvival(survival);
@@ -130,6 +137,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
     dispose() {
       disposed = true;
       building.dispose();
+      stopFire?.();
       stopVitals?.();
       multiplayer?.dispose();
       coreLook = null;

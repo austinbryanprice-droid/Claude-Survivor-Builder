@@ -9,9 +9,12 @@ import { PlayerHud, type HotbarSlot, type PlayerHudState } from './player-hud/pl
 import { clockForHud, coreForHud, objectiveForRun } from './run-hud';
 import { FULL_VITALS, vitalsForHud } from './vitals-hud';
 
-/** Placeholder tools for the slots after the building blocks; the real ones come with the inventory. */
+/**
+ * The slots after the building blocks: the pulse blaster, which is real, and placeholder tools
+ * for the rest until the inventory comes.
+ */
 const TOOLS: readonly HotbarSlot[] = [
-  { icon: 'blade', durability: 0.92, badge: 'heart' },
+  { icon: 'blaster' },
   { icon: 'pick', durability: 0.8 },
   { icon: 'torch', durability: 0.6 },
   { icon: 'charge', count: 15 },
@@ -36,10 +39,10 @@ export interface PlaceholderHud {
 
 /**
  * The player HUD of the reference, driven by the game where the game knows the answer (the compass
- * follows the view, the waypoint points at the crash site, the hotbar, the crosshair and Build Mode
- * come from the player's building hands, the day and night clock and the objective come from the
- * run, and Health, Energy and the status icons come from the player's meters) and by made-up
- * numbers where it does not yet: the tools.
+ * follows the view, the waypoint points at the crash site, the hotbar, the crosshair, the hit
+ * marker and Build Mode come from the player's hands, the day and night clock and the objective
+ * come from the run, and Health, Energy and the status icons come from the player's meters) and
+ * by made-up numbers where it does not yet: the tools after the blaster.
  */
 export function createPlaceholderHud(
   parent: HTMLElement,
@@ -105,6 +108,7 @@ export function createPlaceholderHud(
         selected: hands.selected,
         prompt: prompts.update(dt, hands),
         crosshair: hands.crosshair,
+        hitMarker: { count: hands.hits, kill: hands.kill },
         buildMode: hands.buildMode,
       };
       hud.update(state);
