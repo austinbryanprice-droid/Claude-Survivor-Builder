@@ -61,6 +61,8 @@ export interface BuildControls {
   readonly controller: BuildController;
   /** Connects the commands to a session; null disconnects them. Refusals come back as notices. */
   setSession(session: BuildSession | null): void;
+  /** Calls `listener` with the camera and the way it looks each time a shot of the blaster goes to the session. */
+  onFire(listener: (origin: Vec3, dir: Vec3) => void): () => void;
   readonly debug: BuildControlsDebug;
   dispose(): void;
 }
@@ -90,6 +92,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
   };
 
   const bodies: Vec3[] = [];
+  const fireListeners = new Set<(origin: Vec3, dir: Vec3) => void>();
   const controller = new BuildController({
     blocks: () => current().voxels,
     ground: () => game.world.collision.ground,
@@ -101,6 +104,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
     fire(origin, dir) {
       if (!session || session.phase !== 'open') return false;
       session.fire(origin, dir);
+      for (const listener of fireListeners) listener(origin, dir);
       return true;
     },
     bodies() {
@@ -249,6 +253,12 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
         });
       }
     },
+    onFire(listener) {
+      fireListeners.add(listener);
+      return () => {
+        fireListeners.delete(listener);
+      };
+    },
     debug,
     dispose() {
       stopRefusals?.();
@@ -256,6 +266,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
       stopFrames();
       stopLock();
       for (const stop of stops) stop();
+      fireListeners.clear();
       if (idleTimer !== undefined) clearTimeout(idleTimer);
     },
   };

@@ -97,6 +97,7 @@ export function attachMultiplayer({
         }),
     },
     groundAt: (x, z) => game.world.groundAt(x, z),
+    rayWorld,
     scene: game.stage.world,
     registry: game.stage.registry,
     input: game.input,

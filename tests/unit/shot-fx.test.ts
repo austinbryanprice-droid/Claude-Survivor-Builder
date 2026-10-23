@@ -1,0 +1,249 @@
+import { Group, type InstancedBufferGeometry, type Mesh } from 'three';
+import { describe, expect, it } from 'vitest';
+import { FX_COLOR, createShotFx } from '../../src/engine/shot-fx';
+
+const CYAN = '#3ad1e0';
+
+function setup(seed?: number) {
+  const fx = createShotFx(seed === undefined ? {} : { seed });
+  const bolts = fx.object.getObjectByName('shot-bolts') as Mesh;
+  const sparks = fx.object.getObjectByName('shot-sparks') as Mesh;
+  const read = (mesh: Mesh, name: string): Float32Array =>
+    (mesh.geometry as InstancedBufferGeometry).getAttribute(name).array as Float32Array;
+  return {
+    fx,
+    bolts,
+    sparks,
+    boltCount: () => (bolts.geometry as InstancedBufferGeometry).instanceCount,
+    sparkCount: () => (sparks.geometry as InstancedBufferGeometry).instanceCount,
+    bolt: (name: string) => read(bolts, name),
+    spark: (name: string) => read(sparks, name),
+  };
+}
+
+const ORIGIN = { x: 0, y: 0, z: 0 };
+const AWAY = { x: 0, y: 0, z: -1 };
+
+describe('the bolts of the blaster', () => {
+  it('are two meshes that draw nothing until something happens, so the first shot builds no programs', () => {
+    const { fx, bolts, sparks, boltCount, sparkCount } = setup();
+    expect(fx.object.children).toHaveLength(2);
+    expect(fx.object.children[0]).toBe(bolts);
+    expect(fx.object.children[1]).toBe(sparks);
+    expect(bolts.visible && sparks.visible).toBe(true);
+    expect(boltCount()).toBe(0);
+    expect(sparkCount()).toBe(0);
+    fx.update(0.016);
+    expect(boltCount()).toBe(0);
+    expect(sparkCount()).toBe(0);
+    expect(fx.live()).toEqual({ bolts: 0, sparks: 0 });
+  });
+
+  it('fly from the gun to the mark and are gone once the streak has passed', () => {
+    const { fx, boltCount } = setup();
+    fx.bolt(ORIGIN, { x: 0, y: 0, z: -40 }, CYAN);
+    fx.update(0.016);
+    expect(fx.live().bolts).toBe(1);
+    expect(boltCount()).toBe(1);
+    // 40 blocks and a streak of six, at 170 a second: a little over a quarter of a second.
+    fx.update(0.2);
+    expect(fx.live().bolts).toBe(1);
+    fx.update(0.1);
+    expect(fx.live().bolts).toBe(0);
+    expect(boltCount()).toBe(0);
+  });
+
+  it('stay up for a tenth of a second even when the mark is at arm’s length', () => {
+    const { fx } = setup();
+    fx.bolt(ORIGIN, { x: 0, y: 0, z: -0.5 }, CYAN);
+    fx.update(0.09);
+    expect(fx.live().bolts).toBe(1);
+    fx.update(0.02);
+    expect(fx.live().bolts).toBe(0);
+  });
+
+  it('draw nothing for a bolt that goes nowhere or has no real ends', () => {
+    const { fx } = setup();
+    fx.bolt(ORIGIN, ORIGIN, CYAN);
+    fx.bolt(ORIGIN, { x: Number.NaN, y: 0, z: 0 }, CYAN);
+    fx.bolt(ORIGIN, { x: Infinity, y: 0, z: 0 }, CYAN);
+    fx.update(0.016);
+    expect(fx.live().bolts).toBe(0);
+  });
+
+  it('are written where the shot began and ended, in the color of the shooter', () => {
+    const { fx, bolt } = setup();
+    fx.bolt({ x: 1, y: 2, z: 3 }, { x: 4, y: 5, z: -6 }, '#ff0000');
+    expect(Array.from(bolt('iFrom').slice(0, 3))).toEqual([1, 2, 3]);
+    expect(Array.from(bolt('iTo').slice(0, 3))).toEqual([4, 5, -6]);
+    expect(Array.from(bolt('iColor').slice(0, 3))).toEqual([1, 0, 0]);
+    // Each is born at the moment the clock stands at.
+    expect(bolt('iBolt')[0]).toBe(0);
+    fx.update(1);
+    fx.bolt({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -10 }, '#ff0000');
+    expect(bolt('iBolt')[4]).toBeCloseTo(1, 6);
+  });
+
+  it('are kept in a ring: when there is no more room, the oldest make way', () => {
+    const { fx, boltCount } = setup();
+    for (let i = 0; i < 100; i++) fx.bolt(ORIGIN, { x: 0, y: 0, z: -(i + 2) }, CYAN);
+    fx.update(0.016);
+    expect(fx.live().bolts).toBeLessThanOrEqual(64);
+    expect(boltCount()).toBe(64);
+  });
+
+  it('draw only what has been written, as the count of the draw', () => {
+    const { fx, boltCount } = setup();
+    fx.bolt(ORIGIN, { x: 0, y: 0, z: -10 }, CYAN);
+    fx.bolt(ORIGIN, { x: 5, y: 0, z: -10 }, CYAN);
+    fx.bolt(ORIGIN, { x: -5, y: 0, z: -10 }, CYAN);
+    fx.update(0.016);
+    expect(boltCount()).toBe(3);
+  });
+});
+
+describe('the sparks of the blaster', () => {
+  it('are a flash and a few sparks at the muzzle', () => {
+    const { fx, spark } = setup();
+    fx.muzzle(ORIGIN, AWAY, CYAN);
+    expect(fx.live()).toEqual({ bolts: 0, sparks: 5 });
+    // The first of them is the flash: it stands still and is marked as one.
+    expect(spark('iLife')[3]).toBe(1);
+    expect(spark('iLife')[7]).toBe(0);
+    expect(Array.from(spark('iVelocity').slice(0, 3))).toEqual([0, 0, 0]);
+    expect(spark('iOrigin')[3]).toBe(0);
+    expect(spark('iOrigin')[7]).toBe(1);
+  });
+
+  it('are thrown the way the bolt goes from the muzzle, and back the way it came from a mark', () => {
+    const { fx, spark } = setup();
+    fx.muzzle(ORIGIN, AWAY, CYAN);
+    const muzzle = spark('iVelocity');
+    let forward = 0;
+    for (let i = 1; i < 5; i++) forward += muzzle[i * 3 + 2] as number;
+    expect(forward).toBeLessThan(0);
+
+    const struck = setup();
+    struck.fx.impact({ x: 0, y: 0, z: -20 }, AWAY, CYAN);
+    expect(struck.fx.live().sparks).toBe(11);
+    const velocity = struck.spark('iVelocity');
+    let back = 0;
+    for (let i = 1; i < 11; i++) back += velocity[i * 3 + 2] as number;
+    expect(back).toBeGreaterThan(0);
+  });
+
+  it('come apart in a burst of thirty and two flashes when a machine falls', () => {
+    const { fx, spark } = setup();
+    fx.burst({ x: 3, y: 4, z: 5 });
+    expect(fx.live().sparks).toBe(32);
+    expect(spark('iLife')[3]).toBe(1);
+    expect(spark('iLife')[7]).toBe(1);
+    expect(spark('iLife')[11]).toBe(0);
+    // Thrown every way at once: some up and some down, some each side.
+    const velocity = spark('iVelocity');
+    const spread = (axis: number): [number, number] => {
+      let least = Infinity;
+      let most = -Infinity;
+      for (let i = 2; i < 32; i++) {
+        const v = velocity[i * 3 + axis] as number;
+        least = Math.min(least, v);
+        most = Math.max(most, v);
+      }
+      return [least, most];
+    };
+    for (const axis of [0, 1, 2]) {
+      const [least, most] = spread(axis);
+      expect(least).toBeLessThan(0);
+      expect(most).toBeGreaterThan(0);
+    }
+  });
+
+  it('die out: the flashes first, the sparks after, and the draw stops when all are gone', () => {
+    const { fx, sparkCount } = setup();
+    fx.burst(ORIGIN);
+    fx.update(0.016);
+    expect(sparkCount()).toBe(32);
+    fx.update(0.3);
+    // Both flashes (0.22 and 0.12 seconds) have ended; the sparks last at least 0.4.
+    expect(fx.live().sparks).toBe(30);
+    fx.update(0.6);
+    expect(fx.live().sparks).toBe(0);
+    expect(sparkCount()).toBe(0);
+  });
+
+  it('are the same every time for the same seed, and differ for another', () => {
+    const a = setup(7);
+    const b = setup(7);
+    const c = setup(8);
+    for (const rig of [a, b, c]) rig.fx.impact(ORIGIN, AWAY, CYAN);
+    expect(Array.from(a.spark('iVelocity'))).toEqual(Array.from(b.spark('iVelocity')));
+    expect(Array.from(a.spark('iVelocity'))).not.toEqual(Array.from(c.spark('iVelocity')));
+  });
+
+  it('are kept in a ring too, and never write past the buffers', () => {
+    const { fx, sparkCount } = setup();
+    for (let i = 0; i < 40; i++) fx.burst(ORIGIN);
+    fx.update(0.016);
+    expect(sparkCount()).toBe(768);
+    expect(fx.live().sparks).toBeLessThanOrEqual(768);
+  });
+
+  it('use the amber of a strike for the machines and the shooter’s own color for the rest', () => {
+    const { fx, spark } = setup();
+    fx.impact(ORIGIN, AWAY, FX_COLOR.hit);
+    const amber = Array.from(spark('iColor').slice(0, 3));
+    const other = setup();
+    other.fx.impact(ORIGIN, AWAY, CYAN);
+    const cyan = Array.from(other.spark('iColor').slice(0, 3));
+    expect(amber[0]).toBeGreaterThan(amber[2] as number);
+    expect(cyan[2]).toBeGreaterThan(cyan[0] as number);
+  });
+});
+
+describe('the clock of the blaster’s light', () => {
+  it('starts over after a long quiet, so that it never grows large enough to blur', () => {
+    const { fx, bolt, spark } = setup();
+    fx.bolt(ORIGIN, { x: 0, y: 0, z: -10 }, CYAN);
+    fx.burst(ORIGIN);
+    fx.update(700);
+    // Everything has played out and the quiet has gone on past ten minutes: the slots are cleared.
+    expect(bolt('iBolt')[0]).toBe(-1e6);
+    expect(spark('iLife')[0]).toBe(-1e6);
+    expect(fx.live()).toEqual({ bolts: 0, sparks: 0 });
+    fx.bolt(ORIGIN, { x: 0, y: 0, z: -10 }, CYAN);
+    expect(bolt('iBolt')[4]).toBe(0);
+    fx.update(0.016);
+    expect(fx.live().bolts).toBe(1);
+  });
+
+  it('does not start over while something is still playing', () => {
+    const { fx, bolt } = setup();
+    fx.update(599.9);
+    fx.bolt(ORIGIN, { x: 0, y: 0, z: -100 }, CYAN);
+    // Past the quiet, but the bolt flies on for another half second.
+    fx.update(0.2);
+    expect(fx.live().bolts).toBe(1);
+    expect(bolt('iBolt')[0]).toBeCloseTo(599.9, 3);
+    fx.update(1);
+    expect(bolt('iBolt')[0]).toBe(-1e6);
+  });
+
+  it('ignores a frame that runs backwards', () => {
+    const { fx } = setup();
+    fx.bolt(ORIGIN, { x: 0, y: 0, z: -10 }, CYAN);
+    fx.update(-5);
+    fx.update(0.01);
+    expect(fx.live().bolts).toBe(1);
+  });
+});
+
+describe('taking the light off the stage', () => {
+  it('removes it from its parent', () => {
+    const { fx } = setup();
+    const parent = new Group();
+    parent.add(fx.object);
+    fx.dispose();
+    expect(fx.object.parent).toBeNull();
+    expect(parent.children).toHaveLength(0);
+  });
+});
