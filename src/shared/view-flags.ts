@@ -22,6 +22,8 @@ export interface ViewFlags {
   readonly clock: boolean;
   /** Start the run at the beginning of this night (1 is the first), for trying the later nights; null starts at the first morning. */
   readonly night: number | null;
+  /** False keeps the nights empty (`?waves=0`), for pictures and tests that want a quiet night; the waves come by default. */
+  readonly waves: boolean;
   /** Named viewpoint to take photos from (see `world/terrain/viewpoints.ts`); the player walks when absent. */
   readonly shot: string | null;
   readonly terrain: TerrainMode;
@@ -70,6 +72,7 @@ export function readViewFlags(search: string): ViewFlags {
     time: time && time in TIME_PRESETS ? time : null,
     clock: p.has('clock') && p.get('clock') !== '0',
     night: readNight(p.get('night')),
+    waves: p.get('waves') !== '0',
     shot: p.get('shot'),
     terrain: p.get('terrain') === 'heightfield' ? 'heightfield' : 'surface-nets',
     demo: p.get('demo'),
