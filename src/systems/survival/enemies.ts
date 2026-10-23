@@ -149,6 +149,11 @@ export class EnemySim {
     return this.add(x, z, Math.atan2(core.x - x, core.z - z), healthScale).id;
   }
 
+  /** True while the enemy with this id is alive. */
+  has(id: number): boolean {
+    return this.byId.has(id);
+  }
+
   /** Wounds an enemy; true when this blow killed it. Nothing happens for an enemy that is not here. */
   hurt(id: number, amount: number): boolean {
     const enemy = this.byId.get(id);

@@ -1,4 +1,5 @@
 import { MATERIAL } from '../../shared/blocks';
+import { ENEMY_KIND } from '../../shared/enemy-state';
 
 /**
  * Every number that shapes the survival loop, in one table so it can be tuned and tested without
@@ -69,6 +70,22 @@ export const VITALS = {
 } as const;
 
 /**
+ * The pulse blaster, the weapon every player starts with: a bolt that goes where the crosshair is
+ * and hurts the first machine on its way. A first guess to be tuned by playing (docs/decisions.md,
+ * Phase 4e). What a shot costs in Energy is `VITALS.energy.perShot`.
+ */
+export const BLASTER = {
+  /** Points a hit takes off a machine: three shots fell a crawler. */
+  damage: 10,
+  /** Seconds between shots with Energy to spare; low Energy slows the hands, and so the blaster, as it slows a held click. */
+  interval: 0.35,
+  /** How far a bolt flies, in blocks. */
+  range: 40,
+  /** Shots the host lets a player bank, so two shots that were held up on the way both land. */
+  burst: 2,
+} as const;
+
+/**
  * The machines that come for the Core. Every number is a first guess to be tuned by playing
  * (docs/decisions.md, Phase 4d); blocks have no health of their own until Phase 5, so the time an
  * enemy takes to break one stands in for it.
@@ -107,6 +124,11 @@ export const ENEMIES = {
     /** How wide and how tall its body is, for walls and for crowding. */
     radius: 0.45,
     height: 0.9,
+    /**
+     * How big a target it is for a bolt: a box standing on its feet, a little more than its body
+     * (the legs count), so a shot that looks true is one.
+     */
+    hitbox: { halfWidth: 0.6, height: 1 },
     /** The highest step it climbs, in blocks. Anything taller is a wall. */
     step: 1,
     /** Points a bite takes off a player and off the Core, how long it winds up and how often it begins one. */
@@ -129,3 +151,10 @@ export const ENEMIES = {
     gnawDefault: 2,
   },
 } as const;
+
+/** The target a machine of this kind is for a bolt, or undefined for a kind this table does not know. */
+export function hitboxOf(
+  kind: number,
+): { readonly halfWidth: number; readonly height: number } | undefined {
+  return kind === ENEMY_KIND.crawler ? ENEMIES.crawler.hitbox : undefined;
+}

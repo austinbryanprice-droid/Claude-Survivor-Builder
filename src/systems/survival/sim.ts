@@ -1,4 +1,8 @@
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../shared/daycycle';
+import type { EnemyPose } from '../../shared/enemy-state';
+import type { Vec3 } from '../../shared/look';
+import type { RayWorld } from '../../shared/raycast';
+import { SHOT_FLAG, createShotTrace, traceShot } from '../../shared/shot';
 import {
   SIM_HZ,
   SIM_STEP_SECONDS,
@@ -8,7 +12,7 @@ import {
 } from '../../shared/survival-state';
 import type { VitalsReading } from '../../shared/vitals-state';
 import type { Outpost } from '../../world/outpost';
-import { SURVIVAL, VITALS } from './balance';
+import { BLASTER, SURVIVAL, VITALS, hitboxOf } from './balance';
 import { EnemySim, type Target } from './enemies';
 import { NavGrid, type NavCell, type NavWorld } from './nav';
 import { PlayerVitals } from './vitals';
@@ -33,6 +37,27 @@ export interface SurvivalOptions {
   nav?: NavWorld | null;
   /** The world's seed, which the machines' spawns are drawn from: the same seed plays the same nights. */
   seed?: number;
+  /**
+   * What a bolt of the blaster meets on its way: the blocks players built and the ground, the Core
+   * included. Without it nothing stops a bolt but the machines it strikes.
+   */
+  ray?: RayWorld | null;
+}
+
+/** How a shot of the blaster ended. One object is filled by every call to `fire`. */
+export interface ShotOutcome {
+  /** Where the bolt ended, in blocks. */
+  x: number;
+  y: number;
+  z: number;
+  /** `SHOT_FLAG` bits. */
+  flags: number;
+  /** The machine it struck, or 0. */
+  enemy: number;
+}
+
+export function createShotOutcome(): ShotOutcome {
+  return { x: 0, y: 0, z: 0, flags: 0, enemy: 0 };
 }
 
 /**
@@ -59,12 +84,16 @@ export class SurvivalSim {
   /** The players the machines can go after in this step, kept between steps so a step allocates nothing. */
   private readonly targets: Target[] = [];
   private readonly feet = { x: 0, y: 0, z: 0 };
+  private readonly ray: RayWorld | null;
+  private readonly trace = createShotTrace();
+  private readonly isAlive = (id: number): boolean => this.machines?.has(id) ?? false;
 
   constructor(options: SurvivalOptions = {}) {
     this.tickValue = Math.max(0, Math.round((options.startAt ?? 0) * SIM_HZ));
     const max = SURVIVAL.core.maxHealth;
     this.health = Math.min(max, Math.max(1, options.coreHealth ?? max));
     this.core = options.core ?? null;
+    this.ray = options.ray ?? null;
     this.machines =
       options.nav && this.core
         ? new EnemySim(new NavGrid(options.nav, this.core), {
@@ -170,6 +199,48 @@ export class SurvivalSim {
   /** A player placed or broke a block: it costs them a little Energy. */
   playerBuilt(id: number): void {
     this.spendEnergy(id, VITALS.energy.perEdit);
+  }
+
+  /**
+   * A player fires the blaster. The bolt leaves `origin` along the unit vector `dir`, stops at the
+   * first block, hill or Core in its way and hurts the first of the first `count` of `bodies` it
+   * meets before that: they are where the machines were on the screen the player aimed on, so the
+   * host passes the poses of a moment ago and a shot that looked true is one. The shot costs the
+   * player Energy. Returns false, and does nothing, for someone not here or once the run is over.
+   */
+  fire(
+    id: number,
+    origin: Vec3,
+    dir: Vec3,
+    bodies: readonly EnemyPose[],
+    count: number,
+    out: ShotOutcome,
+  ): boolean {
+    const vitals = this.players.get(id);
+    if (!vitals || this.fell) return false;
+    const trace = traceShot(
+      this.ray,
+      origin,
+      dir,
+      BLASTER.range,
+      bodies,
+      count,
+      hitboxOf,
+      this.isAlive,
+      this.trace,
+    );
+    out.x = origin.x + dir.x * trace.distance;
+    out.y = origin.y + dir.y * trace.distance;
+    out.z = origin.z + dir.z * trace.distance;
+    out.flags = trace.flags;
+    out.enemy = 0;
+    if (trace.flags & SHOT_FLAG.enemy) {
+      const struck = (bodies[trace.index] as EnemyPose).id;
+      out.enemy = struck;
+      if (this.machines?.hurt(struck, BLASTER.damage)) out.flags |= SHOT_FLAG.kill;
+    }
+    vitals.spend(VITALS.energy.perShot);
+    return true;
   }
 
   /** Fills `out` with a player's meters, or returns null for someone not here. */
