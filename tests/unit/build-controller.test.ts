@@ -3,9 +3,11 @@ import {
   BuildController,
   HOTBAR_MATERIALS,
   HOTBAR_SLOTS,
+  MIN_HAND_SCALE,
   NOTICE_SECONDS,
   NOT_READY,
   REPEAT_DELAY,
+  REPEAT_INTERVAL,
   RESEND_GUARD,
   type BuildPorts,
   type BuildView,
@@ -252,6 +254,58 @@ describe('holding a button', () => {
     r.controller.release('secondary');
     for (let i = 0; i < 12; i++) r.controller.update(0.05, view);
     expect(r.sent).toHaveLength(placed);
+  });
+
+  describe('with the hands slowed by low Energy', () => {
+    /** Presses and holds the secondary button, and says when (in seconds) each repeat after the click fired. */
+    function repeats(scale: number | undefined): number[] {
+      const r = rig();
+      r.session.apply = true;
+      if (scale !== undefined) r.controller.setHandScale(scale);
+      const view = r.lookDown(5);
+      r.controller.update(0.016, view);
+      r.controller.press('secondary');
+      const times: number[] = [];
+      let seen = r.sent.length;
+      for (let t = 0.005; t < 3 && times.length < 2; t += 0.005) {
+        r.controller.update(0.005, view);
+        if (r.sent.length > seen) {
+          seen = r.sent.length;
+          times.push(t);
+        }
+      }
+      return times;
+    }
+
+    it('waits longer before it repeats, and repeats less often', () => {
+      const [delay, next] = repeats(0.5);
+      expect(delay).toBeCloseTo(REPEAT_DELAY / 0.5, 1);
+      expect((next ?? 0) - (delay ?? 0)).toBeCloseTo(REPEAT_INTERVAL / 0.5, 1);
+    });
+
+    it('is at its normal pace by default, and when told 1', () => {
+      for (const scale of [undefined, 1]) {
+        const [delay, next] = repeats(scale);
+        expect(delay).toBeCloseTo(REPEAT_DELAY, 1);
+        expect((next ?? 0) - (delay ?? 0)).toBeCloseTo(REPEAT_INTERVAL, 1);
+      }
+    });
+
+    it('never goes below the floor, never above normal, and ignores nonsense', () => {
+      expect(repeats(0)[0]).toBeCloseTo(REPEAT_DELAY / MIN_HAND_SCALE, 1);
+      expect(repeats(-3)[0]).toBeCloseTo(REPEAT_DELAY / MIN_HAND_SCALE, 1);
+      expect(repeats(4)[0]).toBeCloseTo(REPEAT_DELAY, 1);
+      expect(repeats(Number.NaN)[0]).toBeCloseTo(REPEAT_DELAY, 1);
+    });
+
+    it('still acts at once on a single click', () => {
+      const r = rig();
+      r.session.apply = true;
+      r.controller.setHandScale(MIN_HAND_SCALE);
+      r.controller.update(0.016, r.lookDown(5));
+      r.controller.press('secondary');
+      expect(r.sent).toHaveLength(1);
+    });
   });
 
   it('stops everything when the pointer is let go', () => {

@@ -1,12 +1,13 @@
 import type { Game } from '../engine/game';
 import type { ShapeKind } from '../shared/blocks';
-import { MOVEMENT } from '../shared/movement';
 import { createReading, type SurvivalView } from '../shared/survival-state';
+import { createVitalsReading, type VitalsView } from '../shared/vitals-state';
 import { CRASH } from '../world/terrain/field';
 import { BuildPromptTracker, blockSlotsByKind, type BuildHudSource } from './build-hud';
 import { wrapBearing } from './player-hud/format';
 import { PlayerHud, type HotbarSlot, type PlayerHudState } from './player-hud/player-hud';
 import { clockForHud, coreForHud, objectiveForRun } from './run-hud';
+import { FULL_VITALS, vitalsForHud } from './vitals-hud';
 
 /** Placeholder tools for the slots after the building blocks; the real ones come with the inventory. */
 const TOOLS: readonly HotbarSlot[] = [
@@ -19,9 +20,6 @@ const TOOLS: readonly HotbarSlot[] = [
 /** The hotbar always has eight slots. */
 const HOTBAR_SLOTS = 8;
 
-/** Stamina drained and regained per second while sprinting and while not. */
-const STAMINA_DRAIN = 0.22;
-const STAMINA_REGAIN = 0.3;
 const RADIANS_TO_DEGREES = 180 / Math.PI;
 
 export interface PlaceholderHud {
@@ -29,17 +27,19 @@ export interface PlaceholderHud {
   setVisible(visible: boolean): void;
   /** Takes the day and night clock and the objective from the run; null goes back to the made-up objective. */
   setSurvival(view: SurvivalView | null): void;
-  /** Advances the made-up numbers by `dt` seconds and redraws the HUD. */
+  /** Takes the player's Health, Energy and status icons from these meters; null draws full bars. */
+  setVitals(view: VitalsView | null): void;
+  /** Redraws the HUD from the game as it stands; `dt` seconds is how long the HUD's own timers have run. */
   update(dt: number): void;
   dispose(): void;
 }
 
 /**
  * The player HUD of the reference, driven by the game where the game knows the answer (the compass
- * follows the view, the waypoint points at the crash site, stamina drains while sprinting, the
- * hotbar, the crosshair and Build Mode come from the player's building hands, and the day and
- * night clock and the objective come from the run) and by made-up numbers where it does not yet:
- * health, status effects and the tools.
+ * follows the view, the waypoint points at the crash site, the hotbar, the crosshair and Build Mode
+ * come from the player's building hands, the day and night clock and the objective come from the
+ * run, and Health, Energy and the status icons come from the player's meters) and by made-up
+ * numbers where it does not yet: the tools.
  */
 export function createPlaceholderHud(
   parent: HTMLElement,
@@ -54,11 +54,11 @@ export function createPlaceholderHud(
     slotRows.set(kind, [...blocks, ...TOOLS].slice(0, HOTBAR_SLOTS));
   }
   const prompts = new BuildPromptTracker();
-  let stamina = 1;
-  let buffSeconds = 10 * 60 + 52;
   let visible = true;
   let survival: SurvivalView | null = null;
+  let vitals: VitalsView | null = null;
   const reading = createReading();
+  const vitalsReading = createVitalsReading();
 
   return {
     hud,
@@ -69,29 +69,26 @@ export function createPlaceholderHud(
     setSurvival(view) {
       survival = view;
     },
+    setVitals(view) {
+      vitals = view;
+    },
     update(dt) {
       if (!visible) return;
-      const { player } = game;
       // The camera's yaw turns counterclockwise and a compass bearing clockwise.
       const heading = wrapBearing(-camera.rotation.y * RADIANS_TO_DEGREES);
-      const sprinting =
-        player.onGround && Math.hypot(player.vx, player.vz) > MOVEMENT.walkSpeed * 1.1;
-      stamina = Math.min(
-        1,
-        Math.max(0, stamina + (sprinting ? -STAMINA_DRAIN : STAMINA_REGAIN) * dt),
-      );
-      buffSeconds = Math.max(0, buffSeconds - dt);
 
       const dx = CRASH.x - camera.position.x;
       const dz = CRASH.z - camera.position.z;
       const hands = build.hudState();
       const run = survival ? survival.read(reading) : null;
+      const own = vitals ? vitalsForHud(vitals.read(vitalsReading)) : FULL_VITALS;
       const state: PlayerHudState = {
-        health: 0.78,
+        health: own.health,
+        healthTone: own.healthTone,
         healthSegments: 3,
-        stamina,
-        statuses: ['flask', 'mushroom', 'shield'],
-        buff: { label: 'Rested', seconds: buffSeconds },
+        energy: own.energy,
+        energyTone: own.energyTone,
+        statuses: own.statuses,
         heading,
         waypoints: [
           {

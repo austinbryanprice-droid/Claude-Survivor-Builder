@@ -17,6 +17,7 @@ import {
 } from '../shared/net-flags';
 import { createPlayerSample, type PlayerId, type PlayerSample } from '../shared/protocol';
 import { createReading, type SurvivalReading } from '../shared/survival-state';
+import { createVitalsReading, type VitalsReading } from '../shared/vitals-state';
 import { createRoomPanel } from '../ui/room-panel';
 import { browserStore } from './browser-storage';
 import { PlayerSync, type LocalPlayer } from './player-sync';
@@ -83,6 +84,15 @@ export interface MultiplayerDebug {
   warp(seconds: number): void;
   /** Wounds the Outpost Core by this many points (the readings of `clock()` show its health). Only a host (or single-player) can. */
   hurtCore(amount: number): void;
+  /** The local player's Health and Energy as the screen has them (a host's from the simulation, a guest's from what the host last said). */
+  vitals(): VitalsReading;
+  /**
+   * Wounds a player by this many points, the local player by default, and returns the points it
+   * took. Only a host (or single-player) can; others return 0.
+   */
+  hurtPlayer(amount: number, id?: PlayerId): number;
+  /** Sets a player's Health and Energy outright, the local player by default. Only a host (or single-player) can. */
+  setVitals(values: { health?: number; energy?: number }, id?: PlayerId): void;
   /** Refusals the host sent back, newest last. */
   rejections(): Rejection[];
   /** World events applied since the page loaded. */
@@ -221,6 +231,17 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     hurtCore: (amount) => {
       const session = hub.current;
       if (session instanceof HostSession) session.survivalSim?.hurtCore(amount);
+    },
+    vitals: () => ({ ...hub.vitals.read(createVitalsReading()) }),
+    hurtPlayer: (amount, id = hub.localId) => {
+      const session = hub.current;
+      return session instanceof HostSession
+        ? (session.survivalSim?.hurtPlayer(id, amount) ?? 0)
+        : 0;
+    },
+    setVitals: (values, id = hub.localId) => {
+      const session = hub.current;
+      if (session instanceof HostSession) session.survivalSim?.playerVitals(id)?.set(values);
     },
     rejections: () => [...refusals],
     eventCount: () => events,

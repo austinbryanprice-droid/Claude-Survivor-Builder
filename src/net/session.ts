@@ -10,6 +10,7 @@ import type {
   WorldEvent,
 } from '../shared/protocol';
 import type { SurvivalView, Unsubscribe } from '../shared/survival-state';
+import type { VitalsView } from '../shared/vitals-state';
 
 export type { Unsubscribe } from '../shared/survival-state';
 
@@ -88,6 +89,12 @@ export interface GameSession {
    * announces. A guest reads a mirror of the host's last word; the host reads its own simulation.
    */
   readonly survival: SurvivalView;
+
+  /**
+   * The local player's Health and Energy: the host reads its own player from the simulation, and a
+   * guest reads a mirror of what the host last told it.
+   */
+  readonly vitals: VitalsView;
 
   /** Asks the host to change the world. Fire and forget: the result arrives as an event or a rejection. */
   sendCommand(command: BlockCommand): void;

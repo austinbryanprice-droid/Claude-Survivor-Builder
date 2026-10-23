@@ -52,6 +52,8 @@ export interface BuildControlsDebug {
   hands(): BuildHudState;
   /** Whether the ghost block and the break outline are on screen, and the shape id each is drawn in. */
   ghost(): { ghost: boolean; target: boolean; ghostShape: number; targetShape: number };
+  /** How fast a held mouse button repeats, as a fraction of normal; low Energy slows it. */
+  handScale(): number;
 }
 
 export interface BuildControls {
@@ -211,6 +213,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
       };
     },
     hands: () => ({ ...controller.hudState() }),
+    handScale: () => controller.handScale,
     ghost: () => {
       const shown = valley()?.view.ghost.shown;
       return {

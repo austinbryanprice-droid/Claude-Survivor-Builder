@@ -22,6 +22,7 @@ import {
   type WorldEvent,
 } from '../shared/protocol';
 import type { SurvivalEvent, SurvivalReading, SurvivalView } from '../shared/survival-state';
+import { createVitalsReading, type VitalsReading, type VitalsView } from '../shared/vitals-state';
 import {
   decodeGuestFrame,
   decodeGuestState,
@@ -89,6 +90,17 @@ interface Member {
   lastHeard: number;
   editTokens: number;
   editAt: number;
+  /** What this guest was last told about its own Health and Energy; null before the first word. */
+  vitalsSent: VitalsSent | null;
+  /** When that word was sent, on the host's clock. */
+  vitalsAt: number;
+}
+
+/** The part of a guest's meters that is news when it changes: whole points, and the charge field. */
+interface VitalsSent {
+  health: number;
+  energy: number;
+  charging: boolean;
 }
 
 interface Pending {
@@ -129,6 +141,20 @@ const IDLE_SURVIVAL: SurvivalView = {
   onEvent: () => () => undefined,
 };
 
+/** What a host without a simulation shows for its own player: nothing to read, so the bars are drawn full. */
+const IDLE_VITALS: VitalsView = {
+  read(out) {
+    out.health = 0;
+    out.healthMax = 0;
+    out.energy = 0;
+    out.energyMax = 0;
+    out.speedScale = 1;
+    out.handScale = 1;
+    out.charging = false;
+    return out;
+  },
+};
+
 /** Time a refused or finished link is given to flush its last frame before it is closed. */
 const GOODBYE_GRACE_MS = 400;
 /** A returning guest whose old link has been quiet this long takes its old seat back. */
@@ -157,6 +183,9 @@ export class HostSession implements GameSession {
 
   private readonly sim: SurvivalSim | null;
   private readonly survivalView: SurvivalView;
+  private readonly vitalsView: VitalsView;
+  /** Scratch space for reading a guest's meters without allocating every tick. */
+  private readonly vitalsScratch: VitalsReading = createVitalsReading();
   private localActive = false;
   private survivalAt: number;
   private survivalRunning = false;
@@ -210,8 +239,10 @@ export class HostSession implements GameSession {
     this.members.set(HOST_PLAYER_ID, host);
     this.stall = new StallWatch(NET.relayIntervalMs, now);
     this.sim = options.survival ?? null;
+    this.sim?.addPlayer(HOST_PLAYER_ID);
     this.survivalAt = now;
     this.survivalView = this.sim ? this.viewOf(this.sim) : IDLE_SURVIVAL;
+    this.vitalsView = this.sim ? this.vitalsOf(this.sim) : IDLE_VITALS;
     this.stopTimer = this.scheduler.every(NET.relayIntervalMs, () => this.step());
   }
 
@@ -242,6 +273,9 @@ export class HostSession implements GameSession {
   }
   get survival(): SurvivalView {
     return this.survivalView;
+  }
+  get vitals(): VitalsView {
+    return this.vitalsView;
   }
   /** The simulation itself, for the debug hook and the tests. Null where there is none. */
   get survivalSim(): SurvivalSim | null {
@@ -377,6 +411,7 @@ export class HostSession implements GameSession {
       this.sendTo(member, farewell);
       this.dropLink(member.link);
       this.members.delete(member.id);
+      this.sim?.removePlayer(member.id);
     }
     for (const entry of [...this.pending]) {
       entry.link.sendControl(farewell);
@@ -497,6 +532,7 @@ export class HostSession implements GameSession {
     const member = this.makeMember(id, slot, name, hello.token, link, now);
     member.guard.place(spawn.x, spawn.y, spawn.z, now);
     this.members.set(id, member);
+    this.sim?.addPlayer(id);
     this.departed.delete(hello.token);
 
     const edits: EditRecord[] = [];
@@ -527,7 +563,10 @@ export class HostSession implements GameSession {
       this.sendTo(member, encodeFrame({ t: 'snap', i, b: encodeEdits(edits, i * per, per) }));
     }
     // The newcomer should see the time at once, not at the next regular word.
-    if (this.sim) this.sendTo(member, this.survivalFrame());
+    if (this.sim) {
+      this.sendTo(member, this.survivalFrame());
+      this.sendVitals(member, now);
+    }
 
     const joined = encodeFrame({ t: 'join', p: { id, slot, name } });
     for (const other of this.members.values()) {
@@ -568,6 +607,8 @@ export class HostSession implements GameSession {
       lastHeard: now,
       editTokens: NET.editBurst,
       editAt: now,
+      vitalsSent: null,
+      vitalsAt: now,
     };
   }
 
@@ -649,6 +690,7 @@ export class HostSession implements GameSession {
       }
       return;
     }
+    this.sim?.playerBuilt(member.id);
     const event: BlockSetEvent = {
       type: 'set',
       x: command.x,
@@ -764,6 +806,7 @@ export class HostSession implements GameSession {
 
   private leave(member: Member, why: 'left' | 'timeout' | 'closed'): void {
     if (!this.members.delete(member.id)) return;
+    this.sim?.removePlayer(member.id);
     if (member.link) this.rememberDeparted(member);
     const frame = encodeFrame({ t: 'leave', id: member.id, why });
     for (const other of this.members.values()) if (other.link) this.sendTo(other, frame);
@@ -834,7 +877,10 @@ export class HostSession implements GameSession {
     this.survivalAt = now;
     const guests = this.hasGuests();
     const running = this.refreshRunning();
-    if (running) sim.advance(dt);
+    if (running) {
+      this.observePlayers(sim);
+      sim.advance(dt);
+    }
 
     sim.drainEvents(this.survivalQueue);
     for (const event of this.survivalQueue) {
@@ -854,6 +900,64 @@ export class HostSession implements GameSession {
       this.broadcast(this.survivalFrame());
     }
     this.survivalDirty = false;
+
+    if (guests) {
+      for (const member of this.members.values()) {
+        if (!member.link) continue;
+        const due = member.vitalsSent === null || now - member.vitalsAt >= NET.vitalsIntervalMs;
+        if (due) this.sendVitals(member, now);
+      }
+    }
+  }
+
+  /** Tells the simulation where every player we have heard from is, so sprinting costs Energy and the Core's field can charge them. */
+  private observePlayers(sim: SurvivalSim): void {
+    for (const member of this.members.values()) {
+      const s = member.sample;
+      if (s) sim.observe(member.id, s.x, s.y, s.z, Math.hypot(s.vx, s.vz), s.onGround);
+    }
+  }
+
+  /** The host's own player's meters, straight from the simulation. */
+  private vitalsOf(sim: SurvivalSim): VitalsView {
+    return {
+      read: (out: VitalsReading) => sim.readVitals(HOST_PLAYER_ID, out) ?? IDLE_VITALS.read(out),
+    };
+  }
+
+  /**
+   * Tells a guest its own Health and Energy if they have changed since it was last told, and at
+   * most `NET.vitalsIntervalMs` after the last word; the first word goes at once.
+   */
+  private sendVitals(member: Member, now: number): void {
+    const sim = this.sim;
+    if (!sim || !member.link) return;
+    const reading = sim.readVitals(member.id, this.vitalsScratch);
+    if (!reading) return;
+    const sent = member.vitalsSent;
+    if (
+      sent &&
+      sent.health === reading.health &&
+      sent.energy === reading.energy &&
+      sent.charging === reading.charging
+    ) {
+      return;
+    }
+    member.vitalsSent = {
+      health: reading.health,
+      energy: reading.energy,
+      charging: reading.charging,
+    };
+    member.vitalsAt = now;
+    this.sendTo(
+      member,
+      encodeFrame({
+        t: 'vt',
+        hp: [reading.health, reading.healthMax],
+        en: [reading.energy, reading.energyMax],
+        chg: reading.charging,
+      }),
+    );
   }
 
   private survivalFrame(): string {

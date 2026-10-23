@@ -11,6 +11,7 @@ import { SHOTS, shotPose } from '../world/terrain/viewpoints';
 import { createBuildControls } from './build-controls';
 import type { Multiplayer } from './multiplayer';
 import { VALLEY_MIST, createValleyWorld, type ValleyWorld } from './valley-world';
+import { followVitals } from './vitals-effects';
 
 export interface AppOptions {
   readonly canvas: HTMLCanvasElement;
@@ -77,6 +78,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
   // Playing together loads after the game is up, and never in the benchmark, which measures the
   // game alone.
   let multiplayer: Multiplayer | null = null;
+  let stopVitals: (() => void) | null = null;
   let disposed = false;
   if (!flags.bench) {
     void import('./attach-multiplayer')
@@ -88,6 +90,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
             if (!valley) throw new Error('The valley is not built yet');
             return valley.voxels;
           },
+          outpost: () => valley?.voxels.outpost ?? null,
           flags: readNetFlags(search, { secure: window.location.protocol === 'https:' }),
           buildId,
           night: view.night,
@@ -105,6 +108,11 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           if (reading.coreMax <= 0) return null;
           return { health: reading.coreHealth / reading.coreMax, fallen: reading.over };
         };
+        // Health and Energy come from the run too: the corner of the HUD shows them, and low Energy
+        // slows the legs and the hands.
+        const vitals = multiplayer.lobby.hub.vitals;
+        hud.setVitals(vitals);
+        stopVitals = followVitals(game, building.controller, vitals);
         if (flags.debug && window.__ashbound) window.__ashbound.mp = multiplayer.debug;
       })
       .catch((error: unknown) => {
@@ -120,9 +128,11 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
     dispose() {
       disposed = true;
       building.dispose();
+      stopVitals?.();
       multiplayer?.dispose();
       coreLook = null;
       hud.setSurvival(null);
+      hud.setVitals(null);
       hud.dispose();
       game.dispose();
     },

@@ -4,6 +4,7 @@ import type { NetFlags } from '../shared/net-flags';
 import type { PlayerSample } from '../shared/protocol';
 import { createReading, nightStart } from '../shared/survival-state';
 import { SurvivalSim } from '../systems/survival/sim';
+import type { Outpost } from '../world/outpost';
 import { createMultiplayer, type Multiplayer } from './multiplayer';
 import { seatSpawn } from './seat-spawn';
 
@@ -18,6 +19,8 @@ export interface AttachOptions {
   game: Game;
   /** The blocks of the world being played now. It is a new object after each `game.loadWorld`. */
   voxels(): BlockWorld;
+  /** Where the Outpost Core stands in the world being played now, or null where there is none. */
+  outpost(): Outpost | null;
   flags: NetFlags;
   buildId: string;
   /** Begin the run at the start of this night (the `?night=` switch), or at the first morning when null. */
@@ -36,6 +39,7 @@ function editsOf(world: BlockWorld): { x: number; y: number; z: number }[] {
 export function attachMultiplayer({
   game,
   voxels,
+  outpost,
   flags,
   buildId,
   night,
@@ -75,7 +79,8 @@ export function attachMultiplayer({
         return Promise.resolve(voxels());
       },
       spawnPoint: (slot) => seatSpawn(game.world, voxels(), slot),
-      survival: () => new SurvivalSim({ startAt: night === null ? 0 : nightStart(night) }),
+      survival: () =>
+        new SurvivalSim({ startAt: night === null ? 0 : nightStart(night), core: outpost() }),
     },
     groundAt: (x, z) => game.world.groundAt(x, z),
     scene: game.stage.world,

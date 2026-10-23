@@ -174,6 +174,17 @@ export type HostFrame =
     }
   /** Something the survival loop announces as it happens (nightfall, dawn, the Core falling). */
   | { readonly t: 'se'; readonly e: SurvivalEvent }
+  /**
+   * This guest's own Health and Energy in whole points (`[points, full]`), and whether it stands in
+   * the Core's charge field. Each guest hears only its own, within a quarter of a second of a
+   * change and once to every newcomer; nobody else's meters are drawn.
+   */
+  | {
+      readonly t: 'vt';
+      readonly hp: readonly [points: number, max: number];
+      readonly en: readonly [points: number, max: number];
+      readonly chg: boolean;
+    }
   /** Every guest's ping, so the room list can show them. */
   | { readonly t: 'pings'; readonly p: readonly (readonly [PlayerId, number])[] }
   | { readonly t: 'bye'; readonly why: 'closed' };

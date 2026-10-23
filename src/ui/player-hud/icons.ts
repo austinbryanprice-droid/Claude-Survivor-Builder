@@ -24,6 +24,7 @@ export type IconId =
   | 'sun'
   | 'moon'
   | 'core'
+  | 'bolt'
   | 'block-scrap'
   | 'block-composite'
   | 'block-alloy'
@@ -54,6 +55,7 @@ export const ICON_IDS: readonly IconId[] = [
   'sun',
   'moon',
   'core',
+  'bolt',
   'block-scrap',
   'block-composite',
   'block-alloy',
@@ -248,6 +250,9 @@ const SPRITE_BODY = /* html */ `
   <linearGradient id="ph-core" x1="0.15" y1="0" x2="0.85" y2="1">
     <stop offset="0" stop-color="#eaffff"/><stop offset="0.5" stop-color="#58d6ee"/><stop offset="1" stop-color="#1c7a9c"/>
   </linearGradient>
+  <linearGradient id="ph-bolt" x1="0.2" y1="0" x2="0.8" y2="1">
+    <stop offset="0" stop-color="#fff6c4"/><stop offset="0.5" stop-color="#ffc83d"/><stop offset="1" stop-color="#e9831d"/>
+  </linearGradient>
   <linearGradient id="ph-glass" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0" stop-color="#f4fbff" stop-opacity="0.85"/><stop offset="1" stop-color="#9fc7d8" stop-opacity="0.55"/>
   </linearGradient>
@@ -371,6 +376,11 @@ const SPRITE_BODY = /* html */ `
   <path d="M24 4 L33.5 14.5 V27.5 L24 38 L14.5 27.5 V14.5 Z" fill="url(#ph-core)" stroke="${INK}" stroke-width="1.8" stroke-linejoin="round"/>
   <path d="M24 4 V38 M14.5 14.5 L33.5 27.5 M33.5 14.5 L14.5 27.5" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.1" fill="none"/>
   <path d="M17.5 14.2 L24 7.4" stroke="#ffffff" stroke-opacity="0.85" stroke-width="1.7" stroke-linecap="round"/>
+</symbol>
+
+<symbol id="ph-i-bolt" viewBox="0 0 48 48">
+  <path d="M29 3 L10 26.5 H21 L16.5 45 L38.5 18.5 H27 Z" fill="url(#ph-bolt)" stroke="${INK}" stroke-width="1.9" stroke-linejoin="round"/>
+  <path d="M26.5 8.5 L16 22.5" stroke="#fffbe6" stroke-opacity="0.85" stroke-width="1.7" stroke-linecap="round"/>
 </symbol>
 ${BLOCK_SYMBOLS}
 ${SHAPE_SYMBOLS}
