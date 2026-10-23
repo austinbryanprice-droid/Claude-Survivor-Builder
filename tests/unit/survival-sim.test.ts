@@ -6,8 +6,11 @@ import {
   nightStart,
   type SurvivalEvent,
 } from '../../src/shared/survival-state';
-import { SURVIVAL } from '../../src/systems/survival/balance';
+import { createEnemyState } from '../../src/shared/enemy-state';
+import { ENEMIES, SURVIVAL } from '../../src/systems/survival/balance';
 import { SurvivalSim } from '../../src/systems/survival/sim';
+import type { NavCell } from '../../src/systems/survival/nav';
+import { SCRAP, flatWorld } from './helpers/nav-world';
 
 function eventsOf(sim: SurvivalSim): SurvivalEvent[] {
   const out: SurvivalEvent[] = [];
@@ -238,5 +241,149 @@ describe('the Outpost Core in the simulation', () => {
   it('takes a starting health inside what it can hold', () => {
     expect(new SurvivalSim({ coreHealth: 10 * MAX }).coreHealth).toBe(MAX);
     expect(new SurvivalSim({ coreHealth: -5 }).coreHealth).toBe(1);
+  });
+});
+
+describe('the machines in the simulation', () => {
+  const NIGHT = DAY_SECONDS + 1;
+
+  function run(seed = 3, startAt = NIGHT) {
+    const flat = flatWorld();
+    const sim = new SurvivalSim({ core: flat.core, nav: flat.world, seed, startAt });
+    return { flat, sim };
+  }
+
+  /** Where the machines stand, in the order the simulation lists them. */
+  function where(sim: SurvivalSim): [number, number][] {
+    const states = Array.from({ length: ENEMIES.maxAlive }, createEnemyState);
+    const n = sim.enemies!.write(states);
+    return states.slice(0, n).map((state) => [state.x, state.z]);
+  }
+
+  it('are there only where the world gave the run ground and a Core to walk to', () => {
+    const flat = flatWorld();
+    expect(new SurvivalSim().enemies).toBeNull();
+    expect(new SurvivalSim({ nav: flat.world }).enemies).toBeNull();
+    expect(new SurvivalSim({ core: flat.core }).enemies).toBeNull();
+    expect(new SurvivalSim({ core: flat.core, nav: flat.world }).enemies).not.toBeNull();
+  });
+
+  it('take a step whenever the run does, and not before', () => {
+    const { sim } = run();
+    sim.enemies!.spawnAt(20.5, -3.5);
+    const start = where(sim);
+    sim.advance(0.03);
+    expect(where(sim)).toEqual(start);
+    sim.advance(0.03);
+    expect(where(sim)).not.toEqual(start);
+    // A warp plays every step on the way, so the machines walk as far as they would have.
+    const walked = run();
+    walked.sim.enemies!.spawnAt(20.5, -3.5);
+    walked.sim.warp(3);
+    const stepped = run();
+    stepped.sim.enemies!.spawnAt(20.5, -3.5);
+    for (let i = 0; i < 3 * SIM_HZ; i++) stepped.sim.advance(1 / SIM_HZ);
+    expect(where(walked.sim)).toEqual(where(stepped.sim));
+  });
+
+  it('wound the Core when they reach it, and end the run when it falls', () => {
+    const { sim } = run();
+    sim.enemies!.spawnAt(1.5, -3.5);
+    const events: SurvivalEvent[] = [];
+    let hurtAt = -1;
+    for (let second = 1; second <= 60 && !sim.over; second++) {
+      sim.advance(1);
+      if (hurtAt < 0 && sim.coreHealth < sim.coreMax) hurtAt = second;
+    }
+    expect(hurtAt).toBeGreaterThan(0);
+    expect(hurtAt).toBeLessThanOrEqual(3);
+    sim.drainEvents(events);
+    // One crawler, five points a second against a Core of a thousand: it does not fall in a minute.
+    expect(sim.over).toBe(false);
+    expect(sim.coreHealth).toBeLessThan(sim.coreMax);
+    // A crowd does.
+    const crowd = run();
+    for (let i = 0; i < 12; i++)
+      crowd.sim.enemies!.spawnAt(1.5 + (i % 4) * 0.5, -3.5 + Math.floor(i / 4));
+    for (let second = 0; second < 90 && !crowd.sim.over; second++) crowd.sim.advance(1);
+    expect(crowd.sim.over).toBe(true);
+    expect(crowd.sim.coreHealth).toBe(0);
+    const out: SurvivalEvent[] = [];
+    crowd.sim.drainEvents(out);
+    expect(out.filter((event) => event.k === 'overrun')).toHaveLength(1);
+  });
+
+  it('stop where they are once the Core has fallen', () => {
+    const { sim } = run();
+    sim.enemies!.spawnAt(8.5, -3.5);
+    sim.advance(0.5);
+    sim.hurtCore(sim.coreMax);
+    const frozen = where(sim);
+    sim.advance(5);
+    sim.warp(5);
+    expect(where(sim)).toEqual(frozen);
+  });
+
+  it('go for the players who have been seen, and leave out those who are down or gone', () => {
+    const { sim } = run();
+    sim.addPlayer(2);
+    sim.addPlayer(3);
+    sim.addPlayer(4);
+    sim.observe(2, 25.5, 10, -3.5, 0, true);
+    sim.observe(3, 25.5, 10, 5.5, 0, true);
+    // Player 4 has not been seen at all: they are not anywhere yet.
+    sim.enemies!.spawnAt(27, -3.5);
+    sim.enemies!.spawnAt(27, 5.5);
+    for (let i = 0; i < 5 * SIM_HZ; i++) sim.advance(1 / SIM_HZ);
+    expect(sim.playerVitals(2)!.health).toBeLessThan(100);
+    expect(sim.playerVitals(3)!.health).toBeLessThan(100);
+    expect(sim.playerVitals(4)!.health).toBe(100);
+    // A player at none is down and is left alone; one who has left is gone from the targets.
+    sim.playerVitals(2)!.set({ health: 0 });
+    sim.removePlayer(3);
+    const before = [2, 3].map((id) => sim.playerVitals(id)?.health ?? -1);
+    for (let i = 0; i < 5 * SIM_HZ; i++) sim.advance(1 / SIM_HZ);
+    expect([2, 3].map((id) => sim.playerVitals(id)?.health ?? -1)).toEqual(before);
+  });
+
+  it('play the same nights for the same seed, and other ones for another', () => {
+    const spawned = (seed: number) => {
+      const { sim } = run(seed);
+      sim.enemies!.spawn(15);
+      return where(sim);
+    };
+    expect(spawned(7)).toEqual(spawned(7));
+    expect(spawned(7)).not.toEqual(spawned(8));
+  });
+
+  it('chew through a block, ask for it to be broken, and read the map again when it is', () => {
+    const { flat, sim } = run();
+    for (let z = -30; z <= 30; z++) {
+      flat.place(8, 10, z);
+      sim.blockChanged(8, 10, z);
+    }
+    sim.enemies!.spawnAt(11.5, -3.5);
+    const out: NavCell[] = [];
+    for (let i = 0; i < 5 * SIM_HZ && out.length === 0; i++) {
+      sim.advance(1 / SIM_HZ);
+      sim.drainBreaks(out);
+    }
+    expect(out.length).toBeGreaterThan(0);
+    const cell = out[0]!;
+    expect(flat.world.blockAt(cell.x, cell.y, cell.z)).toBe(SCRAP);
+    // The host breaks it as the world's own change and tells the run; the crawler walks on through.
+    flat.remove(cell.x, cell.y, cell.z);
+    sim.blockChanged(cell.x, cell.y, cell.z);
+    sim.advance(3);
+    expect(where(sim)[0]![0]).toBeLessThan(8);
+  });
+
+  it('are quiet where there are none: a run without ground has nothing to break', () => {
+    const bare = new SurvivalSim();
+    const out: NavCell[] = [];
+    bare.drainBreaks(out);
+    bare.blockChanged(0, 0, 0);
+    bare.advance(1);
+    expect(out).toEqual([]);
   });
 });

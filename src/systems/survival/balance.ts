@@ -1,3 +1,5 @@
+import { MATERIAL } from '../../shared/blocks';
+
 /**
  * Every number that shapes the survival loop, in one table so it can be tuned and tested without
  * hunting through the code. The length of the day and the night is not here: it is
@@ -63,5 +65,67 @@ export const VITALS = {
   chargeField: {
     radius: 8,
     perSecond: 2.5,
+  },
+} as const;
+
+/**
+ * The machines that come for the Core. Every number is a first guess to be tuned by playing
+ * (docs/decisions.md, Phase 4d); blocks have no health of their own until Phase 5, so the time an
+ * enemy takes to break one stands in for it.
+ */
+export const ENEMIES = {
+  /** The most enemies alive at once, however they were spawned. The wire carries this many and no more. */
+  maxAlive: 100,
+
+  /** Enemies come in from a ring this many blocks from the middle of the Core, give or take `spawnJitter`. */
+  spawnRadius: 46,
+  spawnJitter: 4,
+  /** How far from the Core the enemies know the way across, in blocks. The ring they spawn on lies well inside. */
+  navRadius: 64,
+  /** Ground more than this far under the water is not walked into. */
+  wadeDepth: 0.5,
+  /** After a block changes, the routes are worked out again at most this often. */
+  navRefreshSeconds: 0.25,
+  /** An enemy looks this many steps down its route for a spot it can walk to in a straight line. */
+  lookAhead: 8,
+  /** A hit lights the enemy for this long. */
+  hurtFlashSeconds: 0.18,
+  /** An enemy that has picked a player to chase keeps on until the player is this many times farther than the pull. */
+  aggroKeep: 1.3,
+  /** An enemy chews a wall from this far from it, middle to face. */
+  gnawReach: 0.75,
+  /** Chewing that stops (nobody is at the wall any more) wears off at this fraction of a block a second. */
+  gnawRecoverPerSecond: 0.2,
+
+  /** The first machine: a small six-legged drone that walks the ground, bites whatever is near and chews through walls. */
+  crawler: {
+    health: 30,
+    /** Blocks a second on level ground; a player walks at 4.4 and sprints faster. */
+    speed: 2.6,
+    /** Radians a second it can turn. */
+    turnRate: 8,
+    /** How wide and how tall its body is, for walls and for crowding. */
+    radius: 0.45,
+    height: 0.9,
+    /** The highest step it climbs, in blocks. Anything taller is a wall. */
+    step: 1,
+    /** Points a bite takes off a player and off the Core, how long it winds up and how often it begins one. */
+    bite: { player: 6, core: 5, windup: 0.4, interval: 1 },
+    /**
+     * How close it must be to bite, from its middle to the middle of a player or to the side of the
+     * Core; and how far above or below it a player can be and still be bitten.
+     */
+    reach: { player: 1.4, core: 0.95, height: 1.5 },
+    /** Players this close pull it off its way to the Core. */
+    aggro: 7,
+    /** Seconds one crawler takes to chew through one block, by material: tougher blocks hold longer. */
+    gnawSeconds: {
+      [MATERIAL.scrap]: 2,
+      [MATERIAL.composite]: 3.5,
+      [MATERIAL.alloy]: 6,
+      [MATERIAL.energy]: 9,
+    } as Readonly<Record<number, number>>,
+    /** What a block of a material this table does not know takes to chew. */
+    gnawDefault: 2,
   },
 } as const;
