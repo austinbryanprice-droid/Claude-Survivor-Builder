@@ -1,6 +1,8 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
-import { DAY_SECONDS } from '../../src/shared/daycycle';
+import { CYCLE_SECONDS, DAY_SECONDS } from '../../src/shared/daycycle';
+import { RESPAWN, VITALS } from '../../src/systems/survival/balance';
+import { recordToasts, toasts } from './support/toasts';
 
 /**
  * Four browsers play together through a local PeerServer (started by `playwright.config.ts`):
@@ -849,6 +851,216 @@ test.describe('multiplayer', () => {
       expect(await paidMoreThanHost()).toBeLessThanOrEqual(3);
       expect(await ada.page.evaluate(() => window.__ashbound!.mp!.rejections())).toEqual([]);
       expect(await host.page.evaluate(() => window.__ashbound!.mp!.rejections())).toEqual([]);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
+  test('a guest who is down lies still and is refused, the dawn pays for the Core to bring them back at their seat shaken, and a crew with no charge left loses the run on every screen', async ({
+    browser,
+    baseURL,
+  }) => {
+    const host = await openPlayer(browser, baseURL, 'Host');
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and the screen only changes when one is drawn.
+    const slow = { timeout: 60_000 };
+    const vitalsOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.vitals());
+    const positionOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.position());
+    const frozenOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.game.frozen);
+    const rejectionsOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.rejections());
+    const apart = (a: { x: number; z: number }, b: { x: number; z: number }) =>
+      Math.hypot(a.x - b.x, a.z - b.z);
+    const avatarOf = async (viewer: Player, name: string) =>
+      (await remotes(viewer)).find((r) => r.name === name);
+    const fell = (id: number) =>
+      host.page.evaluate(([who]) => window.__ashbound!.mp!.hurtPlayer(1000, who!), [id] as const);
+    const poolOf = async (p: Player) => {
+      const { respawns, respawnMax } = await clockOf(p);
+      return [respawns, respawnMax];
+    };
+    const everyoneSees = async (
+      what: string,
+      read: (p: Player) => Promise<unknown>,
+      want: unknown,
+    ) => {
+      for (const p of everyone) {
+        await expect
+          .poll(() => read(p), { ...slow, message: `${p.name} sees ${what}` })
+          .toEqual(want);
+      }
+    };
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) {
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+        await recordToasts(p.page);
+      }
+      const hostId = (await session(host)).localId;
+      const adaId = (await session(ada)).localId;
+      // Her seat is a little way along from the world's spawn point, once she has been put there.
+      const spawn = await ada.page.evaluate(() => {
+        const { x, z } = window.__ashbound!.game.world.spawn;
+        return { x, z };
+      });
+      await expect
+        .poll(async () => apart(await positionOf(ada), spawn), {
+          ...slow,
+          message: 'Ada takes her seat',
+        })
+        .toBeGreaterThan(1);
+      const seat = await positionOf(ada);
+
+      // One pool for the crew, the same on every screen: so many charges for each player in.
+      await everyoneSees('the pool', poolOf, [
+        2 * RESPAWN.startPerPlayer,
+        2 * RESPAWN.capPerPlayer,
+      ]);
+      for (const p of everyone) {
+        await expect(p.page.locator('.ph-charges-value')).toHaveText(
+          String(2 * RESPAWN.startPerPlayer),
+          slow,
+        );
+      }
+
+      // Ada walks off from her seat, so that being brought back shows.
+      await ada.page.evaluate(
+        ([x, z]) => {
+          const game = window.__ashbound!.game;
+          game.teleport(x!, game.world.groundAt(x!, z!) + 0.05, z!, 0);
+        },
+        [seat.x + 10, seat.z] as const,
+      );
+      await expect
+        .poll(async () => apart((await avatarOf(host, 'Ada')) ?? seat, seat), {
+          ...slow,
+          message: 'the host sees Ada walk off',
+        })
+        .toBeGreaterThan(8);
+
+      // The pool is empty, so a fall means a wait for the dawn. Ada goes down where she stands.
+      await host.page.evaluate(() => window.__ashbound!.mp!.setRespawns(0));
+      await everyoneSees('the empty pool', async (p) => (await poolOf(p))[0], 0);
+      for (const p of everyone) {
+        await expect(p.page.locator('.ph-charges')).toHaveAttribute('data-tone', 'empty', slow);
+      }
+      expect(await fell(adaId)).toBe(VITALS.maxHealth);
+
+      // Ada's screen says so and her legs and hands stop; the host is told who, and carries on.
+      await expect
+        .poll(async () => (await vitalsOf(ada)).health, {
+          ...slow,
+          message: 'Ada hears she is down',
+        })
+        .toBe(0);
+      expect((await vitalsOf(ada)).returnIn).toBe(0);
+      await expect(ada.page.locator('.ph-down')).toBeVisible(slow);
+      await expect(ada.page.locator('.ph-down-title')).toHaveText('You are down', slow);
+      await expect(ada.page.locator('.ph-down-detail')).toContainText('The dawn brings more', slow);
+      await expect(ada.page.locator('.ph-down-seconds')).toBeHidden();
+      await expect.poll(() => frozenOf(ada), { ...slow, message: 'Ada is held still' }).toBe(true);
+      expect(await ada.page.evaluate(() => window.__ashbound!.build!.isDown())).toBe(true);
+      await expect.poll(() => toasts(ada.page), slow).toContain('You are down');
+      await expect.poll(() => toasts(host.page), slow).toContain('Ada is down');
+      await expect(host.page.locator('.ph-down')).toBeHidden();
+      expect(await frozenOf(host)).toBe(false);
+      expect((await vitalsOf(host)).health).toBe(VITALS.maxHealth);
+
+      // Her hands are stilled for good measure: the host refuses what she tries, and no block lands.
+      await ada.page.evaluate(([state]) => window.__ashbound!.mp!.placeNear(3, 0, state!), [
+        SCRAP,
+      ] as const);
+      await expect
+        .poll(() => rejectionsOf(ada), { ...slow, message: 'the host refuses Ada' })
+        .toEqual([expect.objectContaining({ reason: 'you are down' })]);
+      await expectSameWorld(everyone, 0);
+
+      // The dawn gives the crew a charge for each player, and the Core spends one on Ada at once.
+      await host.page.evaluate((to) => {
+        const mp = window.__ashbound!.mp!;
+        mp.warp(to - mp.clock().elapsed);
+      }, CYCLE_SECONDS + 1);
+      await expect
+        .poll(async () => (await vitalsOf(ada)).health, { ...slow, message: 'Ada is on her feet' })
+        .toBe(VITALS.maxHealth);
+      const back = await vitalsOf(ada);
+      expect(back.returnIn).toBe(0);
+      // The room's run is live and a frame takes seconds here, so some of it may be gone already.
+      expect(back.shaken).toBeGreaterThan(0);
+      expect(back.shaken).toBeLessThanOrEqual(RESPAWN.shaken.seconds);
+      await everyoneSees('one charge spent', async (p) => (await poolOf(p))[0], 1);
+      await expect(ada.page.locator('.ph-down')).toBeHidden(slow);
+      await expect.poll(() => frozenOf(ada), { ...slow, message: 'Ada walks again' }).toBe(false);
+      expect(await ada.page.evaluate(() => window.__ashbound!.build!.isDown())).toBe(false);
+      await expect(ada.page.locator('.ph-status-label', { hasText: 'Shaken' })).toBeVisible(slow);
+      await expect(host.page.locator('.ph-status-label', { hasText: 'Shaken' })).toHaveCount(0);
+      await expect
+        .poll(() => toasts(ada.page), slow)
+        .toContain('The Core brought you back, shaken · 1 respawn left');
+      await expect
+        .poll(() => toasts(host.page), slow)
+        .toContain('Ada is back, shaken · 1 respawn left');
+
+      // At her seat, on her own screen and on the host's, not where she fell.
+      await expect
+        .poll(async () => apart(await positionOf(ada), seat), {
+          ...slow,
+          message: 'Ada is back at her seat',
+        })
+        .toBeLessThan(0.6);
+      await expect
+        .poll(async () => apart((await avatarOf(host, 'Ada')) ?? { x: Infinity, z: 0 }, seat), {
+          ...slow,
+          message: 'the host sees Ada at her seat',
+        })
+        .toBeLessThan(1);
+
+      // And her hands work again.
+      await ada.page.evaluate(([state]) => window.__ashbound!.mp!.placeNear(3, 0, state!), [
+        SCRAP,
+      ] as const);
+      await expectSameWorld(everyone, 1);
+      expect(await rejectionsOf(ada)).toHaveLength(1);
+
+      // One player standing keeps the run going; when the last of them goes down with nothing in
+      // the pool to bring anyone back, the run is lost on every screen with the Core still whole.
+      await host.page.evaluate(() => window.__ashbound!.mp!.setRespawns(0));
+      expect(await fell(adaId)).toBe(VITALS.maxHealth);
+      await expect
+        .poll(async () => (await vitalsOf(ada)).health, { ...slow, message: 'Ada goes down again' })
+        .toBe(0);
+      expect((await clockOf(host)).over).toBe(false);
+      expect(await fell(hostId)).toBe(VITALS.maxHealth);
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await clockOf(p)).over, {
+            ...slow,
+            message: `${p.name} sees the crew fall`,
+          })
+          .toBe(true);
+        const run = await clockOf(p);
+        expect(run).toMatchObject({ overWhy: 'crew', running: false, respawns: 0 });
+        expect(run.coreHealth).toBe(run.coreMax);
+        await expect(p.page.locator('.ph-down-title')).toHaveText('Outpost overrun', slow);
+        await expect(p.page.locator('.ph-down-detail')).toContainText('Every player is down', slow);
+        await expect(p.page.locator('.ph-banner-title')).toHaveText('The whole crew is down', slow);
+        await expect.poll(() => toasts(p.page), slow).toContain('The whole crew is down');
+      }
+
+      // Someone who joins afterwards is told how it ended.
+      const bo = await openPlayer(browser, baseURL, 'Bo');
+      everyone.push(bo);
+      await joinRoom(bo, code);
+      await expect
+        .poll(async () => (await clockOf(bo)).overWhy, {
+          ...slow,
+          message: 'a newcomer learns why',
+        })
+        .toBe('crew');
+      await expect(bo.page.locator('.ph-banner-title')).toHaveText('The whole crew is down', slow);
       expectNoProblems(everyone);
     } finally {
       await closeAll(everyone);
