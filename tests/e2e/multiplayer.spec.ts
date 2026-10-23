@@ -489,6 +489,113 @@ test.describe('multiplayer', () => {
     }
   });
 
+  test("Health and Energy are each player's own: a wound and a flat battery reach that player's screen and legs, and nobody else's", async ({
+    browser,
+    baseURL,
+  }) => {
+    const host = await openPlayer(browser, baseURL, 'Host');
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and the corner only changes when one is drawn.
+    const slow = { timeout: 60_000 };
+    const vitalsOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.vitals());
+    const scaleOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.game.speedScale);
+    const handsOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.build!.handScale());
+    const fillsOf = (p: Player) =>
+      p.page
+        .locator('.ph-health .ph-fill')
+        .evaluateAll((fills) => fills.map((fill) => parseFloat((fill as HTMLElement).style.width)));
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      const adaId = (await session(ada)).localId;
+
+      // The host tells a guest how it stands as soon as it has the world: whole and full.
+      await expect
+        .poll(async () => (await vitalsOf(ada)).healthMax, {
+          ...slow,
+          message: 'Ada hears her meters',
+        })
+        .toBe(100);
+      expect(await vitalsOf(ada)).toMatchObject({ health: 100, energyMax: 100, charging: false });
+
+      // A wound and a flat battery for Ada, from the host. (Health mends after eight quiet seconds
+      // while there is any Energy, and the run is on with a guest in, so the battery goes first and
+      // the wound stays where it fell.)
+      const taken = await host.page.evaluate(
+        ([amount, id]) => {
+          const mp = window.__ashbound!.mp!;
+          mp.setVitals({ energy: 0 }, id!);
+          return mp.hurtPlayer(amount!, id!);
+        },
+        [35, adaId] as const,
+      );
+      expect(taken).toBe(35);
+
+      // The wound is Ada's: her bar and her screen edges flash, and the host's do not.
+      await expect
+        .poll(async () => (await vitalsOf(ada)).health, { ...slow, message: 'Ada sees the wound' })
+        .toBe(65);
+      await expect.poll(() => fillsOf(ada), slow).toEqual([100, 95, 0]);
+      await expect(ada.page.locator('.ph-health')).toHaveAttribute('data-hit', '1', slow);
+      await expect(ada.page.locator('.ph-hurt')).toHaveAttribute('data-hit', '1', slow);
+      expect((await vitalsOf(host)).health).toBe(100);
+      expect(await fillsOf(host)).toEqual([100, 100, 100]);
+      await expect(host.page.locator('.ph-health')).not.toHaveAttribute('data-hit', /.*/);
+
+      // The flat battery is Ada's too: her bar turns amber and says so, and her legs and hands slow.
+      await expect
+        .poll(async () => (await vitalsOf(ada)).energy, { ...slow, message: 'Ada runs out' })
+        .toBe(0);
+      await expect(ada.page.locator('.ph-energy')).toHaveAttribute('data-tone', 'empty', slow);
+      await expect(ada.page.locator('.ph-status-label')).toHaveText('Out of energy', slow);
+      await expect.poll(() => scaleOf(ada), { ...slow, message: 'Ada slows' }).toBeCloseTo(0.65, 5);
+      await expect
+        .poll(() => handsOf(ada), { ...slow, message: 'Ada fumbles' })
+        .toBeCloseTo(0.5, 5);
+      expect(await scaleOf(host)).toBe(1);
+      expect(await handsOf(host)).toBe(1);
+      await expect(host.page.locator('.ph-energy')).toHaveAttribute('data-tone', 'ok');
+      await expect(host.page.locator('.ph-status-row')).toHaveCount(0);
+
+      // Rested, she is back to full speed. (A jump of ten seconds first, so that the six seconds
+      // after a wound that cost Energy extra are over and the count below is only her building.)
+      await host.page.evaluate((id) => {
+        const mp = window.__ashbound!.mp!;
+        mp.warp(10);
+        mp.setVitals({ energy: 60 }, id);
+      }, adaId);
+      await expect.poll(() => scaleOf(ada), { ...slow, message: 'Ada recovers' }).toBe(1);
+      await expect(ada.page.locator('.ph-energy')).toHaveAttribute('data-tone', 'ok', slow);
+      await expect(ada.page.locator('.ph-status-row')).toHaveCount(0, slow);
+
+      // What she builds is paid for from her bar, not the host's. Both bars drift down together
+      // with the idle drain while the run is on, so it is the difference that counts: twelve
+      // blocks cost three points.
+      const hostBefore = (await vitalsOf(host)).energy;
+      const adaBefore = (await vitalsOf(ada)).energy;
+      for (const dx of [3, 4, 5, 6]) {
+        for (const dz of [0, 1, 2]) {
+          await ada.page.evaluate(
+            ([x, z, state]) => window.__ashbound!.mp!.placeNear(x!, z!, state!),
+            [dx, dz, SCRAP] as const,
+          );
+        }
+      }
+      await expectSameWorld(everyone, 12);
+      const paidMoreThanHost = async () =>
+        adaBefore - (await vitalsOf(ada)).energy - (hostBefore - (await vitalsOf(host)).energy);
+      await expect
+        .poll(paidMoreThanHost, { ...slow, message: 'Ada pays for her blocks' })
+        .toBeGreaterThanOrEqual(2);
+      expect(await paidMoreThanHost()).toBeLessThanOrEqual(4);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
   test('closing the host shows everyone the message, and they can carry on alone', async ({
     browser,
     baseURL,
