@@ -41,7 +41,7 @@ export interface Rejection {
   readonly reason: string;
 }
 
-/** The host moved this player (a movement check failed). */
+/** The host moved this player (a movement check failed, or the Core brought them back at the base). */
 export interface Correction {
   readonly x: number;
   readonly y: number;
@@ -123,7 +123,7 @@ export interface GameSession {
   /** The room list changed (someone joined, left, or a ping moved). */
   onPlayers(listener: () => void): Unsubscribe;
   onPhase(listener: (phase: SessionPhase) => void): Unsubscribe;
-  /** The host moved the local player: teleport there. Guests only. */
+  /** The host moved the local player (a failed movement check, or the Core bringing them back at the base): teleport there. */
   onCorrection(listener: (correction: Correction) => void): Unsubscribe;
 
   /**

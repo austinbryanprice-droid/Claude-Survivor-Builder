@@ -86,6 +86,30 @@ export const BLASTER = {
 } as const;
 
 /**
+ * Going down and coming back. A player at no Health lies where they fell and the machines leave
+ * them be, until the Core brings them back at the base, if the crew has a respawn charge to spend
+ * (SPEC section 8: death is soft). The charges are shared: each player brings a few, each dawn
+ * brings one more for every player, and a crew whose players are all down with none left has lost
+ * the run. A first guess to be tuned by playing (docs/decisions.md, Phase 4g).
+ */
+export const RESPAWN = {
+  /** Charges each player brings to the run, what each dawn adds for every player, and the most the crew holds for every player. */
+  startPerPlayer: 2,
+  dawnPerPlayer: 1,
+  capPerPlayer: 3,
+  /** Seconds a downed player lies where they fell before the Core brings them back. */
+  delaySeconds: 6,
+  /** The Energy a player comes back with, as a fraction of a full bar; Health comes back full. */
+  energy: 0.5,
+  /** Coming back leaves a player shaken: for this long their Energy drains faster and the blaster hits softer. */
+  shaken: {
+    seconds: 45,
+    drainScale: 1.5,
+    damageScale: 0.6,
+  },
+} as const;
+
+/**
  * The machines that come for the Core. Every number is a first guess to be tuned by playing
  * (docs/decisions.md, Phase 4d); blocks have no health of their own until Phase 5, so the time an
  * enemy takes to break one stands in for it.

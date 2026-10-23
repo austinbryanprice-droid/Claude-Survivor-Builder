@@ -6,7 +6,7 @@ import { CRASH } from '../world/terrain/field';
 import { BuildPromptTracker, blockSlotsByKind, type BuildHudSource } from './build-hud';
 import { wrapBearing } from './player-hud/format';
 import { PlayerHud, type HotbarSlot, type PlayerHudState } from './player-hud/player-hud';
-import { clockForHud, coreForHud, objectiveForRun } from './run-hud';
+import { chargesForHud, clockForHud, coreForHud, downForHud, objectiveForRun } from './run-hud';
 import { FULL_VITALS, vitalsForHud } from './vitals-hud';
 
 /**
@@ -41,7 +41,8 @@ export interface PlaceholderHud {
  * The player HUD of the reference, driven by the game where the game knows the answer (the compass
  * follows the view, the waypoint points at the crash site, the hotbar, the crosshair, the hit
  * marker and Build Mode come from the player's hands, the day and night clock and the objective
- * come from the run, and Health, Energy and the status icons come from the player's meters) and
+ * come from the run, the crew's respawn charges come from it too, and Health, Energy, the status
+ * icons and the screen of a player who is down come from the player's meters) and
  * by made-up numbers where it does not yet: the tools after the blaster.
  */
 export function createPlaceholderHud(
@@ -101,6 +102,8 @@ export function createPlaceholderHud(
         ],
         clock: run ? clockForHud(run) : null,
         core: run ? coreForHud(run) : null,
+        charges: run ? chargesForHud(run) : null,
+        down: vitals ? downForHud(vitalsReading, run) : null,
         objective: run
           ? objectiveForRun(run)
           : { place: 'The Ashbound Outpost', title: 'Light the beacon at the crash site' },

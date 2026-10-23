@@ -1,6 +1,7 @@
 import {
   SIM_HZ,
   readClock,
+  type OverrunCause,
   type SurvivalEvent,
   type SurvivalReading,
   type SurvivalView,
@@ -26,19 +27,37 @@ export class SurvivalMirror implements SurvivalView {
   private coreHealth = 0;
   private coreMax = 0;
   private over = false;
+  private overWhy: OverrunCause | null = null;
+  private respawns = 0;
+  private respawnMax = 0;
   private shown = 0;
   private readonly events = new Emitter<SurvivalEvent>();
 
   constructor(private readonly scheduler: Scheduler) {}
 
-  /** The host's step count, whether its clock runs, and the Core's health and fall, as of now. */
-  apply(tick: number, running: boolean, coreHealth: number, coreMax: number, over: boolean): void {
+  /**
+   * The host's step count, whether its clock runs, the Core's health, whether the run is over and
+   * what ended it, and the crew's respawn charges and the most it can hold, as of now.
+   */
+  apply(
+    tick: number,
+    running: boolean,
+    coreHealth: number,
+    coreMax: number,
+    over: boolean,
+    why: OverrunCause | null = null,
+    respawns = 0,
+    respawnMax = 0,
+  ): void {
     this.base = tick / SIM_HZ;
     this.at = this.scheduler.now();
     this.running = running;
     this.coreHealth = coreHealth;
     this.coreMax = coreMax;
     this.over = over;
+    this.overWhy = over ? why : null;
+    this.respawns = respawns;
+    this.respawnMax = respawnMax;
   }
 
   announce(event: SurvivalEvent): void {
@@ -62,6 +81,9 @@ export class SurvivalMirror implements SurvivalView {
     out.coreHealth = this.coreHealth;
     out.coreMax = this.coreMax;
     out.over = this.over;
+    out.overWhy = this.overWhy;
+    out.respawns = this.respawns;
+    out.respawnMax = this.respawnMax;
     return out;
   }
 

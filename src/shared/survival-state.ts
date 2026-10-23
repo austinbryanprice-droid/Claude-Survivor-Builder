@@ -15,6 +15,9 @@ export const SIM_STEP_SECONDS = 1 / SIM_HZ;
 
 export type DayPhase = 'day' | 'night';
 
+/** What ended a run: the Outpost Core fell, or every player was down with no respawn charge left. */
+export type OverrunCause = 'core' | 'crew';
+
 /**
  * What a screen needs to know about the run, read once a frame. The object is reused from call to
  * call, so read what you need and do not keep it.
@@ -37,8 +40,14 @@ export interface SurvivalReading {
   coreHealth: number;
   /** The Core's full health. 0 where there is no Core to show, which hides its gauge. */
   coreMax: number;
-  /** True once the Core has fallen: the run is over and the clock no longer moves. */
+  /** True once the run has ended (the Core fell or the whole crew is down): the clock no longer moves. */
   over: boolean;
+  /** What ended the run; null while it goes on. */
+  overWhy: OverrunCause | null;
+  /** The crew's respawn charges, shared by every player. */
+  respawns: number;
+  /** The most the crew can hold now (so many for each player). 0 where there is no run to show, which hides the count. */
+  respawnMax: number;
 }
 
 export function createReading(): SurvivalReading {
@@ -53,6 +62,9 @@ export function createReading(): SurvivalReading {
     coreHealth: 0,
     coreMax: 0,
     over: false,
+    overWhy: null,
+    respawns: 0,
+    respawnMax: 0,
   };
 }
 
@@ -98,14 +110,20 @@ export type SurvivalEvent =
     }
   /** Night `n` is over and day `n + 1` has begun. */
   | { readonly k: 'dawn'; readonly n: number }
-  /** The run has ended: the Core fell during day or night `n`, so `n - 1` nights were survived. */
-  | { readonly k: 'overrun'; readonly n: number };
+  /** The run has ended during day or night `n`, so `n - 1` nights were survived; `why` says what ended it. */
+  | { readonly k: 'overrun'; readonly n: number; readonly why: OverrunCause }
+  /** Player `p` has no Health left during day or night `n`: they lie where they fell. */
+  | { readonly k: 'down'; readonly n: number; readonly p: number }
+  /** The Core has brought player `p` back at the base; `c` respawn charges are left. */
+  | { readonly k: 'back'; readonly n: number; readonly p: number; readonly c: number };
 
 export const SURVIVAL_EVENT_KINDS: readonly SurvivalEvent['k'][] = [
   'nightfall',
   'wave',
   'dawn',
   'overrun',
+  'down',
+  'back',
 ];
 
 /**

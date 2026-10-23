@@ -105,6 +105,8 @@ export class BuildController {
   private clock = 0;
   /** How fast a held button repeats, as a fraction of normal; low Energy slows it. */
   private repeatScale = 1;
+  /** The player is down: the hands do nothing until they are back on their feet. */
+  private down = false;
   /** Seconds of the hands' time until the blaster is ready again. */
   private cooldown = 0;
   /** Where the camera was and which way it looked at the last `update`: what a shot is aimed with. */
@@ -154,6 +156,11 @@ export class BuildController {
   /** How fast a held button repeats right now, as a fraction of normal (1 unless Energy is low). */
   get handScale(): number {
     return this.repeatScale;
+  }
+
+  /** The player is down: the hands do nothing. */
+  get isDown(): boolean {
+    return this.down;
   }
 
   /** The kind of shape the block slots make: a block, a slab or a wedge. */
@@ -225,6 +232,13 @@ export class BuildController {
    */
   setHandScale(scale: number): void {
     this.repeatScale = Number.isFinite(scale) ? Math.min(1, Math.max(MIN_HAND_SCALE, scale)) : 1;
+  }
+
+  /** A player who is down cannot build, break or shoot: the buttons are let go and do nothing until they are up again. */
+  setDown(down: boolean): void {
+    if (down === this.down) return;
+    this.down = down;
+    if (down) this.releaseAll();
   }
 
   toggleBuildMode(): void {
@@ -314,6 +328,7 @@ export class BuildController {
 
   /** What a button does now: the left one fires the blaster when it is in hand and breaks a block otherwise; the right one places. */
   private act(button: Button): void {
+    if (this.down) return;
     if (button === 'primary') {
       if (this.armed) this.shoot();
       else this.breakTarget();

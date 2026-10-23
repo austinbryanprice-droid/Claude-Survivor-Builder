@@ -670,3 +670,51 @@ describe('the pulse blaster', () => {
     expect(r.shots).toHaveLength(1);
   });
 });
+
+describe('the hands of a player who is down', () => {
+  it('do nothing: no block is broken or placed, and no shot is fired', () => {
+    const r = rig();
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.setDown(true);
+    r.controller.press('primary');
+    r.controller.press('secondary');
+    expect(r.sent).toEqual([]);
+    r.controller.selectSlot(BLASTER_SLOT);
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('primary');
+    expect(r.shots).toEqual([]);
+  });
+
+  it('let go of a button that was held when the player went down, and stay still when it is repeated', () => {
+    const r = rig();
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    const placed = r.sent.length;
+    expect(placed).toBeGreaterThan(0);
+    r.controller.setDown(true);
+    for (let i = 0; i < 30; i++) r.controller.update(0.1, r.lookDown(3));
+    expect(r.sent).toHaveLength(placed);
+  });
+
+  it('work again, from the next click, once the player is back on their feet', () => {
+    const r = rig();
+    r.controller.selectSlot(BLASTER_SLOT);
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.setDown(true);
+    r.controller.press('primary');
+    r.controller.setDown(false);
+    expect(r.shots).toEqual([]);
+    r.controller.press('primary');
+    expect(r.shots).toHaveLength(1);
+  });
+
+  it('say nothing for a click they cannot make: no notice about the blaster not being ready', () => {
+    const r = rig();
+    r.controller.selectSlot(BLASTER_SLOT);
+    r.controller.update(0.016, r.lookDown(3));
+    r.gun.ready = false;
+    r.controller.setDown(true);
+    r.controller.press('primary');
+    expect(r.controller.hudState().refusal).toBeNull();
+  });
+});

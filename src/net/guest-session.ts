@@ -461,13 +461,30 @@ export class GuestSession implements GameSession {
         break;
       }
       case 'sv':
-        this.mirror.apply(frame.tick, frame.run, frame.core[0], frame.core[1], frame.over);
+        this.mirror.apply(
+          frame.tick,
+          frame.run,
+          frame.core[0],
+          frame.core[1],
+          frame.over,
+          frame.why ?? null,
+          frame.rc[0],
+          frame.rc[1],
+        );
         break;
       case 'se':
         this.mirror.announce(frame.e);
         break;
       case 'vt':
-        this.vitalsMirror.apply(frame.hp[0], frame.hp[1], frame.en[0], frame.en[1], frame.chg);
+        this.vitalsMirror.apply(
+          frame.hp[0],
+          frame.hp[1],
+          frame.en[0],
+          frame.en[1],
+          frame.chg,
+          frame.rt,
+          frame.sk,
+        );
         break;
       case 'sh':
         // A shot heard of before the world is built has nothing to be drawn in.

@@ -64,6 +64,7 @@ export const REFUSAL = {
   reach: 'out of reach',
   body: 'a player is in the way',
   failed: 'could not change that block',
+  down: 'you are down',
 } as const;
 
 export interface HostSessionOptions {
@@ -104,11 +105,13 @@ interface Member {
   vitalsAt: number;
 }
 
-/** The part of a guest's meters that is news when it changes: whole points, and the charge field. */
+/** The part of a guest's meters that is news when it changes: whole points, the charge field, and the two countdowns. */
 interface VitalsSent {
   health: number;
   energy: number;
   charging: boolean;
+  returnIn: number;
+  shaken: number;
 }
 
 interface Pending {
@@ -144,6 +147,9 @@ const IDLE_SURVIVAL: SurvivalView = {
     out.coreHealth = 0;
     out.coreMax = 0;
     out.over = false;
+    out.overWhy = null;
+    out.respawns = 0;
+    out.respawnMax = 0;
     return out;
   },
   onEvent: () => () => undefined,
@@ -159,6 +165,8 @@ const IDLE_VITALS: VitalsView = {
     out.speedScale = 1;
     out.handScale = 1;
     out.charging = false;
+    out.returnIn = 0;
+    out.shaken = 0;
     return out;
   },
 };
@@ -709,13 +717,52 @@ export class HostSession implements GameSession {
   private correct(member: Member): void {
     if (!member.link) return;
     const now = this.scheduler.now();
-    member.epoch = (member.epoch + 1) & 0xff;
     const at = member.guard.position;
     member.guard.restore(now);
+    this.sendFix(member, at);
+  }
+
+  /** Tells a guest where it stands now; what it sent before the word arrives is from another epoch and is ignored. */
+  private sendFix(member: Member, at: Vec3): void {
+    member.epoch = (member.epoch + 1) & 0xff;
     member.stateSeq = null;
     member.track.clear();
     this.counters.corrections++;
     this.sendTo(member, encodeFrame({ t: 'fix', epoch: member.epoch, x: at.x, y: at.y, z: at.z }));
+  }
+
+  /**
+   * The Core has brought a player back: they stand at the base, on their seat's spawn point, and
+   * the host's idea of where they are goes with them at once, so neither the movement check nor
+   * the machines still see them where they fell. A guest is told with a correction; the host's
+   * own player is moved by the same word to its screen.
+   */
+  private placeAtBase(id: PlayerId): void {
+    const member = this.members.get(id);
+    if (!member) return;
+    const now = this.scheduler.now();
+    const to = this.spawnFor(member.slot);
+    member.guard.place(to.x, to.y, to.z, now);
+    const sample = member.sample;
+    if (sample) {
+      sample.x = to.x;
+      sample.y = to.y;
+      sample.z = to.z;
+      sample.vx = 0;
+      sample.vy = 0;
+      sample.vz = 0;
+      sample.onGround = true;
+      sample.reset = true;
+    }
+    this.sim?.observe(id, to.x, to.y, to.z, 0, true);
+    this.relayDirty = true;
+    if (!member.link) {
+      this.corrections.emit({ x: to.x, y: to.y, z: to.z });
+      return;
+    }
+    this.sendFix(member, to);
+    // Every screen shows the move at once, as a jump and not a glide, not at the guest's next report.
+    if (sample) member.track.push(now, sample);
   }
 
   // --------------------------------------------------------------------------------------------
@@ -763,6 +810,7 @@ export class HostSession implements GameSession {
 
   /** The host's rules on top of the world's own: who is asking, how fast, from where, and who is in the way. */
   private refusal(member: Member, command: BlockCommand): string | null {
+    if (this.sim?.isDown(member.id)) return REFUSAL.down;
     const now = this.scheduler.now();
     if (member.link) {
       member.editTokens = Math.min(
@@ -1012,6 +1060,7 @@ export class HostSession implements GameSession {
 
     sim.drainEvents(this.survivalQueue);
     for (const event of this.survivalQueue) {
+      if (event.k === 'back') this.placeAtBase(event.p);
       if (guests) this.broadcast(encodeFrame({ t: 'se', e: event }));
       this.survivalDirty = true;
       this.survivalEvents.emit(event);
@@ -1095,7 +1144,9 @@ export class HostSession implements GameSession {
       sent &&
       sent.health === reading.health &&
       sent.energy === reading.energy &&
-      sent.charging === reading.charging
+      sent.charging === reading.charging &&
+      sent.returnIn === reading.returnIn &&
+      sent.shaken === reading.shaken
     ) {
       return;
     }
@@ -1103,6 +1154,8 @@ export class HostSession implements GameSession {
       health: reading.health,
       energy: reading.energy,
       charging: reading.charging,
+      returnIn: reading.returnIn,
+      shaken: reading.shaken,
     };
     member.vitalsAt = now;
     this.sendTo(
@@ -1112,6 +1165,8 @@ export class HostSession implements GameSession {
         hp: [reading.health, reading.healthMax],
         en: [reading.energy, reading.energyMax],
         chg: reading.charging,
+        rt: reading.returnIn,
+        sk: reading.shaken,
       }),
     );
   }
@@ -1120,12 +1175,15 @@ export class HostSession implements GameSession {
     const sim = this.sim;
     const core = sim?.coreHealth ?? 0;
     this.coreSent = core;
+    const why = sim?.overWhy ?? null;
     return encodeFrame({
       t: 'sv',
       tick: sim?.tick ?? 0,
       run: this.refreshRunning(),
       core: [core, sim?.coreMax ?? 1],
       over: sim?.over ?? false,
+      ...(why ? { why } : {}),
+      rc: [sim?.respawns ?? 0, sim?.respawnMax ?? 0],
     });
   }
 

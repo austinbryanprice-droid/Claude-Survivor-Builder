@@ -21,7 +21,7 @@ import type {
 } from './protocol';
 import { createPlayerSample } from './protocol';
 import { SHOT_FLAGS_MASK } from './shot';
-import { SURVIVAL_EVENT_KINDS, type SurvivalEvent } from './survival-state';
+import { SURVIVAL_EVENT_KINDS, type OverrunCause, type SurvivalEvent } from './survival-state';
 
 /**
  * Turns the protocol into bytes and back. Control frames are JSON text on the ordered channel;
@@ -60,6 +60,9 @@ const MAX_U31 = 0x7fffffff;
 /** A night holds a handful of waves; the frame accepts anything a byte can count. */
 const MAX_WAVES = 255;
 const MAX_SEED = Number.MAX_SAFE_INTEGER;
+const OVERRUN_CAUSES: readonly OverrunCause[] = ['core', 'crew'];
+/** Seconds a frame may count down to a respawn or a shaken spell: a byte's worth, far more than either lasts. */
+const MAX_SECONDS = 255;
 
 /** Compares 16-bit counters that wrap: is `a` newer than `b`? */
 export function seqNewer(a: number, b: number): boolean {
@@ -109,16 +112,34 @@ function readVec3(raw: unknown, limit: number): [number, number, number] | null 
   return [x, y, z];
 }
 
+function readOverrunCause(value: unknown): OverrunCause | null {
+  return OVERRUN_CAUSES.find((candidate) => candidate === value) ?? null;
+}
+
 function readSurvivalEvent(raw: unknown): SurvivalEvent | null {
   if (!isRecord(raw)) return null;
   const kind = SURVIVAL_EVENT_KINDS.find((candidate) => candidate === raw.k);
   if (!kind || !isInt(raw.n, 1, MAX_U16)) return null;
-  if (kind !== 'wave') return { k: kind, n: raw.n };
-  // A wave says which of the night's it is and how many machines it holds.
-  if (!isInt(raw.of, 1, MAX_WAVES) || !isInt(raw.i, 1, raw.of) || !isInt(raw.c, 0, MAX_U16)) {
-    return null;
+  switch (kind) {
+    case 'nightfall':
+    case 'dawn':
+      return { k: kind, n: raw.n };
+    case 'wave':
+      // A wave says which of the night's it is and how many machines it holds.
+      if (!isInt(raw.of, 1, MAX_WAVES) || !isInt(raw.i, 1, raw.of) || !isInt(raw.c, 0, MAX_U16)) {
+        return null;
+      }
+      return { k: 'wave', n: raw.n, i: raw.i, of: raw.of, c: raw.c };
+    case 'overrun': {
+      const why = readOverrunCause(raw.why);
+      return why ? { k: 'overrun', n: raw.n, why } : null;
+    }
+    case 'down':
+      return isInt(raw.p, 1, MAX_U16) ? { k: 'down', n: raw.n, p: raw.p } : null;
+    case 'back':
+      if (!isInt(raw.p, 1, MAX_U16) || !isInt(raw.c, 0, MAX_U16)) return null;
+      return { k: 'back', n: raw.n, p: raw.p, c: raw.c };
   }
-  return { k: 'wave', n: raw.n, i: raw.i, of: raw.of, c: raw.c };
 }
 
 function readPlayerWire(raw: unknown): PlayerWire | null {
@@ -269,7 +290,21 @@ export function decodeHostFrame(text: string): HostFrame | null {
       }
       const [health, max] = raw.core as unknown[];
       if (!isInt(max, 1, MAX_U16) || !isInt(health, 0, max)) return null;
-      return { t: 'sv', tick: raw.tick, run: raw.run, core: [health, max], over: raw.over };
+      if (!Array.isArray(raw.rc) || raw.rc.length !== 2) return null;
+      const [charges, chargeMax] = raw.rc as unknown[];
+      if (!isInt(chargeMax, 0, MAX_U16) || !isInt(charges, 0, chargeMax)) return null;
+      // A run that has ended says why; one that has not says nothing.
+      const why = raw.over ? readOverrunCause(raw.why) : null;
+      if (raw.over ? why === null : raw.why !== undefined) return null;
+      const frame = {
+        t: 'sv' as const,
+        tick: raw.tick,
+        run: raw.run,
+        core: [health, max] as const,
+        over: raw.over,
+        rc: [charges, chargeMax] as const,
+      };
+      return why ? { ...frame, why } : frame;
     }
     case 'se': {
       const event = readSurvivalEvent(raw.e);
@@ -283,7 +318,15 @@ export function decodeHostFrame(text: string): HostFrame | null {
       const [energy, energyMax] = raw.en as unknown[];
       if (!isInt(healthMax, 1, MAX_U16) || !isInt(health, 0, healthMax)) return null;
       if (!isInt(energyMax, 1, MAX_U16) || !isInt(energy, 0, energyMax)) return null;
-      return { t: 'vt', hp: [health, healthMax], en: [energy, energyMax], chg: raw.chg };
+      if (!isInt(raw.rt, 0, MAX_SECONDS) || !isInt(raw.sk, 0, MAX_SECONDS)) return null;
+      return {
+        t: 'vt',
+        hp: [health, healthMax],
+        en: [energy, energyMax],
+        chg: raw.chg,
+        rt: raw.rt,
+        sk: raw.sk,
+      };
     }
     case 'sh': {
       const end = readVec3(raw.e, NET.move.limit);

@@ -1,5 +1,5 @@
 import type { CellState } from './block-world';
-import type { SurvivalEvent } from './survival-state';
+import type { OverrunCause, SurvivalEvent } from './survival-state';
 
 export type { CellState } from './block-world';
 
@@ -172,10 +172,11 @@ export type HostFrame =
   | { readonly t: 'pong'; readonly n: number }
   /**
    * Where the run stands: the host's step count (20 a second), whether the clock is running, the
-   * Outpost Core's health and full health in whole points, and whether the Core has fallen. Sent
-   * about twice a second while the clock runs, whenever it stops or starts, within a fifth of a
-   * second of the Core's health changing, and to every newcomer, so a guest can show the time and
-   * the Core and move the sky between frames.
+   * Outpost Core's health and full health in whole points, whether the run has ended and why, and
+   * the crew's respawn charges and the most it can hold. Sent about twice a second while the clock
+   * runs, whenever it stops or starts, within a fifth of a second of the Core's health changing,
+   * whenever an event is announced, and to every newcomer, so a guest can show the time, the Core
+   * and the charges and move the sky between frames.
    */
   | {
       readonly t: 'sv';
@@ -183,12 +184,17 @@ export type HostFrame =
       readonly run: boolean;
       readonly core: readonly [health: number, max: number];
       readonly over: boolean;
+      /** What ended the run; present once it has ended. */
+      readonly why?: OverrunCause;
+      readonly rc: readonly [charges: number, max: number];
     }
-  /** Something the survival loop announces as it happens (nightfall, dawn, the Core falling). */
+  /** Something the survival loop announces as it happens (nightfall, a wave, dawn, a player down or back, the run ending). */
   | { readonly t: 'se'; readonly e: SurvivalEvent }
   /**
-   * This guest's own Health and Energy in whole points (`[points, full]`), and whether it stands in
-   * the Core's charge field. Each guest hears only its own, within a quarter of a second of a
+   * This guest's own Health and Energy in whole points (`[points, full]`), whether it stands in
+   * the Core's charge field, the whole seconds until the Core brings it back if it is down (`rt`;
+   * 0 for a guest that is up, or down and waiting for the dawn) and the seconds it stays shaken
+   * after coming back (`sk`). Each guest hears only its own, within a quarter of a second of a
    * change and once to every newcomer; nobody else's meters are drawn.
    */
   | {
@@ -196,6 +202,8 @@ export type HostFrame =
       readonly hp: readonly [points: number, max: number];
       readonly en: readonly [points: number, max: number];
       readonly chg: boolean;
+      readonly rt: number;
+      readonly sk: number;
     }
   /**
    * A shot the host decided, sent to everyone, the shooter included: who fired (`p`), where the bolt

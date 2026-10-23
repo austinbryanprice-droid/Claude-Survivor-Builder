@@ -187,17 +187,22 @@ describe('host control frames', () => {
     { t: 'rej', id: 4, r: 'occupied' },
     { t: 'fix', epoch: 3, x: 1, y: 0, z: -2 },
     { t: 'pong', n: 9 },
-    { t: 'sv', tick: 14400, run: true, core: [1000, 1000], over: false },
-    { t: 'sv', tick: 0, run: false, core: [1, 1000], over: false },
-    { t: 'sv', tick: 9600, run: false, core: [0, 1000], over: true },
+    { t: 'sv', tick: 14400, run: true, core: [1000, 1000], over: false, rc: [6, 6] },
+    { t: 'sv', tick: 0, run: false, core: [1, 1000], over: false, rc: [0, 0] },
+    { t: 'sv', tick: 9600, run: false, core: [0, 1000], over: true, why: 'core', rc: [2, 6] },
+    { t: 'sv', tick: 9700, run: false, core: [640, 1000], over: true, why: 'crew', rc: [0, 9] },
     { t: 'se', e: { k: 'nightfall', n: 1 } },
     { t: 'se', e: { k: 'wave', n: 1, i: 1, of: 1, c: 6 } },
     { t: 'se', e: { k: 'wave', n: 14, i: 6, of: 6, c: 7 } },
     { t: 'se', e: { k: 'dawn', n: 12 } },
-    { t: 'se', e: { k: 'overrun', n: 3 } },
-    { t: 'vt', hp: [100, 100], en: [100, 100], chg: false },
-    { t: 'vt', hp: [37, 100], en: [0, 100], chg: true },
-    { t: 'vt', hp: [0, 100], en: [25, 100], chg: false },
+    { t: 'se', e: { k: 'overrun', n: 3, why: 'core' } },
+    { t: 'se', e: { k: 'overrun', n: 5, why: 'crew' } },
+    { t: 'se', e: { k: 'down', n: 2, p: 3 } },
+    { t: 'se', e: { k: 'back', n: 2, p: 3, c: 0 } },
+    { t: 'se', e: { k: 'back', n: 9, p: 1, c: 11 } },
+    { t: 'vt', hp: [100, 100], en: [100, 100], chg: false, rt: 0, sk: 0 },
+    { t: 'vt', hp: [37, 100], en: [0, 100], chg: true, rt: 0, sk: 31 },
+    { t: 'vt', hp: [0, 100], en: [25, 100], chg: false, rt: 5, sk: 0 },
     { t: 'sh', p: 2, e: [3.5, 10, -12.25], f: 1, h: 17 },
     { t: 'sh', p: 1, e: [-40.25, 12.5, 7], f: 3, h: 9 },
     { t: 'sh', p: 3, e: [0, 10, 40], f: 4, h: 0 },
@@ -249,6 +254,17 @@ describe('host control frames', () => {
     ).toBeNull();
   });
 
+  /** A survival frame with the respawn word a current host always sends, so a case tests only its own defect. */
+  const withCharges = (text: string): string =>
+    text.startsWith('{"t":"sv"') && !text.includes('"rc"')
+      ? text.replace(/\}$/, ',"rc":[2,3]}')
+      : text;
+  /** A word about a player's meters with the two countdowns a current host always sends. */
+  const withCountdowns = (text: string): string =>
+    text.startsWith('{"t":"vt"') && !text.includes('"rt"')
+      ? text.replace(/\}$/, ',"rt":0,"sk":0}')
+      : text;
+
   it('refuses survival frames with a bad step count, a flag that is not a flag or an event it does not know', () => {
     for (const text of [
       '{"t":"sv","tick":-1,"run":true,"core":[5,10],"over":false}',
@@ -265,7 +281,7 @@ describe('host control frames', () => {
       '{"t":"se","e":{"k":"nightfall","n":70000}}',
       '{"t":"se","e":{"k":"eclipse","n":1}}',
     ]) {
-      expect(decodeHostFrame(text), text).toBeNull();
+      expect(decodeHostFrame(withCharges(text)), text).toBeNull();
     }
   });
 
@@ -314,7 +330,7 @@ describe('host control frames', () => {
       '{"t":"sv","tick":9,"run":true,"core":[5,70000],"over":false}',
       '{"t":"sv","tick":9,"run":true,"core":null,"over":false}',
     ]) {
-      expect(decodeHostFrame(text), text).toBeNull();
+      expect(decodeHostFrame(withCharges(text)), text).toBeNull();
     }
   });
 
@@ -339,7 +355,95 @@ describe('host control frames', () => {
       '{"t":"vt","hp":[50,100],"en":[0,0],"chg":false}',
       '{"t":"vt","hp":[50,100],"en":null,"chg":false}',
     ]) {
+      expect(decodeHostFrame(withCountdowns(text)), text).toBeNull();
+    }
+  });
+
+  it('refuses a survival frame whose respawn charges are missing, malformed or more than the crew can hold', () => {
+    const base = '{"t":"sv","tick":9,"run":true,"core":[5,10],"over":false';
+    expect(decodeHostFrame(`${base},"rc":[2,3]}`)).not.toBeNull();
+    for (const rc of [
+      '',
+      ',"rc":null',
+      ',"rc":2',
+      ',"rc":[2]',
+      ',"rc":[2,3,1]',
+      ',"rc":["2",3]',
+      ',"rc":[2.5,3]',
+      ',"rc":[-1,3]',
+      ',"rc":[4,3]',
+      ',"rc":[0,-1]',
+      ',"rc":[0,70000]',
+    ]) {
+      expect(decodeHostFrame(`${base}${rc}}`), rc).toBeNull();
+    }
+  });
+
+  it('wants a cause exactly when the run is over, and only the two it knows', () => {
+    const open = '{"t":"sv","tick":9,"run":false,"core":[5,10],"rc":[1,3]';
+    expect(decodeHostFrame(`${open},"over":true,"why":"crew"}`)).toMatchObject({ why: 'crew' });
+    expect(decodeHostFrame(`${open},"over":true,"why":"core"}`)).toMatchObject({ why: 'core' });
+    for (const text of [
+      `${open},"over":true}`,
+      `${open},"over":true,"why":"hunger"}`,
+      `${open},"over":true,"why":null}`,
+      `${open},"over":false,"why":"core"}`,
+    ]) {
       expect(decodeHostFrame(text), text).toBeNull();
+    }
+    expect(decodeHostFrame(`${open},"over":false}`)).not.toHaveProperty('why');
+    for (const text of [
+      '{"t":"se","e":{"k":"overrun","n":3}}',
+      '{"t":"se","e":{"k":"overrun","n":3,"why":"hunger"}}',
+      '{"t":"se","e":{"k":"overrun","n":3,"why":2}}',
+    ]) {
+      expect(decodeHostFrame(text), text).toBeNull();
+    }
+  });
+
+  it('refuses a word that a player went down or came back without saying who, or how many charges are left', () => {
+    const down = { k: 'down', n: 2, p: 3 };
+    const back = { k: 'back', n: 2, p: 3, c: 1 };
+    expect(decodeHostFrame(JSON.stringify({ t: 'se', e: down }))).toEqual({ t: 'se', e: down });
+    expect(decodeHostFrame(JSON.stringify({ t: 'se', e: back }))).toEqual({ t: 'se', e: back });
+    for (const bad of [
+      { e: { ...down, p: undefined } },
+      { e: { ...down, p: 0 } },
+      { e: { ...down, p: -1 } },
+      { e: { ...down, p: 1.5 } },
+      { e: { ...down, p: '3' } },
+      { e: { ...down, p: 70000 } },
+      { e: { ...down, n: 0 } },
+      { e: { ...back, p: undefined } },
+      { e: { ...back, p: 0 } },
+      { e: { ...back, c: undefined } },
+      { e: { ...back, c: -1 } },
+      { e: { ...back, c: 1.5 } },
+      { e: { ...back, c: 70000 } },
+      { e: { ...back, c: null } },
+    ]) {
+      const text = JSON.stringify({ t: 'se', ...bad });
+      expect(decodeHostFrame(text), text).toBeNull();
+    }
+  });
+
+  it("refuses a word about a player's countdowns that is missing, fractional or longer than a byte", () => {
+    const base = '{"t":"vt","hp":[0,100],"en":[50,100],"chg":false';
+    expect(decodeHostFrame(`${base},"rt":6,"sk":45}`)).toMatchObject({ rt: 6, sk: 45 });
+    for (const tail of [
+      '',
+      ',"rt":6',
+      ',"sk":45',
+      ',"rt":-1,"sk":0',
+      ',"rt":0,"sk":-1',
+      ',"rt":1.5,"sk":0',
+      ',"rt":0,"sk":2.5',
+      ',"rt":256,"sk":0',
+      ',"rt":0,"sk":256',
+      ',"rt":"6","sk":0',
+      ',"rt":null,"sk":0',
+    ]) {
+      expect(decodeHostFrame(`${base}${tail}}`), tail).toBeNull();
     }
   });
 

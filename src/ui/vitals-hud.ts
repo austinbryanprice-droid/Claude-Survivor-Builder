@@ -5,8 +5,8 @@ import type { HudStatus } from './player-hud/player-hud';
 /**
  * How the HUD shows the player's own meters: the Health segments and the Energy bar in the corner,
  * the tone each bar turns when it runs low, and the round icons under them for what the Core's
- * charge field and low Energy are doing to the player. Plain data in and out, so it runs under
- * Vitest; `player-hud.ts` draws what this returns.
+ * charge field, low Energy and the shaking of a player who has just come back are doing to them.
+ * Plain data in and out, so it runs under Vitest; `player-hud.ts` draws what this returns.
  */
 
 /** Below this share of its bar the player's Health shows as low. */
@@ -15,6 +15,7 @@ export const HEALTH_LOW_BELOW = 0.25;
 const CHARGING: HudStatus = { icon: 'core', label: 'Charging', tone: 'good' };
 const LOW_ENERGY: HudStatus = { icon: 'bolt', label: 'Low energy', tone: 'bad' };
 const NO_ENERGY: HudStatus = { icon: 'bolt', label: 'Out of energy', tone: 'bad' };
+const SHAKEN: HudStatus = { icon: 'shield', label: 'Shaken', tone: 'bad' };
 
 export interface VitalsForHud {
   /** 0 to 1. */
@@ -49,6 +50,7 @@ export function vitalsForHud(reading: VitalsReading): VitalsForHud {
   if (reading.charging) statuses.push(CHARGING);
   if (energyTone === 'empty') statuses.push(NO_ENERGY);
   else if (energyTone === 'low') statuses.push(LOW_ENERGY);
+  if (reading.shaken > 0) statuses.push({ ...SHAKEN, seconds: reading.shaken });
   return {
     health,
     healthTone: health < HEALTH_LOW_BELOW ? 'low' : 'ok',

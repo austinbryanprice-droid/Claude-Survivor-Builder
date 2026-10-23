@@ -1,7 +1,7 @@
 import { MOVEMENT, PLAYER } from '../../shared/movement';
 import type { VitalsReading } from '../../shared/vitals-state';
 import { outpostDistance, type Outpost } from '../../world/outpost';
-import { BLASTER, VITALS } from './balance';
+import { BLASTER, RESPAWN, VITALS } from './balance';
 
 /** How low Energy is: 0 while it is not low, rising to 1 with none left. */
 function lowness(fraction: number): number {
@@ -24,6 +24,8 @@ export function handScaleFor(fraction: number): number {
 const SPRINT_FACTOR = 1.1;
 /** Shots are counted in fractions of a shot; this close to a whole one is a whole one. */
 const SHOT_EPSILON = 1e-6;
+/** Seconds are counted in steps of a twentieth; this close to a whole one is a whole one. */
+const SECOND_EPSILON = 1e-6;
 
 /**
  * One player's Health and Energy, as the host keeps them. Pure and stepped by the survival
@@ -33,6 +35,10 @@ const SHOT_EPSILON = 1e-6;
  * and building, and refills inside the Core's charge field. Health mends by itself a while after
  * the last wound, as long as there is some Energy left. Both are kept as fractions of a point;
  * what is read out is whole points, and 0 only when a bar is truly empty.
+ *
+ * A player at no Health is down: nothing else about them changes while they lie there, and the
+ * simulation brings them back with `revive` when the crew has a respawn charge to spend. They come
+ * back shaken for a while, which drains their Energy faster and softens the blaster.
  */
 export class PlayerVitals {
   private healthPoints: number = VITALS.maxHealth;
@@ -40,6 +46,10 @@ export class PlayerVitals {
   private inField = false;
   /** Seconds since the last wound. */
   private sinceHurt = Infinity;
+  /** Seconds since the player went down, or -1 while they are up. */
+  private downFor = -1;
+  /** Seconds the player stays shaken after coming back. */
+  private shakenLeft = 0;
 
   /** Shots the blaster has ready: a full burst to begin with, one spent on each shot and won back as the hands allow. */
   private shots: number = BLASTER.burst;
@@ -70,6 +80,21 @@ export class PlayerVitals {
     return this.healthPoints > 0;
   }
 
+  /** Seconds the player has lain down, counted from the moment they fell; -1 while they are up. */
+  get downSeconds(): number {
+    return this.downFor;
+  }
+
+  /** Whole seconds the player stays shaken after coming back; 0 when they are not. */
+  get shaken(): number {
+    return Math.max(0, Math.ceil(this.shakenLeft - SECOND_EPSILON));
+  }
+
+  /** How much of its damage the player's blaster does now: all of it, until they are shaken. */
+  get damageScale(): number {
+    return this.shakenLeft > 0 ? RESPAWN.shaken.damageScale : 1;
+  }
+
   /**
    * Writes where the player's feet were when the host last saw them into `out`. False before the
    * host has seen them at all, which leaves `out` as it was.
@@ -98,7 +123,28 @@ export class PlayerVitals {
     const taken = Math.min(this.healthPoints, amount);
     this.healthPoints -= taken;
     this.sinceHurt = 0;
+    if (this.healthPoints <= 0) this.fall();
     return taken;
+  }
+
+  /** The player has no Health left: the clock of lying down starts, and whatever shook them is forgotten. */
+  private fall(): void {
+    this.downFor = 0;
+    this.shakenLeft = 0;
+  }
+
+  /**
+   * Brings a downed player back at the base: Health full, Energy part of a bar, the blaster ready
+   * again, and shaken for a while.
+   */
+  revive(): void {
+    this.healthPoints = VITALS.maxHealth;
+    this.energyPoints = VITALS.maxEnergy * RESPAWN.energy;
+    this.shots = BLASTER.burst;
+    this.sinceHurt = Infinity;
+    this.downFor = -1;
+    this.shakenLeft = RESPAWN.shaken.seconds;
+    this.inField = false;
   }
 
   /** Spends Energy on something the player did (a block placed, a shot fired). It cannot go below nothing. */
@@ -122,6 +168,8 @@ export class PlayerVitals {
   set(values: { health?: number; energy?: number }): void {
     if (values.health !== undefined) {
       this.healthPoints = Math.min(VITALS.maxHealth, Math.max(0, values.health));
+      if (this.healthPoints > 0) this.downFor = -1;
+      else if (this.downFor < 0) this.fall();
     }
     if (values.energy !== undefined) {
       this.energyPoints = Math.min(VITALS.maxEnergy, Math.max(0, values.energy));
@@ -133,8 +181,15 @@ export class PlayerVitals {
    * (or it has fallen), and its field is then not there to charge anyone.
    */
   step(dt: number, core: Outpost | null): void {
+    // Someone who is down only lies there: no Energy drains or charges, no wound mends.
+    if (this.healthPoints <= 0) {
+      this.downFor = Math.max(0, this.downFor) + dt;
+      this.inField = false;
+      return;
+    }
     const energy = VITALS.energy;
     this.sinceHurt += dt;
+    this.shakenLeft = Math.max(0, this.shakenLeft - dt);
 
     this.shots = Math.min(
       BLASTER.burst,
@@ -147,6 +202,7 @@ export class PlayerVitals {
       drain += energy.sprintPerSecond;
     }
     if (this.sinceHurt < energy.combatSeconds) drain += energy.combatPerSecond;
+    if (this.shakenLeft > 0) drain *= RESPAWN.shaken.drainScale;
 
     this.inField =
       core !== null &&
@@ -183,6 +239,10 @@ export class PlayerVitals {
     out.speedScale = speedScaleFor(fraction);
     out.handScale = handScaleFor(fraction);
     out.charging = this.inField;
+    // How long until the Core brings a downed player back is the crew's to say (it holds the
+    // charges), so the simulation fills `returnIn` in after this.
+    out.returnIn = 0;
+    out.shaken = this.shaken;
     return out;
   }
 }

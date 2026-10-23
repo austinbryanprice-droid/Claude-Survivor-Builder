@@ -499,14 +499,24 @@
   }
 }
 
+/* The gauges under the clock: the Outpost Core's, and under it the crew's respawn charges. A column, so the one that shows never leaves a gap. */
+
+.ph-gauges {
+  position: absolute;
+  top: calc(var(--u) * 77px);
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--u) * 6px);
+  transform: translateX(-50%);
+}
+
 /* The Outpost Core's gauge: a second pill under the clock, shown at night and whenever it is hurt. */
 
 .ph-core {
   --tone: #5fd8ef;
 
-  position: absolute;
-  top: calc(var(--u) * 77px);
-  left: 50%;
   display: flex;
   align-items: center;
   gap: calc(var(--u) * 8px);
@@ -522,7 +532,6 @@
   line-height: 1;
   white-space: nowrap;
   text-shadow: var(--shadow);
-  transform: translateX(-50%);
 }
 
 .ph-core[data-tone='worn'] {
@@ -639,6 +648,168 @@
   .ph-core-fill {
     transition: none;
   }
+}
+
+/* The crew's respawn charges: a pip for each the crew can hold, filled for each it has. Quiet by day while full, on screen at night and once one is spent. */
+
+.ph-charges {
+  --tone: #b6ddb8;
+
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 8px);
+  height: calc(var(--u) * 25px);
+  padding: 0 calc(var(--u) * 14px) 0 calc(var(--u) * 8px);
+  border-radius: calc(var(--u) * 12.5px);
+  background: rgb(34 37 45 / 84%);
+  box-shadow:
+    0 2px 6px rgb(0 0 0 / 35%),
+    inset 0 0 0 calc(var(--u) * 1px) rgb(255 255 255 / 9%);
+  font-size: calc(var(--u) * 14px);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: var(--shadow);
+}
+
+.ph-charges[data-tone='low'] {
+  --tone: #ffb347;
+}
+
+.ph-charges[data-tone='empty'] {
+  --tone: #ff5d4d;
+}
+
+.ph-charges-icon {
+  width: calc(var(--u) * 18px);
+  height: calc(var(--u) * 18px);
+}
+
+.ph-charges-label {
+  font-size: calc(var(--u) * 11px);
+  letter-spacing: 0.17em;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+}
+
+.ph-charges-pips {
+  display: flex;
+  gap: calc(var(--u) * 4px);
+}
+
+.ph-charges-pips i {
+  width: calc(var(--u) * 8px);
+  height: calc(var(--u) * 8px);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 45%);
+  box-shadow: inset 0 0 0 calc(var(--u) * 1px) rgb(255 255 255 / 22%);
+}
+
+.ph-charges-pips i[data-full] {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tone), white 38%), var(--tone));
+  box-shadow: 0 0 calc(var(--u) * 4px) color-mix(in srgb, var(--tone), transparent 45%);
+}
+
+.ph-charges-value {
+  min-width: calc(var(--u) * 14px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-align: right;
+}
+
+/* The last one and none left show in the number too, and the empty pips of none left are outlined in red, so the warning does not rest on the colour of a pip that is not there. */
+
+.ph-charges[data-tone='low'] .ph-charges-value,
+.ph-charges[data-tone='empty'] .ph-charges-value {
+  color: var(--tone);
+}
+
+.ph-charges[data-tone='empty'] .ph-charges-pips i {
+  box-shadow: inset 0 0 0 calc(var(--u) * 1px) color-mix(in srgb, var(--tone), transparent 30%);
+}
+
+/* A charge spent flashes the pill red (two names, so the animation restarts every time). */
+
+.ph-charges[data-hit='0'] {
+  animation: ph-charges-hit-a 0.6s ease-out;
+}
+
+.ph-charges[data-hit='1'] {
+  animation: ph-charges-hit-b 0.6s ease-out;
+}
+
+@keyframes ph-charges-hit-a {
+  0% {
+    box-shadow:
+      0 0 calc(var(--u) * 14px) #ff5d4d,
+      inset 0 0 0 calc(var(--u) * 2px) #ff5d4d;
+  }
+}
+
+@keyframes ph-charges-hit-b {
+  0% {
+    box-shadow:
+      0 0 calc(var(--u) * 14px) #ff5d4d,
+      inset 0 0 0 calc(var(--u) * 2px) #ff5d4d;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ph-charges[data-hit] {
+    animation: none;
+  }
+}
+
+/* A player who is down: the edges of the screen darken, and the Core says when it brings them back. */
+
+.ph-down {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--u) * 10px);
+  padding-bottom: calc(var(--u) * 60px);
+  background:
+    radial-gradient(ellipse at center, rgb(8 10 16 / 10%) 30%, rgb(70 12 10 / 62%) 100%),
+    rgb(10 12 18 / 28%);
+  text-align: center;
+  text-shadow: var(--shadow);
+}
+
+.ph-down-title {
+  font-size: calc(var(--u) * 34px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.ph-down-detail {
+  font-size: calc(var(--u) * 16px);
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.ph-down-seconds {
+  font-size: calc(var(--u) * 72px);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #ffd9c9;
+}
+
+/* Down, the player has nothing in hand: no sight and no caption over the hotbar, and the hotbar dims. */
+
+.ph[data-down] .ph-crosshair,
+.ph[data-down] .ph-prompt {
+  display: none;
+}
+
+.ph[data-down] .ph-hotbar {
+  opacity: 0.45;
 }
 
 /* Objective banner and journal hint, top right. */

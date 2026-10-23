@@ -110,13 +110,19 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
         const shooting = multiplayer;
         stopFire = building.onFire((origin, dir) => shooting.predictShot(origin, dir));
         // The clock by the compass and the objective come from the run, which lives in the session.
-        const survival = multiplayer.lobby.hub.survival;
-        hud.setSurvival(survival);
+        const hub = multiplayer.lobby.hub;
+        const survival = hub.survival;
+        // The messages about a player going down or coming back name them as the room does, and speak to the local player as "you".
+        hud.setSurvival(survival, (id) =>
+          id === hub.localId
+            ? null
+            : (hub.players.find((player) => player.id === id)?.name ?? 'A crewmate'),
+        );
         const reading = createReading();
         coreLook = () => {
           survival.read(reading);
           if (reading.coreMax <= 0) return null;
-          return { health: reading.coreHealth / reading.coreMax, fallen: reading.over };
+          return { health: reading.coreHealth / reading.coreMax, fallen: reading.coreHealth <= 0 };
         };
         // Health and Energy come from the run too: the corner of the HUD shows them, and low Energy
         // slows the legs and the hands.

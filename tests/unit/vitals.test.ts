@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MOVEMENT, PLAYER } from '../../src/shared/movement';
 import { createVitalsReading } from '../../src/shared/vitals-state';
-import { VITALS } from '../../src/systems/survival/balance';
+import { BLASTER, RESPAWN, VITALS } from '../../src/systems/survival/balance';
 import { PlayerVitals, handScaleFor, speedScaleFor } from '../../src/systems/survival/vitals';
 import { CORE_FOOTPRINT, CORE_HEIGHT, outpostFor, type Outpost } from '../../src/world/outpost';
 
@@ -65,6 +65,8 @@ describe('a player on the host', () => {
       speedScale: 1,
       handScale: 1,
       charging: false,
+      returnIn: 0,
+      shaken: 0,
     });
   });
 
@@ -304,6 +306,145 @@ describe('a player on the host', () => {
       vitals.set({ health: 40 });
       expect(vitals.health).toBe(40);
       expect(vitals.energy).toBe(0);
+    });
+  });
+  describe('going down', () => {
+    it('counts the seconds a player has lain down from the blow that felled them, and is -1 while they are up', () => {
+      const vitals = new PlayerVitals();
+      expect(vitals.downSeconds).toBe(-1);
+      vitals.hurt(60);
+      expect(vitals.downSeconds).toBe(-1);
+      vitals.hurt(40);
+      expect(vitals.alive).toBe(false);
+      expect(vitals.downSeconds).toBe(0);
+      play(vitals, 2.5);
+      expect(vitals.downSeconds).toBeCloseTo(2.5, 6);
+    });
+
+    it('lets nothing else change while they lie there: no draining, no mending, no field', () => {
+      const vitals = new PlayerVitals();
+      vitals.set({ energy: 40 });
+      vitals.hurt(100);
+      standAt(vitals, 1);
+      play(vitals, 30, core);
+      expect(vitals.health).toBe(0);
+      expect(vitals.energy).toBe(40);
+      expect(vitals.charging).toBe(false);
+    });
+
+    it('is set by hand too: Health put to nothing lays a player down, and any Health stands them up', () => {
+      const vitals = new PlayerVitals();
+      vitals.set({ health: 0 });
+      expect(vitals.downSeconds).toBe(0);
+      play(vitals, 1);
+      vitals.set({ health: 0 });
+      expect(vitals.downSeconds).toBeCloseTo(1, 6);
+      vitals.set({ health: 25 });
+      expect(vitals.downSeconds).toBe(-1);
+      expect(vitals.alive).toBe(true);
+    });
+  });
+
+  describe('coming back', () => {
+    function fallen(): PlayerVitals {
+      const vitals = new PlayerVitals();
+      vitals.hurt(500);
+      play(vitals, 3);
+      return vitals;
+    }
+
+    it('brings Health back full and a part of the Energy bar, with the blaster ready', () => {
+      const vitals = fallen();
+      vitals.set({ energy: 3 });
+      vitals.revive();
+      expect(vitals.alive).toBe(true);
+      expect(vitals.health).toBe(VITALS.maxHealth);
+      expect(vitals.energy).toBe(VITALS.maxEnergy * RESPAWN.energy);
+      expect(vitals.downSeconds).toBe(-1);
+      for (let i = 0; i < BLASTER.burst; i++) expect(vitals.takeShot()).toBe(true);
+    });
+
+    it('leaves them shaken for the table’s seconds, counted down in whole seconds', () => {
+      const vitals = fallen();
+      expect(vitals.shaken).toBe(0);
+      vitals.revive();
+      expect(vitals.shaken).toBe(RESPAWN.shaken.seconds);
+      play(vitals, 0.5);
+      expect(vitals.shaken).toBe(RESPAWN.shaken.seconds);
+      play(vitals, 0.55);
+      expect(vitals.shaken).toBe(RESPAWN.shaken.seconds - 1);
+      play(vitals, RESPAWN.shaken.seconds);
+      expect(vitals.shaken).toBe(0);
+      expect(vitals.read(createVitalsReading()).shaken).toBe(0);
+    });
+
+    it('reads the seconds left in their meters', () => {
+      const vitals = fallen();
+      vitals.revive();
+      play(vitals, 10);
+      expect(vitals.read(createVitalsReading()).shaken).toBe(RESPAWN.shaken.seconds - 10);
+      expect(vitals.read(createVitalsReading()).returnIn).toBe(0);
+    });
+
+    it('drains Energy faster while shaken, and at the usual rate after', () => {
+      /** Sprints for this long from a full bar and says how much it cost. */
+      const cost = (vitals: PlayerVitals, seconds: number): number => {
+        vitals.set({ energy: VITALS.maxEnergy });
+        vitals.observe(0, 0, 0, MOVEMENT.sprintSpeed, true);
+        play(vitals, seconds);
+        return VITALS.maxEnergy - vitals.energy;
+      };
+      const rate = VITALS.energy.idlePerSecond + VITALS.energy.sprintPerSecond;
+
+      const shaken = fallen();
+      shaken.revive();
+      const steady = new PlayerVitals();
+      const lostShaken = cost(shaken, 10);
+      const lostSteady = cost(steady, 10);
+      expect(lostShaken).toBeGreaterThanOrEqual(Math.floor(rate * RESPAWN.shaken.drainScale * 10));
+      expect(lostSteady).toBeLessThanOrEqual(Math.ceil(rate * 10));
+      expect(lostShaken).toBeGreaterThan(lostSteady + 2);
+
+      // Once the spell is over the same sprint costs what it does for anyone.
+      play(shaken, RESPAWN.shaken.seconds);
+      expect(shaken.shaken).toBe(0);
+      expect(cost(shaken, 10)).toBe(lostSteady);
+    });
+
+    it('hits softer while shaken, and at full strength after', () => {
+      const vitals = fallen();
+      expect(vitals.damageScale).toBe(1);
+      vitals.revive();
+      expect(vitals.damageScale).toBe(RESPAWN.shaken.damageScale);
+      play(vitals, RESPAWN.shaken.seconds + 1);
+      expect(vitals.damageScale).toBe(1);
+    });
+
+    it('forgets being shaken when they go down again, and reads none while they lie there', () => {
+      const vitals = fallen();
+      vitals.revive();
+      play(vitals, 5);
+      expect(vitals.shaken).toBe(RESPAWN.shaken.seconds - 5);
+      vitals.hurt(500);
+      expect(vitals.shaken).toBe(0);
+      expect(vitals.damageScale).toBe(1);
+      expect(vitals.read(createVitalsReading()).shaken).toBe(0);
+
+      // Put on its feet by hand and laid down by hand, it is the same.
+      const another = fallen();
+      another.revive();
+      another.set({ health: 0 });
+      expect(another.shaken).toBe(0);
+    });
+
+    it('can be shaken again by going down again', () => {
+      const vitals = fallen();
+      vitals.revive();
+      play(vitals, RESPAWN.shaken.seconds + 1);
+      vitals.hurt(500);
+      play(vitals, 3);
+      vitals.revive();
+      expect(vitals.shaken).toBe(RESPAWN.shaken.seconds);
     });
   });
 });

@@ -259,8 +259,8 @@ describe('the Outpost Core in a room', () => {
     const guestSeen = listen(guest.session.survival);
     room.host.survivalSim?.hurtCore(MAX);
     await room.settle(300);
-    expect(hostSeen).toEqual([{ k: 'overrun', n: 1 }]);
-    expect(guestSeen).toEqual([{ k: 'overrun', n: 1 }]);
+    expect(hostSeen).toEqual([{ k: 'overrun', n: 1, why: 'core' }]);
+    expect(guestSeen).toEqual([{ k: 'overrun', n: 1, why: 'core' }]);
     expect(read(room.host.survival)).toMatchObject({ over: true, running: false, coreHealth: 0 });
     expect(read(guest.session.survival)).toMatchObject({
       over: true,
@@ -296,7 +296,7 @@ describe('the Outpost Core in a room', () => {
     room.scheduler.advance(5000);
     expect(room.host.survivalSim?.elapsed).toBe(held);
     expect(read(room.host.survival)).toMatchObject({ running: false, over: true });
-    expect(seen).toEqual([{ k: 'overrun', n: 1 }]);
+    expect(seen).toEqual([{ k: 'overrun', n: 1, why: 'core' }]);
   });
 
   it('has no Core to show where there is no simulation', () => {

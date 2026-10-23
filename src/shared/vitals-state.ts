@@ -21,6 +21,13 @@ export interface VitalsReading {
   handScale: number;
   /** True while the Core's charge field is restoring Energy. */
   charging: boolean;
+  /**
+   * Whole seconds until the Core brings a downed player back, counting down; 0 for a player who is
+   * up, and for one who is down with no respawn charge to spend, who waits for the dawn.
+   */
+  returnIn: number;
+  /** Whole seconds a player who has just come back stays shaken; 0 when they are not. */
+  shaken: number;
 }
 
 export function createVitalsReading(): VitalsReading {
@@ -32,7 +39,14 @@ export function createVitalsReading(): VitalsReading {
     speedScale: 1,
     handScale: 1,
     charging: false,
+    returnIn: 0,
+    shaken: 0,
   };
+}
+
+/** True when the meters say the player is down: they have a Health bar and none is left in it. */
+export function isDown(reading: Pick<VitalsReading, 'health' | 'healthMax'>): boolean {
+  return reading.healthMax > 0 && reading.health <= 0;
 }
 
 /**

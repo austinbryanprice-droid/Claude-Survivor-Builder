@@ -3,7 +3,7 @@ import { createEnemyPose, createEnemyState, type EnemyPose } from '../../src/sha
 import type { Vec3 } from '../../src/shared/look';
 import { SHOT_FLAG } from '../../src/shared/shot';
 import { nightStart } from '../../src/shared/survival-state';
-import { BLASTER, ENEMIES, VITALS } from '../../src/systems/survival/balance';
+import { BLASTER, ENEMIES, RESPAWN, VITALS } from '../../src/systems/survival/balance';
 import { SurvivalSim, createShotOutcome } from '../../src/systems/survival/sim';
 import { SCRAP, flatWorld } from './helpers/nav-world';
 
@@ -224,5 +224,65 @@ describe('the pulse blaster in the simulation', () => {
     expect(trigger()).toBe(true);
     // And an empty bar does not lock the blaster: it still fires.
     expect(hands.energy).toBe(0);
+  });
+});
+
+describe('the pulse blaster after going down', () => {
+  it('does not fire for a player who is down, and costs them nothing', () => {
+    const { sim, trigger, out } = field();
+    sim.hurtPlayer(PLAYER, VITALS.maxHealth);
+    const energy = sim.playerVitals(PLAYER)!.energy;
+    expect(trigger()).toBe(false);
+    expect(out.flags).toBe(0);
+    expect(sim.playerVitals(PLAYER)!.energy).toBe(energy);
+  });
+
+  it('fires again once the Core has brought them back, with the blaster ready', () => {
+    const { sim, trigger } = field();
+    sim.hurtPlayer(PLAYER, VITALS.maxHealth);
+    sim.warp(RESPAWN.delaySeconds + 0.5);
+    expect(sim.isDown(PLAYER)).toBe(false);
+    expect(trigger()).toBe(true);
+  });
+
+  it('hits softer while shaken: the same shots leave a crawler with more of its Health', () => {
+    const steady = field();
+    const shaken = field();
+    shaken.sim.hurtPlayer(PLAYER, VITALS.maxHealth);
+    shaken.sim.warp(RESPAWN.delaySeconds + 0.5);
+    // Both machines have walked a little by now; put them back where the shots were aimed.
+    for (const run of [steady, shaken]) {
+      run.machines.clear();
+      run.machines.spawnAt(run.flat.core.x - 14, run.flat.core.z);
+    }
+    steady.shoot();
+    shaken.shoot();
+    const healthOf = (run: ReturnType<typeof field>): number => {
+      const states = Array.from({ length: 4 }, createEnemyState);
+      expect(run.machines.write(states)).toBe(1);
+      return states[0]!.health;
+    };
+    expect(healthOf(shaken)).toBeGreaterThan(healthOf(steady));
+    expect(healthOf(shaken)).toBe(
+      Math.round(
+        ((ENEMIES.crawler.health - BLASTER.damage * RESPAWN.shaken.damageScale) /
+          ENEMIES.crawler.health) *
+          255,
+      ),
+    );
+  });
+
+  it('hits at full strength again when the shaking has passed', () => {
+    const run = field();
+    run.sim.hurtPlayer(PLAYER, VITALS.maxHealth);
+    run.sim.warp(RESPAWN.delaySeconds + RESPAWN.shaken.seconds + 2);
+    run.machines.clear();
+    run.machines.spawnAt(run.flat.core.x - 14, run.flat.core.z);
+    run.shoot();
+    const states = Array.from({ length: 4 }, createEnemyState);
+    expect(run.machines.write(states)).toBe(1);
+    expect(states[0]!.health).toBe(
+      Math.round(((ENEMIES.crawler.health - BLASTER.damage) / ENEMIES.crawler.health) * 255),
+    );
   });
 });

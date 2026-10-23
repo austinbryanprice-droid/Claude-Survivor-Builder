@@ -103,6 +103,8 @@ describe('a guest’s meters in a room', () => {
       hp: [VITALS.maxHealth, VITALS.maxHealth],
       en: [VITALS.maxEnergy, VITALS.maxEnergy],
       chg: false,
+      rt: 0,
+      sk: 0,
     });
   });
 
