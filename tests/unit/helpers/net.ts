@@ -116,6 +116,8 @@ export interface RoomOptions extends Partial<Omit<LoopbackOptions, 'scheduler'>>
   loadMs?: number;
   /** Gives the host a survival simulation (true for a new run, or the options to start one with). */
   survival?: boolean | SurvivalOptions;
+  /** The world the host plays in, for a test whose simulation has to see the same blocks. */
+  hostWorld?: TestWorld;
 }
 
 /** A host and a loopback network on virtual time. */
@@ -126,7 +128,7 @@ export function makeRoom(options: RoomOptions = {}) {
     random: createRng(99),
     ...options,
   });
-  const hostWorld = new TestWorld(4242);
+  const hostWorld = options.hostWorld ?? new TestWorld(4242);
   const host = new HostSession({
     scheduler,
     world: fixedWorld(hostWorld),
@@ -218,12 +220,20 @@ export function at(
 export async function rawGuest(
   room: ReturnType<typeof makeRoom>,
   code: string,
-): Promise<{ link: Link; frames: HostFrame[]; closed: () => boolean; garbage: string[] }> {
+): Promise<{
+  link: Link;
+  frames: HostFrame[];
+  closed: () => boolean;
+  garbage: string[];
+  /** The fast-lane packets the host has sent, with the time (the scheduler's) each arrived. */
+  packets: { at: number; bytes: Uint8Array }[];
+}> {
   const dial = room.network.dial(code);
   await room.settle(20);
   const link = await dial;
   const frames: HostFrame[] = [];
   const garbage: string[] = [];
+  const packets: { at: number; bytes: Uint8Array }[] = [];
   let closed = false;
   link.attach({
     control: (text) => {
@@ -231,12 +241,14 @@ export async function rawGuest(
       if (frame) frames.push(frame);
       else garbage.push(text);
     },
-    state: () => {},
+    state: (bytes) => {
+      packets.push({ at: room.scheduler.now(), bytes });
+    },
     closed: () => {
       closed = true;
     },
   });
-  return { link, frames, closed: () => closed, garbage };
+  return { link, frames, closed: () => closed, garbage, packets };
 }
 
 export function helloText(overrides: Record<string, unknown> = {}): string {

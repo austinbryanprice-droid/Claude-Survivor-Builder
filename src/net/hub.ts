@@ -1,3 +1,4 @@
+import type { EnemyPose } from '../shared/enemy-state';
 import type {
   BlockCommand,
   CloseInfo,
@@ -134,6 +135,9 @@ export class SessionHub implements GameSession {
   }
   sampleRemotes(): readonly RemotePose[] {
     return this.session.sampleRemotes();
+  }
+  sampleEnemies(): readonly EnemyPose[] {
+    return this.session.sampleEnemies();
   }
   close(): void {
     this.session.close();

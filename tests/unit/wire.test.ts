@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createEnemyState, type EnemyState } from '../../src/shared/enemy-state';
 import { createRng } from '../../src/shared/hash';
 import { NET } from '../../src/shared/net-config';
 import {
@@ -9,14 +10,18 @@ import {
   type PlayerSample,
 } from '../../src/shared/protocol';
 import {
+  ENEMIES_PACKET_MAX,
   GUEST_STATE_BYTES,
+  KIND_ENEMIES,
   KIND_GUEST_STATE,
   decodeEdits,
+  decodeEnemies,
   decodeGuestFrame,
   decodeGuestState,
   decodeHostFrame,
   decodeRelay,
   encodeEdits,
+  encodeEnemies,
   encodeFrame,
   encodeGuestState,
   encodeRelay,
@@ -449,5 +454,148 @@ describe('relay packets', () => {
     const crowded = good.slice();
     crowded[1] = 200;
     expect(decodeRelay(crowded)).toBeNull();
+  });
+});
+
+describe('enemy packets', () => {
+  function enemy(overrides: Partial<EnemyState> = {}): EnemyState {
+    return { ...createEnemyState(), id: 1, ...overrides };
+  }
+
+  it('is told apart from the other fast-lane packets', () => {
+    const bytes = encodeEnemies(1, 1000, [enemy()], 1);
+    expect(packetKind(bytes)).toBe(KIND_ENEMIES);
+    expect(KIND_ENEMIES).not.toBe(KIND_GUEST_STATE);
+    expect(decodeGuestState(bytes)).toBeNull();
+    expect(decodeRelay(bytes)).toBeNull();
+  });
+
+  it('round trips every machine within the quantization', () => {
+    const states = [
+      enemy({ id: 1, x: 12.5, y: 8.25, z: -30.0625, yaw: 1.2, health: 255 }),
+      enemy({ id: 400, x: -45.4, y: 11.2, z: 60.9, yaw: -2.9, health: 100, flags: 1 }),
+      enemy({ id: 65535, x: 0, y: 0, z: 0, yaw: Math.PI - 0.001, health: 1, flags: 3 }),
+    ];
+    const packet = decodeEnemies(encodeEnemies(65534, 5_000_000, states, states.length))!;
+    expect(packet.seq).toBe(65534);
+    expect(packet.hostTime).toBe(5_000_000);
+    expect(packet.entries).toHaveLength(3);
+    states.forEach((sent, i) => {
+      const got = packet.entries[i] as EnemyState;
+      expect(got.id).toBe(sent.id);
+      expect(got.kind).toBe(sent.kind);
+      expect(got.flags).toBe(sent.flags);
+      expect(got.health).toBe(sent.health);
+      // 1/16 of a block of position, 1/256 of a turn of heading.
+      expect(Math.abs(got.x - sent.x)).toBeLessThanOrEqual(1 / 32 + 1e-9);
+      expect(Math.abs(got.y - sent.y)).toBeLessThanOrEqual(1 / 32 + 1e-9);
+      expect(Math.abs(got.z - sent.z)).toBeLessThanOrEqual(1 / 32 + 1e-9);
+      const turn = Math.abs(Math.atan2(Math.sin(got.yaw - sent.yaw), Math.cos(got.yaw - sent.yaw)));
+      expect(turn).toBeLessThanOrEqual(Math.PI / 256 + 1e-9);
+    });
+  });
+
+  it('weighs twelve bytes a machine and a header of eight, whatever the count', () => {
+    expect(encodeEnemies(0, 0, [], 0)).toHaveLength(8);
+    const states = Array.from({ length: 40 }, (_, i) => enemy({ id: i + 1 }));
+    expect(encodeEnemies(0, 0, states, 40)).toHaveLength(8 + 40 * 12);
+    expect(ENEMIES_PACKET_MAX).toBe(8 + NET.maxEnemies * 12);
+    // A whole crowd fits in one message of a size no browser's channel refuses.
+    expect(ENEMIES_PACKET_MAX).toBeLessThan(2000);
+  });
+
+  it('says there are none, and the host still gets to say it', () => {
+    const packet = decodeEnemies(encodeEnemies(7, 123, [], 0))!;
+    expect(packet.entries).toEqual([]);
+    expect(packet.seq).toBe(7);
+    expect(packet.hostTime).toBe(123);
+  });
+
+  it('sends the first `count` of the states, and no more than a packet takes', () => {
+    const states = Array.from({ length: 300 }, (_, i) => enemy({ id: i + 1 }));
+    expect(decodeEnemies(encodeEnemies(0, 0, states, 3))!.entries.map((e) => e.id)).toEqual([
+      1, 2, 3,
+    ]);
+    expect(decodeEnemies(encodeEnemies(0, 0, states, 300))!.entries).toHaveLength(NET.maxEnemies);
+    expect(decodeEnemies(encodeEnemies(0, 0, states.slice(0, 2), 50))!.entries).toHaveLength(2);
+  });
+
+  it('keeps the last sliver of Health alive and never sends a machine as dead', () => {
+    const [low, none, over] = decodeEnemies(
+      encodeEnemies(
+        0,
+        0,
+        [enemy({ id: 1, health: 1 }), enemy({ id: 2, health: 0 }), enemy({ id: 3, health: 9999 })],
+        3,
+      ),
+    )!.entries as [EnemyState, EnemyState, EnemyState];
+    expect(low.health).toBe(1);
+    expect(none.health).toBe(1);
+    expect(over.health).toBe(255);
+  });
+
+  it('wraps the counter and the clock instead of failing on them', () => {
+    const packet = decodeEnemies(encodeEnemies(65536 + 5, 3_000_000_000.4, [], 0))!;
+    expect(packet.seq).toBe(5);
+    expect(packet.hostTime).toBe(3_000_000_000);
+    expect(decodeEnemies(encodeEnemies(0, -50, [], 0))!.hostTime).toBe(0);
+  });
+
+  it('clamps a position beyond the field instead of wrapping it', () => {
+    const [far] = decodeEnemies(encodeEnemies(0, 0, [enemy({ x: 9000, z: -9000, y: 5000 })], 1))!
+      .entries as [EnemyState];
+    expect(far.x).toBeCloseTo(32767 / 16, 5);
+    expect(far.z).toBeCloseTo(-32768 / 16, 5);
+    expect(far.y).toBeCloseTo(32767 / 16, 5);
+  });
+
+  it('drops the flag bits it does not know', () => {
+    const [flagged] = decodeEnemies(encodeEnemies(0, 0, [enemy({ flags: 0xff })], 1))!.entries as [
+      EnemyState,
+    ];
+    expect(flagged.flags).toBe(3);
+  });
+
+  it('refuses a truncated or padded packet, a wrong count and a wrong kind', () => {
+    const good = encodeEnemies(1, 1, [enemy({ id: 1 }), enemy({ id: 2 })], 2);
+    expect(decodeEnemies(good)).not.toBeNull();
+    expect(decodeEnemies(good.subarray(0, good.length - 1))).toBeNull();
+    expect(decodeEnemies(good.subarray(0, 5))).toBeNull();
+    expect(decodeEnemies(new Uint8Array(0))).toBeNull();
+    const padded = new Uint8Array(good.length + 1);
+    padded.set(good);
+    expect(decodeEnemies(padded)).toBeNull();
+    const miscounted = good.slice();
+    miscounted[1] = 3;
+    expect(decodeEnemies(miscounted)).toBeNull();
+    const crowded = good.slice();
+    crowded[1] = 255;
+    expect(decodeEnemies(crowded)).toBeNull();
+    const wrongKind = good.slice();
+    wrongKind[0] = KIND_GUEST_STATE;
+    expect(decodeEnemies(wrongKind)).toBeNull();
+  });
+
+  it('refuses a machine with no id, a kind this build does not know, or no Health', () => {
+    const base = encodeEnemies(1, 1, [enemy({ id: 9 })], 1);
+    const noId = base.slice();
+    new DataView(noId.buffer).setUint16(8, 0, true);
+    expect(decodeEnemies(noId)).toBeNull();
+    const strange = base.slice();
+    strange[10] = 200;
+    expect(decodeEnemies(strange)).toBeNull();
+    const dead = base.slice();
+    dead[19] = 0;
+    expect(decodeEnemies(dead)).toBeNull();
+  });
+
+  it('never throws on random bytes', () => {
+    const rng = createRng(11);
+    for (let i = 0; i < 500; i++) {
+      const bytes = new Uint8Array(Math.floor(rng() * 160));
+      for (let j = 0; j < bytes.length; j++) bytes[j] = Math.floor(rng() * 256);
+      if (bytes.length > 0 && i % 2 === 0) bytes[0] = KIND_ENEMIES;
+      expect(() => decodeEnemies(bytes)).not.toThrow();
+    }
   });
 });
