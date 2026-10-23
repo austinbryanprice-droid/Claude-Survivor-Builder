@@ -9,6 +9,6 @@ The in-game HUD, after reference 07: vitals, status icons, compass, objective ba
 
 The top-left vitals are the player's own: `health` and `energy` (0 to 1), a tone for each (`healthTone` is `ok` or `low`, `energyTone` is `ok`, `low` or `empty`) and a column of `statuses`, round icons with a caption and a good or bad tone. A wound flashes the bar and reddens the edges of the screen. `../vitals-hud.ts` works those out from a `VitalsReading`.
 
-The state also carries the run's day and night pill and the Outpost Core's gauge under it (`clock` and `core`; the gauge is hidden while the state has none), the caption above the hotbar (`prompt`), the crosshair (`none`, `place` or `blocked`) and whether Build Mode is on; `../build-hud.ts` works those out from the player's building hands.
+The state also carries the run's day and night pill and, under it, the Outpost Core's gauge and the crew's respawn pips (`clock`, `core` and `charges`; each is hidden while the state has none), what a player who is down sees (`down`: the title, the line under it and the seconds, which draw over the whole screen and dim the hotbar), the caption above the hotbar (`prompt`), the crosshair (`none`, `place` or `blocked`) and whether Build Mode is on; `../build-hud.ts` works those out from the player's building hands.
 
 Colors, sizes and layout are described in [art direction](../../../docs/art-direction.md#hud). The class prefix is `ph-`.

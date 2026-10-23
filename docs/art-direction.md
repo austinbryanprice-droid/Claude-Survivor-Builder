@@ -467,3 +467,37 @@ Headless Chromium on software GL at 1280 by 720, Balanced, `freeze=1`, `?debug&n
 - A machine appears at the edge of the valley with no effect, usually out of sight in the forest. A flash or a plume of dust where it comes up is polish for Phase 6; for now the warning is the only sign of a wave coming.
 - The armored, flying and base-targeting kinds are drawn and fight as crawlers until Phase 5.
 - Seen only in software-rendered pictures, and the crowd of a late night (six waves of seven or more) has not been looked at.
+
+## Phase 4g: going down and coming back
+
+Going down adds a pill under the Core's gauge and a screen, and both are made of parts the HUD already has (the gauge's pill, the status icons, the toast, the wound's red), so nothing here is new paint. The choices are in [decisions](decisions.md#phase-4g-going-down-and-coming-back-2026-10-23).
+
+### What the crew sees
+
+- **The respawns.** A pill under the Core's gauge: a heart, "Respawns", a pip for each place in the crew's pool (three for each player in the room) and the number. The filled pips are the pale mint of the Health bar while there are two or more; at the last one the pip and the number turn amber, and with none the number turns coral red and the three empty pips are ringed in red (a pip that is not there cannot carry a colour). The pill flashes red for a moment each time the Core spends one. By day, while the pool is full and the run goes on, it is hidden; at night, and once one has been spent, it stays.
+- **Down.** The edges of the screen go dark red in the soft vignette of a wound, with the middle left clear (the player can still see the fight), and a plain dim over all of it. In the middle: "You are down" in capitals, a line that says what is going to happen ("The Core brings you back in") and the seconds in large figures. With nothing in the pool the figures give way to "The crew is out of respawns. The dawn brings more". The crosshair and the caption over the hotbar go, and the hotbar dims, because the hands are stopped.
+- **Back.** The screen clears and the Health and Energy bars are where the Core left them (full and half), with a new status under them: a steel shield and, after the small amber triangle of a bad status, "Shaken 0:45" counting down. A toast says it ("The Core brought you back, shaken · 1 respawn left"); on the others' screens another names the player.
+- **Lost.** When every player is down and the pool is empty the same screen says "Outpost overrun" and why, the banner at the top right says "The whole crew is down", and the pause card on Esc says how the run ended, as it did when the Core fell. The Core is left as it stood.
+
+### Screenshots
+
+Headless Chromium on software GL at 1280 by 720, Balanced, `freeze=1`, `?debug&night=1&waves=0`, driven with the page's debug hooks (`__ashbound.mp.setRespawns`, `hurtPlayer`, `warp`). The run is held while the mouse is free, so each picture is the state that was set up, and the toast is held on screen because it would fade in less time than a frame takes here. The pause card is the last picture; the others have it hidden.
+
+![Going down and coming back in six pictures](phase-4/respawn-states.jpg)
+
+| Image                                            | What to look at                                                                                                                                                 |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [respawn-pill-low](phase-4/respawn-pill-low.jpg) | Night, the last respawn: the pill under the Core's gauge with one amber pip of three.                                                                           |
+| [respawn-down](phase-4/respawn-down.jpg)         | Down some way from the base with four seconds to go: the dark red edges, the countdown in the middle, the Health bar empty, the hotbar dimmed and no crosshair. |
+| [respawn-wait](phase-4/respawn-wait.jpg)         | The same with nothing in the pool: the line says the dawn brings more, and the pill reads 0 in red over three ringed pips.                                      |
+| [respawn-back](phase-4/respawn-back.jpg)         | Back at the base, looking at the Core: Health full, Energy half, "Shaken 0:45" under the bars, the pill down to two, and the toast.                             |
+| [respawn-overrun](phase-4/respawn-overrun.jpg)   | The whole crew down with nothing left: "Outpost overrun", the cause under it, the banner and the Core untouched.                                                |
+| [respawn-pause](phase-4/respawn-pause.jpg)       | Esc after it: the pause card says "Outpost Overrun on Night 1 · the whole crew went down · 0 nights survived".                                                  |
+| [respawn-pills](phase-4/respawn-pills.jpg)       | The pill cut out and enlarged in its three tones: two of three, the last one (amber), none (red).                                                               |
+| [respawn-states](phase-4/respawn-states.jpg)     | Six of the pictures together.                                                                                                                                   |
+
+### Known gaps in going down
+
+- A downed player's avatar still stands where they fell on the other screens. A body lying down, or a marker over it so the crew knows whom to cover, is polish for Phase 6, and so are the sounds (a low hum as they fall, a chime as the Core brings them back).
+- Being brought back is a cut: the view jumps to the seat. A short fade or the Core's light drawing the player in is Phase 6. Nothing protects the player the moment they are back either: a crowd at the seat can put them down again at once, and that spends another charge. A breath of safety (and a light on the seat to say so) is for play-testing to ask for.
+- Seen only in software-rendered pictures; the vignette is the one place the HUD asks the GPU for a large soft gradient, and how it reads on a real display is for the first look there.
