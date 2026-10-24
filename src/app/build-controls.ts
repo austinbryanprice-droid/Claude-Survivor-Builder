@@ -55,6 +55,8 @@ export interface BuildControlsDebug {
   ghost(): { ghost: boolean; target: boolean; ghostShape: number; targetShape: number };
   /** How fast a held mouse button repeats, as a fraction of normal; low Energy slows it. */
   handScale(): number;
+  /** Whether the player is down, which leaves the hands idle. */
+  isDown(): boolean;
 }
 
 export interface BuildControls {
@@ -226,6 +228,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
     },
     hands: () => ({ ...controller.hudState() }),
     handScale: () => controller.handScale,
+    isDown: () => controller.isDown,
     ghost: () => {
       const shown = valley()?.view.ghost.shown;
       return {

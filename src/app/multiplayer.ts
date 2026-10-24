@@ -128,6 +128,8 @@ export interface MultiplayerDebug {
   hurtPlayer(amount: number, id?: PlayerId): number;
   /** Sets a player's Health and Energy outright, the local player by default. Only a host (or single-player) can. */
   setVitals(values: { health?: number; energy?: number }, id?: PlayerId): void;
+  /** Sets the crew's respawn charges outright (within what it can hold; `clock()` shows them). Only a host (or single-player) can. */
+  setRespawns(count: number): void;
   /** Refusals the host sent back, newest last. */
   rejections(): Rejection[];
   /** World events applied since the page loaded. */
@@ -338,6 +340,10 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     setVitals: (values, id = hub.localId) => {
       const session = hub.current;
       if (session instanceof HostSession) session.survivalSim?.playerVitals(id)?.set(values);
+    },
+    setRespawns: (count) => {
+      const session = hub.current;
+      if (session instanceof HostSession) session.survivalSim?.setRespawns(count);
     },
     rejections: () => [...refusals],
     eventCount: () => events,

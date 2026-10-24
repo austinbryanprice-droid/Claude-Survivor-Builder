@@ -172,7 +172,7 @@ describe('the Outpost Core in the simulation', () => {
     expect(sim.hurtCore(1)).toBe(true);
     expect(sim.over).toBe(true);
     expect(sim.coreHealth).toBe(0);
-    expect(eventsOf(sim)).toEqual([{ k: 'overrun', n: 2 }]);
+    expect(eventsOf(sim)).toEqual([{ k: 'overrun', n: 2, why: 'core' }]);
     // A blow after the fall does nothing and says nothing.
     expect(sim.hurtCore(500)).toBe(false);
     expect(eventsOf(sim)).toEqual([]);
@@ -181,7 +181,7 @@ describe('the Outpost Core in the simulation', () => {
   it('can fall by day, counting the day it fell in', () => {
     const sim = new SurvivalSim({ startAt: 3 * CYCLE_SECONDS + 10 });
     expect(sim.hurtCore(MAX)).toBe(true);
-    expect(eventsOf(sim)).toEqual([{ k: 'overrun', n: 4 }]);
+    expect(eventsOf(sim)).toEqual([{ k: 'overrun', n: 4, why: 'core' }]);
   });
 
   it('stops the clock where it fell: nothing advances, warps or announces afterwards', () => {

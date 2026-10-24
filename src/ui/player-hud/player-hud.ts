@@ -77,6 +77,24 @@ export interface HudCore {
   readonly tone: 'sound' | 'worn' | 'critical' | 'fallen';
 }
 
+/** The crew's respawn charges, drawn as pips in a pill under the Core's gauge. */
+export interface HudCharges {
+  /** Charges the crew holds now. */
+  readonly count: number;
+  /** The most it can hold now: a pip is drawn for each, and the ones past `count` are empty. */
+  readonly max: number;
+  /** How worried to look: amber at the last charge, red with none. */
+  readonly tone: 'ok' | 'low' | 'empty';
+}
+
+/** What the screen says to a player who is down. */
+export interface HudDown {
+  readonly title: string;
+  readonly detail: string;
+  /** Whole seconds until the Core brings the player back, drawn large under the title; null when there is no countdown. */
+  readonly seconds: number | null;
+}
+
 /** One round status icon under the bars, with the words beside it. */
 export interface HudStatus {
   readonly icon: IconId;
@@ -108,6 +126,10 @@ export interface PlayerHudState {
   readonly clock?: HudClock | null;
   /** The Outpost Core's gauge under the clock; absent or null hides it. */
   readonly core?: HudCore | null;
+  /** The crew's respawn charges under the Core's gauge; absent or null hides them. */
+  readonly charges?: HudCharges | null;
+  /** The screen of a player who is down; absent or null for a player who is up. */
+  readonly down?: HudDown | null;
   readonly objective: { readonly place: string; readonly title: string } | null;
   readonly slots: readonly HotbarSlot[];
   /** Index of the selected hotbar slot. */
@@ -178,9 +200,17 @@ export class PlayerHud {
   private readonly clockLabel: HTMLElement;
   private readonly clockTime: HTMLElement;
   private readonly clockFill: HTMLElement;
+  private readonly gauges: HTMLElement;
   private readonly core: HTMLElement;
   private readonly coreValue: HTMLElement;
   private readonly coreFill: HTMLElement;
+  private readonly charges: HTMLElement;
+  private readonly chargePips: HTMLElement;
+  private readonly chargeValue: HTMLElement;
+  private readonly down: HTMLElement;
+  private readonly downTitle: HTMLElement;
+  private readonly downDetail: HTMLElement;
+  private readonly downSeconds: HTMLElement;
   private readonly objective: HTMLElement;
   private readonly objectivePlace: HTMLElement;
   private readonly objectiveTitle: HTMLElement;
@@ -206,6 +236,10 @@ export class PlayerHud {
   private lastCore = '';
   private lastCorePoints = Number.NaN;
   private coreHits = 0;
+  private lastCharges = '';
+  private lastChargeCount = Number.NaN;
+  private chargeHits = 0;
+  private lastDown = '';
   private lastObjective = '';
   private readonly lastSlots: string[] = [];
   private lastSelected = -1;
@@ -273,6 +307,31 @@ export class PlayerHud {
     this.coreValue = el('span', 'ph-core-value');
     this.core.append(coreIcon, el('span', 'ph-core-label', 'Core'), coreTrack, this.coreValue);
 
+    // The crew's respawn charges, a pill of pips under the Core's gauge. The two sit in one column
+    // so the pill under whichever is showing never moves.
+    this.charges = el('div', 'ph-charges');
+    this.charges.hidden = true;
+    const chargeIcon = el('span', 'ph-charges-icon');
+    chargeIcon.innerHTML = iconMarkup('heart');
+    this.chargePips = el('span', 'ph-charges-pips');
+    this.chargeValue = el('span', 'ph-charges-value');
+    this.charges.append(
+      chargeIcon,
+      el('span', 'ph-charges-label', 'Respawns'),
+      this.chargePips,
+      this.chargeValue,
+    );
+    this.gauges = el('div', 'ph-gauges');
+    this.gauges.append(this.core, this.charges);
+
+    // What a player who is down sees: the edges of the screen darken, and the Core's countdown.
+    this.down = el('div', 'ph-down');
+    this.down.hidden = true;
+    this.downTitle = el('strong', 'ph-down-title');
+    this.downDetail = el('span', 'ph-down-detail');
+    this.downSeconds = el('b', 'ph-down-seconds');
+    this.down.append(this.downTitle, this.downDetail, this.downSeconds);
+
     // Objective banner and the journal hint under it.
     this.objective = el('div', 'ph-objective');
     const banner = el('div', 'ph-banner');
@@ -311,11 +370,12 @@ export class PlayerHud {
     this.crosshair.append(this.hitmark);
     this.root.append(
       this.hurt,
+      this.down,
       vitals,
       this.statusColumn,
       compass,
       this.clock,
-      this.core,
+      this.gauges,
       this.objective,
       this.prompt,
       bar,
@@ -367,6 +427,8 @@ export class PlayerHud {
     this.updateCompass(state);
     this.updateClock(state);
     this.updateCore(state);
+    this.updateCharges(state);
+    this.updateDown(state);
     this.updateObjective(state);
     this.updateHotbar(state);
     this.updateBuild(state);
@@ -514,6 +576,46 @@ export class PlayerHud {
     const points = Number(core.value);
     if (points < this.lastCorePoints) this.core.dataset.hit = String(++this.coreHits % 2);
     this.lastCorePoints = points;
+  }
+
+  private updateCharges(state: PlayerHudState): void {
+    const charges = state.charges ?? null;
+    const key = charges ? `${charges.tone}|${charges.count}|${charges.max}` : '';
+    if (key === this.lastCharges) return;
+    this.lastCharges = key;
+    this.charges.hidden = charges === null;
+    if (!charges) {
+      this.lastChargeCount = Number.NaN;
+      return;
+    }
+    this.charges.dataset.tone = charges.tone;
+    this.chargeValue.textContent = String(charges.count);
+    const pips = this.chargePips;
+    while (pips.children.length < charges.max) pips.append(el('i'));
+    while (pips.children.length > charges.max) pips.lastElementChild?.remove();
+    Array.from(pips.children).forEach((pip, i) =>
+      pip.toggleAttribute('data-full', i < charges.count),
+    );
+    // A charge spent flashes the pill. Two animations take turns, because setting the one that
+    // is already running would not restart it.
+    if (charges.count < this.lastChargeCount) {
+      this.charges.dataset.hit = String(++this.chargeHits % 2);
+    }
+    this.lastChargeCount = charges.count;
+  }
+
+  private updateDown(state: PlayerHudState): void {
+    const down = state.down ?? null;
+    const key = down ? `${down.title}|${down.detail}|${down.seconds ?? ''}` : '';
+    if (key === this.lastDown) return;
+    this.lastDown = key;
+    this.down.hidden = down === null;
+    this.root.toggleAttribute('data-down', down !== null);
+    if (!down) return;
+    this.downTitle.textContent = down.title;
+    this.downDetail.textContent = down.detail;
+    this.downSeconds.hidden = down.seconds === null;
+    this.downSeconds.textContent = down.seconds === null ? '' : String(down.seconds);
   }
 
   private updateObjective(state: PlayerHudState): void {

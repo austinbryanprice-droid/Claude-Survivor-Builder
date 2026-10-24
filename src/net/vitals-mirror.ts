@@ -17,6 +17,8 @@ export class VitalsMirror implements VitalsView {
     energy: number,
     energyMax: number,
     charging: boolean,
+    returnIn = 0,
+    shaken = 0,
   ): void {
     const held = this.held;
     held.health = health;
@@ -24,6 +26,8 @@ export class VitalsMirror implements VitalsView {
     held.energy = energy;
     held.energyMax = energyMax;
     held.charging = charging;
+    held.returnIn = returnIn;
+    held.shaken = shaken;
     const fraction = energyMax > 0 ? energy / energyMax : 1;
     held.speedScale = speedScaleFor(fraction);
     held.handScale = handScaleFor(fraction);
@@ -38,6 +42,8 @@ export class VitalsMirror implements VitalsView {
     out.speedScale = held.speedScale;
     out.handScale = held.handScale;
     out.charging = held.charging;
+    out.returnIn = held.returnIn;
+    out.shaken = held.shaken;
     return out;
   }
 }

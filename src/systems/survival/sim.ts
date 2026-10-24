@@ -7,12 +7,13 @@ import {
   SIM_HZ,
   SIM_STEP_SECONDS,
   readClock,
+  type OverrunCause,
   type SurvivalEvent,
   type SurvivalReading,
 } from '../../shared/survival-state';
 import type { VitalsReading } from '../../shared/vitals-state';
 import type { Outpost } from '../../world/outpost';
-import { BLASTER, SURVIVAL, VITALS, hitboxOf } from './balance';
+import { BLASTER, RESPAWN, SURVIVAL, VITALS, hitboxOf } from './balance';
 import { EnemySim, type Target } from './enemies';
 import { NavGrid, type NavCell, type NavWorld } from './nav';
 import { PlayerVitals } from './vitals';
@@ -74,15 +75,28 @@ export function createShotOutcome(): ShotOutcome {
  *
  * Time is counted in whole steps. The caller feeds it real time with `advance`, which turns it
  * into steps, and decides whether the run is held (single-player with the mouse free) by simply
- * not calling it. Once the Core falls the run is over: the clock stops where it was and nothing
- * moves again.
+ * not calling it. Once the Core falls, or every player is down with no respawn charge left, the
+ * run is over: the clock stops where it was and nothing moves again.
+ *
+ * A player at no Health is down. The crew holds a pool of respawn charges (so many for each player
+ * to begin with, one more for each at every dawn, up to a cap); the Core brings the players who are
+ * down back at the base, in the order they fell, a few seconds after each fell and one charge each.
  */
 export class SurvivalSim {
   private tickValue: number;
   /** Real time not yet turned into a step, in steps: always in [0, 1). */
   private carry = 0;
   private health: number;
+  /** The Core has fallen. */
   private fell = false;
+  /** Every player is down and the crew has no charge left to bring any of them back. */
+  private wiped = false;
+  /** The crew's respawn charges. */
+  private charges = 0;
+  /** The players whose charges are in the pool, so a player who leaves and comes back does not add theirs twice. */
+  private readonly brought = new Set<number>();
+  /** The players who are down, in the order they fell. */
+  private readonly fallen: number[] = [];
   private readonly core: Outpost | null;
   private readonly players = new Map<number, PlayerVitals>();
   private readonly pending: SurvivalEvent[] = [];
@@ -138,9 +152,32 @@ export class SurvivalSim {
     return SURVIVAL.core.maxHealth;
   }
 
-  /** True once the Core has fallen. The run does not start again; a new run is a new simulation. */
+  /** True once the run has ended. The run does not start again; a new run is a new simulation. */
   get over(): boolean {
-    return this.fell;
+    return this.fell || this.wiped;
+  }
+
+  /** What ended the run, or null while it goes on. */
+  get overWhy(): OverrunCause | null {
+    return this.fell ? 'core' : this.wiped ? 'crew' : null;
+  }
+
+  /** The crew's respawn charges. */
+  get respawns(): number {
+    return this.charges;
+  }
+
+  /**
+   * The most the crew can hold now: so many for each player in the run (or what it holds, if a
+   * player has left with more than that in the pool, which the dawn then does not add to).
+   */
+  get respawnMax(): number {
+    return Math.max(this.capacity, this.charges);
+  }
+
+  /** The most the dawn will fill the pool to: so many charges for each player in the run. */
+  private get capacity(): number {
+    return RESPAWN.capPerPlayer * this.players.size;
   }
 
   /**
@@ -148,44 +185,67 @@ export class SurvivalSim {
    * that, and what is left over after the last whole step waits for the next call.
    */
   advance(dt: number): void {
-    if (this.fell || !(dt > 0)) return;
+    if (this.over || !(dt > 0)) return;
     this.carry += Math.min(dt, SURVIVAL.maxCatchUpSeconds) * SIM_HZ;
     const steps = Math.floor(this.carry + STEP_EPSILON);
     this.carry = Math.max(0, this.carry - steps);
-    for (let i = 0; i < steps && !this.fell; i++) this.step();
+    for (let i = 0; i < steps && !this.over; i++) this.step();
   }
 
   /** Jumps `seconds` ahead by taking every step in between, so nothing that should happen on the way is skipped. */
   warp(seconds: number): void {
     const steps = Math.max(0, Math.round(seconds * SIM_HZ));
-    for (let i = 0; i < steps && !this.fell; i++) this.step();
+    for (let i = 0; i < steps && !this.over; i++) this.step();
   }
 
   /**
    * Wounds the Core by `amount` points. Returns true when this blow felled it, which ends the run
-   * and announces it. A blow after that, or one that is not a positive number, does nothing.
+   * and announces it. A blow after the run has ended, or one that is not a positive number, does nothing.
    */
   hurtCore(amount: number): boolean {
-    if (this.fell || !(amount > 0)) return false;
+    if (this.over || !(amount > 0)) return false;
     this.health = Math.max(0, this.health - amount);
     if (this.health > 0) return false;
     this.fell = true;
-    this.pending.push({ k: 'overrun', n: this.cycle });
+    this.pending.push({ k: 'overrun', n: this.cycle, why: 'core' });
     return true;
   }
 
-  /** Starts keeping a player's Health and Energy, both full. A player already here keeps what they have. */
+  /**
+   * Starts keeping a player's Health and Energy, both full, and adds the respawn charges they bring
+   * to the crew's pool (once: a player who leaves and comes back does not bring them again). A
+   * player already here keeps what they have.
+   */
   addPlayer(id: number): void {
-    if (!this.players.has(id)) this.players.set(id, new PlayerVitals());
+    if (this.players.has(id)) return;
+    this.players.set(id, new PlayerVitals());
+    if (this.brought.has(id)) return;
+    this.brought.add(id);
+    this.charges += RESPAWN.startPerPlayer;
   }
 
+  /** Sets the crew's respawn charges outright, within what it can hold. For tests and the debug page. */
+  setRespawns(count: number): void {
+    if (!Number.isFinite(count)) return;
+    this.charges = Math.min(this.capacity, Math.max(0, Math.floor(count)));
+  }
+
+  /** A player leaves the run. Their charges stay in the pool; if they were down they are no longer waited for. */
   removePlayer(id: number): void {
     this.players.delete(id);
+    const index = this.fallen.indexOf(id);
+    if (index >= 0) this.fallen.splice(index, 1);
   }
 
   /** The meters of a player this simulation keeps, for tests and the debug page. */
   playerVitals(id: number): PlayerVitals | undefined {
     return this.players.get(id);
+  }
+
+  /** True for a player this simulation keeps who is down, which stops their hands: no blocks, no shots. */
+  isDown(id: number): boolean {
+    const vitals = this.players.get(id);
+    return vitals !== undefined && !vitals.alive;
   }
 
   /**
@@ -217,8 +277,8 @@ export class SurvivalSim {
    * first block, hill or Core in its way and hurts the first of the first `count` of `bodies` it
    * meets before that: they are where the machines were on the screen the player aimed on, so the
    * host passes the poses of a moment ago and a shot that looked true is one. The shot costs the
-   * player Energy. Returns false, and does nothing, for someone not here, once the run is over, or
-   * for a shot that comes before the blaster is ready again.
+   * player Energy. Returns false, and does nothing, for someone not here or down, once the run is
+   * over, or for a shot that comes before the blaster is ready again. A player who is shaken hits softer.
    */
   fire(
     id: number,
@@ -229,7 +289,7 @@ export class SurvivalSim {
     out: ShotOutcome,
   ): boolean {
     const vitals = this.players.get(id);
-    if (!vitals || this.fell || !vitals.takeShot()) return false;
+    if (!vitals || this.over || !vitals.alive || !vitals.takeShot()) return false;
     const trace = traceShot(
       this.ray,
       origin,
@@ -249,7 +309,9 @@ export class SurvivalSim {
     if (trace.flags & SHOT_FLAG.enemy) {
       const struck = (bodies[trace.index] as EnemyPose).id;
       out.enemy = struck;
-      if (this.machines?.hurt(struck, BLASTER.damage)) out.flags |= SHOT_FLAG.kill;
+      if (this.machines?.hurt(struck, BLASTER.damage * vitals.damageScale)) {
+        out.flags |= SHOT_FLAG.kill;
+      }
     }
     vitals.spend(VITALS.energy.perShot);
     return true;
@@ -257,7 +319,11 @@ export class SurvivalSim {
 
   /** Fills `out` with a player's meters, or returns null for someone not here. */
   readVitals(id: number, out: VitalsReading): VitalsReading | null {
-    return this.players.get(id)?.read(out) ?? null;
+    const vitals = this.players.get(id);
+    if (!vitals) return null;
+    vitals.read(out);
+    out.returnIn = this.returnIn(id, vitals);
+    return out;
   }
 
   /** A block was placed or broken: the machines' map reads the cell again. */
@@ -281,11 +347,14 @@ export class SurvivalSim {
 
   /** The run as it stands, with the part of a step not yet taken counted in. `running` is false once the run is over. */
   read(out: SurvivalReading): SurvivalReading {
-    readClock(this.elapsed + (this.fell ? 0 : this.carry * SIM_STEP_SECONDS), out);
-    out.running = !this.fell;
+    readClock(this.elapsed + (this.over ? 0 : this.carry * SIM_STEP_SECONDS), out);
+    out.running = !this.over;
     out.coreHealth = this.coreHealth;
     out.coreMax = this.coreMax;
-    out.over = this.fell;
+    out.over = this.over;
+    out.overWhy = this.overWhy;
+    out.respawns = this.charges;
+    out.respawnMax = this.respawnMax;
     return out;
   }
 
@@ -300,14 +369,76 @@ export class SurvivalSim {
     this.tickValue++;
     const inCycle = this.tickValue % CYCLE_TICKS;
     if (inCycle === DAY_TICKS) this.pending.push({ k: 'nightfall', n: this.cycle });
-    else if (inCycle === 0) this.pending.push({ k: 'dawn', n: this.cycle - 1 });
+    else if (inCycle === 0) {
+      this.pending.push({ k: 'dawn', n: this.cycle - 1 });
+      this.grantDawnCharges();
+    }
     if (beginsByDay) {
       this.health = Math.min(SURVIVAL.core.maxHealth, this.health + MEND_PER_STEP);
     }
-    for (const vitals of this.players.values()) vitals.step(SIM_STEP_SECONDS, this.core);
+    for (const [id, vitals] of this.players) {
+      vitals.step(SIM_STEP_SECONDS, this.core);
+      if (!vitals.alive && !this.fallen.includes(id)) this.goDown(id);
+    }
+    this.bringBack();
+    this.checkWipe();
     // The night's waves come out of the ground (and at dawn the machines fall back) before the machines move.
     this.waves?.step(this.tickValue, this.pending);
     if (this.machines) this.stepMachines(this.machines);
+  }
+
+  /** The dawn gives the crew a charge for every player, up to the most it can hold. */
+  private grantDawnCharges(): void {
+    const room = this.capacity - this.charges;
+    if (room > 0) this.charges += Math.min(room, RESPAWN.dawnPerPlayer * this.players.size);
+  }
+
+  /** A player has no Health left: they lie where they fell, and the crew is told. */
+  private goDown(id: number): void {
+    this.fallen.push(id);
+    this.pending.push({ k: 'down', n: this.cycle, p: id });
+  }
+
+  /**
+   * Brings back the players who have lain down long enough, the first to fall first, one charge
+   * each. When the pool is empty the rest wait for the dawn to refill it.
+   */
+  private bringBack(): void {
+    while (this.fallen.length > 0) {
+      const id = this.fallen[0] as number;
+      const vitals = this.players.get(id);
+      // Someone who left, or whose Health was put back by hand, is not waited for.
+      if (!vitals || vitals.alive) {
+        this.fallen.shift();
+        continue;
+      }
+      if (this.charges <= 0 || vitals.downSeconds + STEP_EPSILON < RESPAWN.delaySeconds) return;
+      this.fallen.shift();
+      this.charges--;
+      vitals.revive();
+      this.pending.push({ k: 'back', n: this.cycle, p: id, c: this.charges });
+    }
+  }
+
+  /**
+   * Whole seconds until the Core brings player `id` back: 0 for a player who is up, and for one
+   * who is down with no charge to spend, who waits for the dawn.
+   */
+  private returnIn(id: number, vitals: PlayerVitals): number {
+    if (vitals.alive) return 0;
+    // A player felled since the last step is not in the queue yet: they stand at the back of it.
+    const queued = this.fallen.indexOf(id);
+    const place = queued < 0 ? this.fallen.length : queued;
+    if (place >= this.charges) return 0;
+    return Math.max(1, Math.ceil(RESPAWN.delaySeconds - vitals.downSeconds - STEP_EPSILON));
+  }
+
+  /** The run is lost when every player is down and the crew has no charge left to bring one back. */
+  private checkWipe(): void {
+    if (this.charges > 0 || this.players.size === 0) return;
+    for (const vitals of this.players.values()) if (vitals.alive) return;
+    this.wiped = true;
+    this.pending.push({ k: 'overrun', n: this.cycle, why: 'crew' });
   }
 
   /** Moves the machines one step, with the players who are in the world and standing as their prey. */

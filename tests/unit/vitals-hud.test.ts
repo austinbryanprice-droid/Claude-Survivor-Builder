@@ -69,3 +69,30 @@ describe('the vitals corner of the HUD', () => {
     expect(drawn.energy).toBe(0);
   });
 });
+
+describe('the shaken status of a player who has just come back', () => {
+  it('shows an amber shield with the seconds left', () => {
+    const shaken = { ...meters(100, 50), shaken: 38 };
+    expect(vitalsForHud(shaken).statuses).toEqual([
+      { icon: 'shield', label: 'Shaken', seconds: 38, tone: 'bad' },
+    ]);
+  });
+
+  it('comes after the Energy warnings and the Core’s field', () => {
+    const worn = { ...meters(100, 10, true), shaken: 12 };
+    expect(vitalsForHud(worn).statuses.map((status) => status.label)).toEqual([
+      'Charging',
+      'Low energy',
+      'Shaken',
+    ]);
+  });
+
+  it('is gone when the spell is over', () => {
+    expect(vitalsForHud({ ...meters(100, 50), shaken: 0 }).statuses).toEqual([]);
+  });
+
+  it('draws a player who is down with an empty, red health bar and no statuses', () => {
+    const down = vitalsForHud(meters(0, 50));
+    expect(down).toMatchObject({ health: 0, healthTone: 'low', statuses: [] });
+  });
+});

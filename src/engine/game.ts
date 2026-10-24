@@ -123,6 +123,12 @@ export interface Game {
   setSpeedScale(scale: number): void;
   /** The fraction of normal speed the player walks and sprints at now. */
   readonly speedScale: number;
+  /**
+   * Holds the player still: no walking, sprinting or jumping, though gravity and the view go on
+   * working. The game asks for it while the player is down.
+   */
+  setFrozen(frozen: boolean): void;
+  readonly frozen: boolean;
   /** Builds the world for another seed and puts the player at its start. */
   loadWorld(seed: number): void;
   /** Applies a graphics preset and remembers it in the settings. */
@@ -211,6 +217,8 @@ export function createGame({
             sprintSpeed: MOVEMENT.sprintSpeed * next,
           };
   };
+
+  let frozen = false;
 
   const teleport = (x: number, y: number, z: number, yaw?: number): void => {
     teleportPlayer(player, x, y, z);
@@ -317,7 +325,14 @@ export function createGame({
     previous.x = player.x;
     previous.y = player.y;
     previous.z = player.z;
-    input.readKeys(tickInput);
+    if (frozen) {
+      tickInput.forward = 0;
+      tickInput.strafe = 0;
+      tickInput.jump = false;
+      tickInput.sprint = false;
+    } else {
+      input.readKeys(tickInput);
+    }
     tickInput.yaw = look.yaw;
     stepPlayer(player, tickInput, TICK_SECONDS, collision, movement);
     if (player.y < FALL_LIMIT) toSpawn();
@@ -418,6 +433,12 @@ export function createGame({
     sweepExtras: () => ({ timerQueries: stage.gpuTimer.supported, ...world.info }),
     teleport,
     setSpeedScale,
+    setFrozen(next) {
+      frozen = next;
+    },
+    get frozen() {
+      return frozen;
+    },
     get speedScale() {
       return speedScale;
     },

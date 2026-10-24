@@ -10,15 +10,18 @@ import { el } from './dom';
 import { createFrameOverlay } from './frame-overlay';
 import { createPausePanel } from './pause-panel';
 import { createPlaceholderHud } from './placeholder-hud';
-import { messageFor, runLine } from './run-hud';
+import { messageFor, runLine, type Namer } from './run-hud';
 import { saveSettings } from './settings-store';
 import { createStatusPanel } from './status-panel';
 import { createToast } from './toast';
 import './hud.css';
 
 export interface Hud {
-  /** Shows the run's clock and objective from this view, and a message when the light changes. */
-  setSurvival(view: SurvivalView | null): void;
+  /**
+   * Shows the run's clock and objective from this view, and a message when the light changes or a
+   * player goes down or comes back; `nameOf` says how those messages name a player.
+   */
+  setSurvival(view: SurvivalView | null, nameOf?: Namer): void;
   /** Shows the player's own Health, Energy and status icons from this view; null shows full bars. */
   setVitals(view: VitalsView | null): void;
   dispose(): void;
@@ -142,12 +145,12 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
   render();
 
   return {
-    setSurvival(view) {
+    setSurvival(view, nameOf) {
       stopRunEvents?.();
       stopRunEvents = null;
       run = view;
       playerHud.setSurvival(view);
-      if (view) stopRunEvents = view.onEvent((event) => toast.show(messageFor(event)));
+      if (view) stopRunEvents = view.onEvent((event) => toast.show(messageFor(event, nameOf)));
       // The run takes the sky when it arrives, which the pause card's Time of day should show.
       pause.refresh();
       refreshRunLine();

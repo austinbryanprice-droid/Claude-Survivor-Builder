@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { DAY_SECONDS, NIGHT_SECONDS } from '../../src/shared/daycycle';
-import { createReading, readClock } from '../../src/shared/survival-state';
+import {
+  createReading,
+  readClock,
+  type OverrunCause,
+  type SurvivalEvent,
+} from '../../src/shared/survival-state';
+import { createVitalsReading, type VitalsReading } from '../../src/shared/vitals-state';
 import {
   CLOCK_SOON_SECONDS,
   CORE_CRITICAL_BELOW,
   CORE_WORN_BELOW,
+  chargesForHud,
   clockForHud,
   coreForHud,
+  downForHud,
   messageFor,
   objectiveForRun,
   runLine,
@@ -172,6 +180,165 @@ describe('what the HUD says when the Core falls', () => {
   });
 
   it('announces the fall', () => {
-    expect(messageFor({ k: 'overrun', n: 3 })).toBe('The Outpost Core has fallen');
+    expect(messageFor({ k: 'overrun', n: 3, why: 'core' })).toBe('The Outpost Core has fallen');
+  });
+});
+
+/** A run `elapsed` seconds in, with the crew holding `respawns` of the `max` it can, and over for `why` when given. */
+function withCrew(elapsed: number, respawns: number, max: number, why: OverrunCause | null = null) {
+  const out = reading(elapsed, why === null);
+  out.coreHealth = 1000;
+  out.coreMax = 1000;
+  out.respawns = respawns;
+  out.respawnMax = max;
+  out.over = why !== null;
+  out.overWhy = why;
+  return out;
+}
+
+/** A player's meters as the host would report them. */
+function meters(health: number, returnIn = 0): VitalsReading {
+  return { ...createVitalsReading(), health, healthMax: 100, energy: 80, energyMax: 100, returnIn };
+}
+
+describe('the crew’s respawn charges on the HUD', () => {
+  it('is quiet by day while the crew holds all it can', () => {
+    expect(chargesForHud(withCrew(100, 6, 6))).toBeNull();
+  });
+
+  it('shows at night, whatever the crew holds', () => {
+    expect(chargesForHud(withCrew(DAY_SECONDS + 10, 6, 6))).toEqual({
+      count: 6,
+      max: 6,
+      tone: 'ok',
+    });
+  });
+
+  it('shows by day as soon as one has been spent, and grows back to quiet', () => {
+    expect(chargesForHud(withCrew(100, 5, 6))).toEqual({ count: 5, max: 6, tone: 'ok' });
+    expect(chargesForHud(withCrew(100, 2, 3))).toEqual({ count: 2, max: 3, tone: 'ok' });
+  });
+
+  it('turns amber at the last charge and red with none', () => {
+    expect(chargesForHud(withCrew(DAY_SECONDS + 10, 2, 6))?.tone).toBe('ok');
+    expect(chargesForHud(withCrew(DAY_SECONDS + 10, 1, 6))?.tone).toBe('low');
+    expect(chargesForHud(withCrew(DAY_SECONDS + 10, 0, 6))?.tone).toBe('empty');
+  });
+
+  it('stays on screen once the run is over', () => {
+    expect(chargesForHud(withCrew(100, 3, 3, 'crew'))?.count).toBe(3);
+    expect(chargesForHud(withCrew(100, 0, 3, 'crew'))?.tone).toBe('empty');
+  });
+
+  it('is hidden where the run has no crew to count', () => {
+    expect(chargesForHud(withCrew(DAY_SECONDS + 10, 0, 0))).toBeNull();
+    expect(chargesForHud(reading(DAY_SECONDS + 10))).toBeNull();
+  });
+});
+
+describe('the screen of a player who is down', () => {
+  it('says nothing to a player who is up, or where there are no meters', () => {
+    expect(downForHud(meters(100), withCrew(10, 2, 3))).toBeNull();
+    expect(downForHud(meters(1), null)).toBeNull();
+    expect(downForHud(createVitalsReading(), null)).toBeNull();
+  });
+
+  it('counts down the Core’s return in whole seconds', () => {
+    expect(downForHud(meters(0, 6), withCrew(10, 2, 3))).toEqual({
+      title: 'You are down',
+      detail: 'The Core brings you back in',
+      seconds: 6,
+    });
+    expect(downForHud(meters(0, 1), withCrew(10, 1, 3))?.seconds).toBe(1);
+  });
+
+  it('says the dawn brings more when the crew has no charge for them', () => {
+    const waiting = downForHud(meters(0, 0), withCrew(10, 0, 3));
+    expect(waiting).toMatchObject({ title: 'You are down', seconds: null });
+    expect(waiting?.detail).toMatch(/dawn/);
+  });
+
+  it('tells a player who is down when the run ends, and why', () => {
+    expect(downForHud(meters(0), withCrew(10, 0, 3, 'crew'))).toEqual({
+      title: 'Outpost overrun',
+      detail: 'Every player is down and the crew has no respawns left',
+      seconds: null,
+    });
+    expect(downForHud(meters(0), withCrew(10, 1, 3, 'core'))).toMatchObject({
+      title: 'Outpost overrun',
+      detail: 'The Outpost Core has fallen',
+    });
+  });
+});
+
+describe('what the HUD says when the whole crew goes down', () => {
+  it('puts it in the banner, and says the Core stands', () => {
+    const wiped = withCrew(DAY_SECONDS + 30, 0, 3, 'crew');
+    expect(objectiveForRun(wiped).title).toBe('The whole crew is down');
+    expect(objectiveForRun(withCore(DAY_SECONDS + 30, 0, true)).title).toBe(
+      'The Outpost Core has fallen',
+    );
+  });
+
+  it('puts the cause on the pause card with the nights survived', () => {
+    expect(runLine(withCrew(720 + DAY_SECONDS + 30, 0, 3, 'crew'))).toBe(
+      'Outpost Overrun on Night 2 · the whole crew went down · 1 night survived',
+    );
+    expect(runLine(withCore(720 + DAY_SECONDS + 30, 0, true))).toBe(
+      'Outpost Overrun on Night 2 · 1 night survived',
+    );
+  });
+
+  it('draws the Core’s gauge as it is: whole and sound, not fallen', () => {
+    expect(coreForHud(withCrew(DAY_SECONDS + 30, 0, 3, 'crew'))).toMatchObject({
+      fraction: 1,
+      value: '1000',
+      tone: 'sound',
+    });
+    // By day, with the Core whole, there is nothing to draw.
+    expect(coreForHud(withCrew(100, 0, 3, 'crew'))).toBeNull();
+  });
+});
+
+describe('the messages about a player going down and coming back', () => {
+  const names: Record<number, string> = { 2: 'Ada', 3: 'Bo' };
+  const nameOf = (id: number): string | null => (id === 1 ? null : (names[id] ?? 'Someone'));
+
+  it('speak to the player at this screen as “you”', () => {
+    expect(messageFor({ k: 'down', n: 1, p: 1 }, nameOf)).toBe('You are down');
+    expect(messageFor({ k: 'back', n: 1, p: 1, c: 3 }, nameOf)).toBe(
+      'The Core brought you back, shaken · 3 respawns left',
+    );
+  });
+
+  it('name anyone else as the room does', () => {
+    expect(messageFor({ k: 'down', n: 1, p: 2 }, nameOf)).toBe('Ada is down');
+    expect(messageFor({ k: 'back', n: 4, p: 3, c: 1 }, nameOf)).toBe(
+      'Bo is back, shaken · 1 respawn left',
+    );
+    expect(messageFor({ k: 'back', n: 4, p: 3, c: 0 }, nameOf)).toBe(
+      'Bo is back, shaken · 0 respawns left',
+    );
+  });
+
+  it('call a player nobody named a crewmate', () => {
+    expect(messageFor({ k: 'down', n: 1, p: 9 })).toBe('A crewmate is down');
+  });
+
+  it('say which way the run ended', () => {
+    expect(messageFor({ k: 'overrun', n: 3, why: 'crew' })).toBe('The whole crew is down');
+    expect(messageFor({ k: 'overrun', n: 3, why: 'core' })).toBe('The Outpost Core has fallen');
+  });
+
+  it('have words for every kind of event', () => {
+    const events: SurvivalEvent[] = [
+      { k: 'nightfall', n: 1 },
+      { k: 'wave', n: 1, i: 1, of: 2, c: 6 },
+      { k: 'dawn', n: 1 },
+      { k: 'overrun', n: 1, why: 'core' },
+      { k: 'down', n: 1, p: 2 },
+      { k: 'back', n: 1, p: 2, c: 1 },
+    ];
+    for (const event of events) expect(messageFor(event, nameOf).length).toBeGreaterThan(5);
   });
 });
