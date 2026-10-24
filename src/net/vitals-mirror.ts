@@ -33,6 +33,11 @@ export class VitalsMirror implements VitalsView {
     held.handScale = handScaleFor(fraction);
   }
 
+  /** The host started the run over: forget the last word, so the bars are full again until the new run's first one. */
+  reset(): void {
+    Object.assign(this.held, createVitalsReading());
+  }
+
   read(out: VitalsReading): VitalsReading {
     const held = this.held;
     out.health = held.health;

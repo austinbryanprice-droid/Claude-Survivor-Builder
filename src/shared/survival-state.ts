@@ -19,6 +19,12 @@ export type DayPhase = 'day' | 'night';
 export type OverrunCause = 'core' | 'crew';
 
 /**
+ * How a lost run starts over: `retry` plays the same valley again (the same seed, so the same
+ * waves come, with nothing built on it) and `new` draws another valley.
+ */
+export type RestartKind = 'retry' | 'new';
+
+/**
  * What a screen needs to know about the run, read once a frame. The object is reused from call to
  * call, so read what you need and do not keep it.
  */
@@ -48,6 +54,12 @@ export interface SurvivalReading {
   respawns: number;
   /** The most the crew can hold now (so many for each player). 0 where there is no run to show, which hides the count. */
   respawnMax: number;
+  /** Machines the crew's blasters have felled this run. Counted until the run is over, then final. */
+  felled: number;
+  /** Blocks the crew has placed this run. */
+  placed: number;
+  /** Respawn charges the Core has spent bringing players back this run. */
+  revived: number;
 }
 
 export function createReading(): SurvivalReading {
@@ -65,6 +77,9 @@ export function createReading(): SurvivalReading {
     overWhy: null,
     respawns: 0,
     respawnMax: 0,
+    felled: 0,
+    placed: 0,
+    revived: 0,
   };
 }
 

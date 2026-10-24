@@ -241,11 +241,14 @@ test.describe('the Outpost Core', () => {
       expect(await clock(page)).toMatchObject({ coreHealth: 0, over: true });
     });
 
-    await test.step('the pause card says how it ended', async () => {
-      await page.evaluate(() => document.exitPointerLock());
+    await test.step('the mouse is freed on its own, and the results card says how it ended', async () => {
       await wait(page.locator('#hud')).toHaveAttribute('data-pointer', 'free');
-      await wait(page.locator('.run-line')).toContainText('Outpost Overrun on Night 1');
-      await expect(page.locator('.run-line')).toContainText('0 nights survived');
+      await wait(page.locator('.run-results')).toBeVisible();
+      await expect(page.locator('.pause')).toBeHidden();
+      await expect(page.locator('.run-results .lede')).toHaveText(
+        'The Outpost Core fell on Night 1.',
+      );
+      await expect(page.locator('.run-results .stat.hero strong')).toHaveText('0');
     });
 
     expect(problems).toEqual([]);

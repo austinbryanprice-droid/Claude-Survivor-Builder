@@ -182,6 +182,22 @@ describe('the Core bringing a player back', () => {
     ]);
   });
 
+  it('counts the charges it spends, for the results screen', () => {
+    const sim = crew(1, 2);
+    expect(sim.revived).toBe(0);
+    fell(sim, 1);
+    sim.warp(RESPAWN.delaySeconds + 0.5);
+    expect(sim.revived).toBe(1);
+    fell(sim, 2);
+    fell(sim, 1);
+    sim.warp(RESPAWN.delaySeconds + 0.5);
+    expect(sim.revived).toBe(3);
+    // A charge the dawn adds is not one spent.
+    sim.warp(CYCLE_SECONDS);
+    expect(sim.revived).toBe(3);
+    expect(readRun(sim).revived).toBe(3);
+  });
+
   it('puts them back on their feet with full Health, part of the Energy bar and the shaking', () => {
     const sim = crew(1);
     sim.playerVitals(1)?.set({ energy: 3 });

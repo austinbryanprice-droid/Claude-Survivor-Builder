@@ -148,6 +148,8 @@ export type HostFrame =
       /** Where this guest starts (or, for a returning guest, where it left off). */
       readonly spawn: { readonly x: number; readonly y: number; readonly z: number };
       readonly epoch: number;
+      /** Which run the room is in: 1 for the first, one more each time the host starts over. */
+      readonly run: number;
       readonly players: readonly PlayerWire[];
       /** How many `snap` frames follow. */
       readonly parts: number;
@@ -172,11 +174,12 @@ export type HostFrame =
   | { readonly t: 'pong'; readonly n: number }
   /**
    * Where the run stands: the host's step count (20 a second), whether the clock is running, the
-   * Outpost Core's health and full health in whole points, whether the run has ended and why, and
-   * the crew's respawn charges and the most it can hold. Sent about twice a second while the clock
-   * runs, whenever it stops or starts, within a fifth of a second of the Core's health changing,
-   * whenever an event is announced, and to every newcomer, so a guest can show the time, the Core
-   * and the charges and move the sky between frames.
+   * Outpost Core's health and full health in whole points, whether the run has ended and why, the
+   * crew's respawn charges and the most it can hold, and what the run has come to (machines felled,
+   * blocks placed, charges spent), which the results screen shows once the run is over. Sent about
+   * twice a second while the clock runs, whenever it stops or starts, within a fifth of a second of
+   * the Core's health changing, whenever an event is announced, and to every newcomer, so a guest
+   * can show the time, the Core and the charges and move the sky between frames.
    */
   | {
       readonly t: 'sv';
@@ -187,6 +190,21 @@ export type HostFrame =
       /** What ended the run; present once it has ended. */
       readonly why?: OverrunCause;
       readonly rc: readonly [charges: number, max: number];
+      readonly st: readonly [felled: number, placed: number, revived: number];
+    }
+  /**
+   * The host started the run over (Retry or New Run): build the valley for `seed` with nothing on
+   * it, forget the old run, and stand at `spawn` under the new `epoch`. `n` counts the runs (1 is
+   * the first, so the first restart says 2); `seq` is the host's event counter, so anything still
+   * in flight from the old run is not applied.
+   */
+  | {
+      readonly t: 'run';
+      readonly n: number;
+      readonly seed: number;
+      readonly seq: number;
+      readonly spawn: { readonly x: number; readonly y: number; readonly z: number };
+      readonly epoch: number;
     }
   /** Something the survival loop announces as it happens (nightfall, a wave, dawn, a player down or back, the run ending). */
   | { readonly t: 'se'; readonly e: SurvivalEvent }

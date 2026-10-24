@@ -22,7 +22,7 @@ import {
 } from '../shared/net-flags';
 import { createPlayerSample, type PlayerId, type PlayerSample } from '../shared/protocol';
 import type { RayWorld } from '../shared/raycast';
-import { createReading, type SurvivalReading } from '../shared/survival-state';
+import { createReading, type RestartKind, type SurvivalReading } from '../shared/survival-state';
 import { createVitalsReading, type VitalsReading } from '../shared/vitals-state';
 import { hitboxOf } from '../systems/survival/balance';
 import { createRoomPanel } from '../ui/room-panel';
@@ -67,6 +67,8 @@ export interface MultiplayerDebug {
     phase: SessionPhase;
     localId: PlayerId;
     roomCode: string | null;
+    /** Which run this is: 1 for the first, one more each time the host starts over after a loss. */
+    run: number;
     stats: NetStats;
   };
   /** The avatars on screen right now. */
@@ -130,6 +132,8 @@ export interface MultiplayerDebug {
   setVitals(values: { health?: number; energy?: number }, id?: PlayerId): void;
   /** Sets the crew's respawn charges outright (within what it can hold; `clock()` shows them). Only a host (or single-player) can. */
   setRespawns(count: number): void;
+  /** Starts a lost run over, as the results card's buttons do (without asking for the mouse). Only a host (or single-player) can, and only once the run is over. */
+  restart(kind: RestartKind): void;
   /** Refusals the host sent back, newest last. */
   rejections(): Rejection[];
   /** World events applied since the page loaded. */
@@ -254,6 +258,7 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       phase: hub.phase,
       localId: hub.localId,
       roomCode: hub.roomCode,
+      run: hub.run,
       stats: { ...hub.stats },
     }),
     remotes: () => remotes.list(),
@@ -345,6 +350,7 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       const session = hub.current;
       if (session instanceof HostSession) session.survivalSim?.setRespawns(count);
     },
+    restart: (kind) => hub.restartRun(kind),
     rejections: () => [...refusals],
     eventCount: () => events,
   };

@@ -118,6 +118,12 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
             ? null
             : (hub.players.find((player) => player.id === id)?.name ?? 'A crewmate'),
         );
+        // When the run is lost the host chooses what comes next, and a guest waits for them.
+        hud.setRun({
+          canChoose: () => hub.role !== 'guest',
+          hostName: () => hub.players.find((player) => player.isHost)?.name ?? 'the host',
+          restart: (kind) => hub.restartRun(kind),
+        });
         const reading = createReading();
         coreLook = () => {
           survival.read(reading);
@@ -149,6 +155,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
       multiplayer?.dispose();
       coreLook = null;
       hud.setSurvival(null);
+      hud.setRun(null);
       hud.setVitals(null);
       hud.dispose();
       game.dispose();

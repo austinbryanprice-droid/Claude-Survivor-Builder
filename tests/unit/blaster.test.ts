@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createEnemyPose, createEnemyState, type EnemyPose } from '../../src/shared/enemy-state';
 import type { Vec3 } from '../../src/shared/look';
 import { SHOT_FLAG } from '../../src/shared/shot';
-import { nightStart } from '../../src/shared/survival-state';
+import { createReading, nightStart } from '../../src/shared/survival-state';
 import { BLASTER, ENEMIES, RESPAWN, VITALS } from '../../src/systems/survival/balance';
 import { SurvivalSim, createShotOutcome } from '../../src/systems/survival/sim';
 import { SCRAP, flatWorld } from './helpers/nav-world';
@@ -74,6 +74,26 @@ describe('the pulse blaster in the simulation', () => {
     expect(machines.count).toBe(0);
     expect(BLASTER.damage * 3).toBeGreaterThanOrEqual(ENEMIES.crawler.health);
     expect(BLASTER.damage * 2).toBeLessThan(ENEMIES.crawler.health);
+  });
+
+  it('counts the machines it fells, for the results screen, and not the ones it only wounds', () => {
+    const { sim, shoot } = field();
+    expect(sim.felled).toBe(0);
+    shoot();
+    shoot();
+    expect(sim.felled).toBe(0);
+    shoot();
+    expect(sim.felled).toBe(1);
+    expect(sim.read(createReading()).felled).toBe(1);
+  });
+
+  it('stops counting machines felled once the run is over', () => {
+    const { sim, shoot } = field();
+    shoot();
+    shoot();
+    sim.hurtCore(100_000);
+    expect(shoot()).toBe(false);
+    expect(sim.felled).toBe(0);
   });
 
   it('wounds the machine by the damage and no more, and the next report says so', () => {

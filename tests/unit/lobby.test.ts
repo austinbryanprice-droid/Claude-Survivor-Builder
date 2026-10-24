@@ -12,6 +12,8 @@ import { NetError, type Transport } from '../../src/net/transport';
 import { createRng } from '../../src/shared/hash';
 import { NET } from '../../src/shared/net-config';
 import { HOST_PLAYER_ID, type WorldEvent } from '../../src/shared/protocol';
+import { createReading } from '../../src/shared/survival-state';
+import { SurvivalSim } from '../../src/systems/survival/sim';
 import { at, token } from './helpers/net';
 import { TestWorld } from './helpers/net';
 
@@ -622,6 +624,108 @@ describe('closing the page', () => {
     g.lobby.join('AAAAA');
     await env.settle(300);
     expect(g.lobby.state.notice?.reason).toBe('room-not-found');
+  });
+});
+
+/** A player whose game builds a survival run of its own each time it is asked, over the world it has now. */
+function survivingPlayer(env: ReturnType<typeof makeEnv>, seed: number) {
+  let world = new TestWorld(seed);
+  const loads: number[] = [];
+  const runs: SurvivalSim[] = [];
+  const p = env.player(seed, {
+    game: {
+      world: () => world,
+      loadWorld: (next) => {
+        world = new TestWorld(next);
+        loads.push(next);
+        return Promise.resolve(world);
+      },
+      spawnPoint: (slot) => ({ x: 0.5 + slot * 2, y: 0, z: 0.5 }),
+      survival: () => {
+        const sim = new SurvivalSim({ seed: world.seed });
+        runs.push(sim);
+        return sim;
+      },
+    },
+  });
+  return { ...p, world: () => world, loads, runs };
+}
+
+describe('starting a lost run over', () => {
+  it('rebuilds the same valley on Retry and takes a new run from the game', async () => {
+    const env = makeEnv();
+    const p = survivingPlayer(env, 1234);
+    expect(p.runs).toHaveLength(1);
+    p.runs[0]!.hurtCore(1000);
+    p.lobby.hub.restartRun('retry');
+    await env.flush();
+    expect(p.loads).toEqual([1234]);
+    expect(p.runs).toHaveLength(2);
+    expect(p.lobby.hub.run).toBe(2);
+    expect(p.lobby.hub.survival.read(createReading())).toMatchObject({ over: false, elapsed: 0 });
+  });
+
+  it('draws a whole number from the lobby’s own randomness for a new valley, and not the one it was in', async () => {
+    const env = makeEnv();
+    const p = survivingPlayer(env, 1234);
+    p.runs[0]!.hurtCore(1000);
+    p.lobby.hub.restartRun('new');
+    await env.flush();
+    const [seed] = p.loads;
+    expect(p.loads).toHaveLength(1);
+    expect(Number.isSafeInteger(seed)).toBe(true);
+    expect(seed).toBeGreaterThanOrEqual(1);
+    expect(seed).toBeLessThanOrEqual(2_000_000_000);
+    expect(seed).not.toBe(1234);
+    expect(p.world().seed).toBe(seed);
+  });
+
+  it('waits for a run that is lost', async () => {
+    const env = makeEnv();
+    const p = survivingPlayer(env, 1234);
+    p.lobby.hub.restartRun('retry');
+    await env.flush();
+    expect(p.loads).toEqual([]);
+    expect(p.lobby.hub.run).toBe(1);
+  });
+
+  it('takes the guests of a room along', async () => {
+    const env = makeEnv();
+    const h = survivingPlayer(env, 4242);
+    const code = await host(env, h);
+    const g = env.player(1);
+    g.lobby.join(code);
+    await env.settle(300);
+    expect(g.lobby.state.status).toBe('joined');
+
+    h.runs[0]!.hurtCore(1000);
+    await env.settle(300);
+    expect(g.lobby.hub.survival.read(createReading()).over).toBe(true);
+    h.lobby.hub.restartRun('new');
+    await env.settle(300);
+
+    expect(h.loads).toHaveLength(1);
+    const seed = h.loads[0]!;
+    expect(g.loads).toEqual([4242, seed]);
+    expect(g.world().seed).toBe(seed);
+    expect(g.lobby.hub.run).toBe(2);
+    expect(g.lobby.state.status).toBe('joined');
+    expect(g.lobby.hub.survival.read(createReading()).over).toBe(false);
+  });
+
+  it('is left to the host: a guest’s call changes nothing', async () => {
+    const env = makeEnv();
+    const h = survivingPlayer(env, 4242);
+    const code = await host(env, h);
+    const g = env.player(1);
+    g.lobby.join(code);
+    await env.settle(300);
+    h.runs[0]!.hurtCore(1000);
+    await env.settle(300);
+    g.lobby.hub.restartRun('retry');
+    await env.settle(300);
+    expect(h.lobby.hub.run).toBe(1);
+    expect(h.loads).toEqual([]);
   });
 });
 

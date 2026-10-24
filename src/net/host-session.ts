@@ -25,7 +25,12 @@ import {
   type WorldEvent,
 } from '../shared/protocol';
 import type { ShotEvent } from '../shared/shot';
-import type { SurvivalEvent, SurvivalReading, SurvivalView } from '../shared/survival-state';
+import type {
+  RestartKind,
+  SurvivalEvent,
+  SurvivalReading,
+  SurvivalView,
+} from '../shared/survival-state';
 import { createVitalsReading, type VitalsReading, type VitalsView } from '../shared/vitals-state';
 import {
   decodeGuestFrame,
@@ -78,6 +83,13 @@ export interface HostSessionOptions {
   spawnFor?: (slot: number) => { x: number; y: number; z: number };
   /** The survival simulation this host runs. Absent where only the world is under test. */
   survival?: SurvivalSim;
+  /**
+   * A fresh simulation for the next run, built after the world has been rebuilt for it (it reads
+   * the new world). Without it the host cannot start over.
+   */
+  newRun?: () => SurvivalSim;
+  /** The seed of a new valley, for `restartRun('new')`: a whole number that is not the current one. */
+  nextSeed?: () => number;
 }
 
 interface Member {
@@ -201,7 +213,13 @@ export class HostSession implements GameSession {
   private relayDirty = false;
   private lastPing = 0;
 
-  private readonly sim: SurvivalSim | null;
+  private sim: SurvivalSim | null;
+  private readonly newRun: (() => SurvivalSim) | null;
+  private readonly nextSeed: (() => number) | null;
+  /** Which run this is: 1 for the first, one more each time the host starts over. */
+  private runValue = 1;
+  /** A start-over is waiting for the world to be rebuilt. */
+  private restarting = false;
   private readonly survivalView: SurvivalView;
   private readonly vitalsView: VitalsView;
   /** Scratch space for reading a guest's meters without allocating every tick. */
@@ -247,6 +265,7 @@ export class HostSession implements GameSession {
   private readonly phases = new Emitter<SessionPhase>();
   private readonly corrections = new Emitter<Correction>();
   private readonly survivalEvents = new Emitter<SurvivalEvent>();
+  private readonly runs = new Emitter<number>();
 
   private readonly counters: NetStats = {
     rttMs: null,
@@ -278,10 +297,12 @@ export class HostSession implements GameSession {
     this.members.set(HOST_PLAYER_ID, host);
     this.stall = new StallWatch(NET.relayIntervalMs, now);
     this.sim = options.survival ?? null;
+    this.newRun = options.newRun ?? null;
+    this.nextSeed = options.nextSeed ?? null;
     this.sim?.addPlayer(HOST_PLAYER_ID);
     this.survivalAt = now;
-    this.survivalView = this.sim ? this.viewOf(this.sim) : IDLE_SURVIVAL;
-    this.vitalsView = this.sim ? this.vitalsOf(this.sim) : IDLE_VITALS;
+    this.survivalView = this.sim ? this.viewOf() : IDLE_SURVIVAL;
+    this.vitalsView = this.sim ? this.vitalsOf() : IDLE_VITALS;
     this.stopTimer = this.scheduler.every(NET.relayIntervalMs, () => this.step());
   }
 
@@ -315,6 +336,9 @@ export class HostSession implements GameSession {
   }
   get vitals(): VitalsView {
     return this.vitalsView;
+  }
+  get run(): number {
+    return this.runValue;
   }
   /** The simulation itself, for the debug hook and the tests. Null where there is none. */
   get survivalSim(): SurvivalSim | null {
@@ -365,6 +389,9 @@ export class HostSession implements GameSession {
   }
   onCorrection(listener: (correction: Correction) => void): Unsubscribe {
     return this.corrections.on(listener);
+  }
+  onRun(listener: (run: number) => void): Unsubscribe {
+    return this.runs.on(listener);
   }
 
   publishState(sample: PlayerSample): void {
@@ -616,6 +643,7 @@ export class HostSession implements GameSession {
         hostTime: now,
         spawn: { x: spawn.x, y: spawn.y, z: spawn.z },
         epoch: member.epoch,
+        run: this.runValue,
         players,
         parts,
         edits: edits.length,
@@ -732,15 +760,12 @@ export class HostSession implements GameSession {
   }
 
   /**
-   * The Core has brought a player back: they stand at the base, on their seat's spawn point, and
-   * the host's idea of where they are goes with them at once, so neither the movement check nor
-   * the machines still see them where they fell. A guest is told with a correction; the host's
-   * own player is moved by the same word to its screen.
+   * Puts a player on their seat's spawn point as far as the host is concerned: the movement check,
+   * the avatar everyone draws and the machines' idea of where their prey is all go there at once,
+   * so nothing still sees them where they were. Returns the spot. Telling the player is the
+   * caller's part.
    */
-  private placeAtBase(id: PlayerId): void {
-    const member = this.members.get(id);
-    if (!member) return;
-    const now = this.scheduler.now();
+  private seat(member: Member, now: number): Vec3 {
     const to = this.spawnFor(member.slot);
     member.guard.place(to.x, to.y, to.z, now);
     const sample = member.sample;
@@ -754,15 +779,109 @@ export class HostSession implements GameSession {
       sample.onGround = true;
       sample.reset = true;
     }
-    this.sim?.observe(id, to.x, to.y, to.z, 0, true);
+    this.sim?.observe(member.id, to.x, to.y, to.z, 0, true);
     this.relayDirty = true;
+    return to;
+  }
+
+  /**
+   * The Core has brought a player back: they stand at the base, on their seat's spawn point. A
+   * guest is told with a correction; the host's own player is moved by the same word to its screen.
+   */
+  private placeAtBase(id: PlayerId): void {
+    const member = this.members.get(id);
+    if (!member) return;
+    const now = this.scheduler.now();
+    const to = this.seat(member, now);
     if (!member.link) {
       this.corrections.emit({ x: to.x, y: to.y, z: to.z });
       return;
     }
     this.sendFix(member, to);
     // Every screen shows the move at once, as a jump and not a glide, not at the guest's next report.
-    if (sample) member.track.push(now, sample);
+    if (member.sample) member.track.push(now, member.sample);
+  }
+
+  // --------------------------------------------------------------------------------------------
+  // Starting over.
+  // --------------------------------------------------------------------------------------------
+
+  restartRun(kind: RestartKind): void {
+    if (!this.sim?.over || !this.newRun || this.restarting || this.phaseValue === 'closed') return;
+    const seed = kind === 'retry' ? this.binding.current().seed : this.freshSeed();
+    this.restarting = true;
+    this.binding.load(seed, []).then(
+      () => this.startRun(seed),
+      (error: unknown) => {
+        this.restarting = false;
+        console.error(error);
+      },
+    );
+  }
+
+  /** A seed for a new valley: whatever the game draws, and never the one being played. */
+  private freshSeed(): number {
+    const current = this.binding.current().seed;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const seed = this.nextSeed?.();
+      if (seed !== undefined && Number.isSafeInteger(seed) && seed !== current) return seed;
+    }
+    return current + 1;
+  }
+
+  /**
+   * The world has been rebuilt for the new run: a new simulation, every player back on their seat
+   * with their meters full, and each guest told to rebuild its world and stand where it is put.
+   * What the old run left (events, machines, blocks the machines were chewing, who was last heard
+   * from where) is dropped.
+   */
+  private startRun(seed: number): void {
+    this.restarting = false;
+    const make = this.newRun;
+    if (!make || this.phaseValue === 'closed') return;
+    const now = this.scheduler.now();
+    const sim = make();
+    this.sim = sim;
+    this.runValue++;
+    this.survivalQueue.length = 0;
+    this.gnawed.length = 0;
+    this.survivalAt = now;
+    this.survivalRunning = false;
+    this.survivalDirty = true;
+    this.coreSent = -1;
+    this.lastSurvivalSend = -Infinity;
+    this.enemyMirror.clear();
+    this.enemiesSent = 0;
+    this.lastEnemySend = -Infinity;
+    this.departed.clear();
+    for (const member of this.members.values()) {
+      sim.addPlayer(member.id);
+      member.vitalsSent = null;
+      member.vitalsAt = now;
+      member.editTokens = NET.editBurst;
+      member.editAt = now;
+      member.stateSeq = null;
+      member.track.clear();
+      if (member.link) member.sample = null;
+      const to = this.seat(member, now);
+      if (!member.link) {
+        this.corrections.emit({ x: to.x, y: to.y, z: to.z });
+        continue;
+      }
+      member.epoch = (member.epoch + 1) & 0xff;
+      this.sendTo(
+        member,
+        encodeFrame({
+          t: 'run',
+          n: this.runValue,
+          seed,
+          seq: this.eventSeq,
+          spawn: { x: to.x, y: to.y, z: to.z },
+          epoch: member.epoch,
+        }),
+      );
+    }
+    this.runs.emit(this.runValue);
   }
 
   // --------------------------------------------------------------------------------------------
@@ -790,7 +909,7 @@ export class HostSession implements GameSession {
       }
       return;
     }
-    this.sim?.playerBuilt(member.id);
+    this.sim?.playerBuilt(member.id, command.type === 'place');
   }
 
   /**
@@ -1009,10 +1128,12 @@ export class HostSession implements GameSession {
   // Survival: the simulation, paced by real time, and what the guests are told about it.
   // --------------------------------------------------------------------------------------------
 
-  private viewOf(sim: SurvivalSim): SurvivalView {
+  /** The run as the host's own screen reads it: always the simulation of the run being played now. */
+  private viewOf(): SurvivalView {
     return {
       read: (out: SurvivalReading) => {
-        sim.read(out);
+        if (!this.sim) return IDLE_SURVIVAL.read(out);
+        this.sim.read(out);
         out.running = this.refreshRunning();
         return out;
       },
@@ -1123,10 +1244,11 @@ export class HostSession implements GameSession {
     }
   }
 
-  /** The host's own player's meters, straight from the simulation. */
-  private vitalsOf(sim: SurvivalSim): VitalsView {
+  /** The host's own player's meters, straight from the simulation of the run being played now. */
+  private vitalsOf(): VitalsView {
     return {
-      read: (out: VitalsReading) => sim.readVitals(HOST_PLAYER_ID, out) ?? IDLE_VITALS.read(out),
+      read: (out: VitalsReading) =>
+        this.sim?.readVitals(HOST_PLAYER_ID, out) ?? IDLE_VITALS.read(out),
     };
   }
 
@@ -1184,6 +1306,7 @@ export class HostSession implements GameSession {
       over: sim?.over ?? false,
       ...(why ? { why } : {}),
       rc: [sim?.respawns ?? 0, sim?.respawnMax ?? 0],
+      st: [sim?.felled ?? 0, sim?.placed ?? 0, sim?.revived ?? 0],
     });
   }
 

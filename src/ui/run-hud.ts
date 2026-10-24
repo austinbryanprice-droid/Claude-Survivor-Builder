@@ -5,9 +5,9 @@ import type { HudCharges, HudClock, HudCore, HudDown } from './player-hud/player
 
 /**
  * How the HUD shows the run: the day and night clock by the compass, the Outpost Core's gauge
- * under it, the objective in the banner, the line on the pause card and the message when the light
- * changes or the Core falls. Plain data in and out, so it runs under Vitest; `player-hud.ts` draws
- * what these return.
+ * under it, the objective in the banner, the line on the pause card, the results of a lost run and
+ * the message when the light changes or the Core falls. Plain data in and out, so it runs under
+ * Vitest; `player-hud.ts` and the results card draw what these return.
  */
 
 /** The clock turns urgent this many seconds before the light changes. */
@@ -103,6 +103,39 @@ export function downForHud(vitals: VitalsReading, run: SurvivalReading | null): 
   };
 }
 
+/** What the results card of a lost run shows. */
+export interface HudResults {
+  /** Nights the crew held out. */
+  readonly nights: number;
+  /** How the run ended, in a sentence. */
+  readonly cause: string;
+  /** What the run came to, as the card lists it. */
+  readonly stats: readonly { readonly label: string; readonly value: string }[];
+}
+
+/**
+ * The results of a run that is over: how long the crew held out, how it ended and what it did
+ * meanwhile. Null while the run goes on. The spec's materials, upgrades and research join the list
+ * when there are any (Phase 5).
+ */
+export function resultsForHud(reading: SurvivalReading): HudResults | null {
+  if (!reading.over) return null;
+  const on = phaseName(reading);
+  return {
+    nights: nightsSurvived(reading.cycle),
+    cause:
+      reading.overWhy === 'crew'
+        ? `Every player was down on ${on} and the crew had no respawns left.`
+        : `The Outpost Core fell on ${on}.`,
+    stats: [
+      { label: 'Time held', value: formatClock(reading.elapsed) },
+      { label: 'Machines destroyed', value: String(reading.felled) },
+      { label: 'Blocks placed', value: String(reading.placed) },
+      { label: 'Respawns used', value: String(reading.revived) },
+    ],
+  };
+}
+
 /** The banner at the top right: where the crew stands and what the hour asks of it. */
 export function objectiveForRun(reading: SurvivalReading): { place: string; title: string } {
   if (reading.over) {
@@ -117,14 +150,8 @@ export function objectiveForRun(reading: SurvivalReading): { place: string; titl
   };
 }
 
-/** The line on the pause card, so a held clock is not a mystery. */
+/** The line on the pause card, so a held clock is not a mystery. A lost run has the results card instead. */
 export function runLine(reading: SurvivalReading): string {
-  if (reading.over) {
-    const nights = nightsSurvived(reading.cycle);
-    const survived = `${nights} ${nights === 1 ? 'night' : 'nights'} survived`;
-    const cause = reading.overWhy === 'crew' ? ' · the whole crew went down' : '';
-    return `Outpost Overrun on ${phaseName(reading)}${cause} · ${survived}`;
-  }
   const until = reading.phase === 'day' ? 'until nightfall' : 'until dawn';
   const line = `${phaseName(reading)} · ${formatClock(reading.left)} ${until}`;
   return reading.running ? line : `${line} · the clock waits while you are away`;

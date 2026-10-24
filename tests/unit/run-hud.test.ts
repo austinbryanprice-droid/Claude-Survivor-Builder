@@ -17,6 +17,7 @@ import {
   downForHud,
   messageFor,
   objectiveForRun,
+  resultsForHud,
   runLine,
 } from '../../src/ui/run-hud';
 
@@ -167,18 +168,6 @@ describe('what the HUD says when the Core falls', () => {
     expect(objectiveForRun(fallen).title).toBe('The Outpost Core has fallen');
   });
 
-  it('puts the end of the run on the pause card with the nights survived', () => {
-    expect(runLine(withCore(DAY_SECONDS + 30, 0, true))).toBe(
-      'Outpost Overrun on Night 1 · 0 nights survived',
-    );
-    expect(runLine(withCore(720 + DAY_SECONDS + 30, 0, true))).toBe(
-      'Outpost Overrun on Night 2 · 1 night survived',
-    );
-    expect(runLine(withCore(2 * 720 + 100, 0, true))).toBe(
-      'Outpost Overrun on Day 3 · 2 nights survived',
-    );
-  });
-
   it('announces the fall', () => {
     expect(messageFor({ k: 'overrun', n: 3, why: 'core' })).toBe('The Outpost Core has fallen');
   });
@@ -280,15 +269,6 @@ describe('what the HUD says when the whole crew goes down', () => {
     );
   });
 
-  it('puts the cause on the pause card with the nights survived', () => {
-    expect(runLine(withCrew(720 + DAY_SECONDS + 30, 0, 3, 'crew'))).toBe(
-      'Outpost Overrun on Night 2 · the whole crew went down · 1 night survived',
-    );
-    expect(runLine(withCore(720 + DAY_SECONDS + 30, 0, true))).toBe(
-      'Outpost Overrun on Night 2 · 1 night survived',
-    );
-  });
-
   it('draws the Core’s gauge as it is: whole and sound, not fallen', () => {
     expect(coreForHud(withCrew(DAY_SECONDS + 30, 0, 3, 'crew'))).toMatchObject({
       fraction: 1,
@@ -297,6 +277,54 @@ describe('what the HUD says when the whole crew goes down', () => {
     });
     // By day, with the Core whole, there is nothing to draw.
     expect(coreForHud(withCrew(100, 0, 3, 'crew'))).toBeNull();
+  });
+});
+
+describe('the results of a lost run', () => {
+  it('are nothing while the run goes on', () => {
+    expect(resultsForHud(reading(100))).toBeNull();
+    expect(resultsForHud(withCore(DAY_SECONDS + 5, 400))).toBeNull();
+    expect(resultsForHud(withCrew(DAY_SECONDS + 5, 0, 3))).toBeNull();
+  });
+
+  it('count the nights that ended in a dawn and say where the Core fell', () => {
+    expect(resultsForHud(withCore(DAY_SECONDS + 30, 0, true))).toMatchObject({
+      nights: 0,
+      cause: 'The Outpost Core fell on Night 1.',
+    });
+    expect(resultsForHud(withCore(720 + DAY_SECONDS + 30, 0, true))).toMatchObject({
+      nights: 1,
+      cause: 'The Outpost Core fell on Night 2.',
+    });
+    expect(resultsForHud(withCore(2 * 720 + 100, 0, true))).toMatchObject({
+      nights: 2,
+      cause: 'The Outpost Core fell on Day 3.',
+    });
+  });
+
+  it('say when the whole crew went down with no charge left', () => {
+    expect(resultsForHud(withCrew(720 + DAY_SECONDS + 30, 0, 3, 'crew'))).toMatchObject({
+      nights: 1,
+      cause: 'Every player was down on Night 2 and the crew had no respawns left.',
+    });
+  });
+
+  it('list what the crew did, in the order the card shows it', () => {
+    const lost = withCore(720 + DAY_SECONDS + 90, 0, true);
+    lost.felled = 31;
+    lost.placed = 212;
+    lost.revived = 3;
+    expect(resultsForHud(lost)?.stats).toEqual([
+      { label: 'Time held', value: '21:30' },
+      { label: 'Machines destroyed', value: '31' },
+      { label: 'Blocks placed', value: '212' },
+      { label: 'Respawns used', value: '3' },
+    ]);
+  });
+
+  it('show a crew that did nothing as zeros, not as gaps', () => {
+    const stats = resultsForHud(withCore(DAY_SECONDS + 30, 0, true))?.stats ?? [];
+    expect(stats.map((stat) => stat.value)).toEqual(['8:30', '0', '0', '0']);
   });
 });
 

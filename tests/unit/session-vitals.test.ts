@@ -291,6 +291,17 @@ describe("the guest's mirror of its meters", () => {
   });
 });
 
+describe("the guest's mirror of its meters when the host starts the run over", () => {
+  it('forgets the last word, so the bars are full until the new run speaks', () => {
+    const mirror = new VitalsMirror();
+    mirror.apply(0, 100, 0, 100, false, 4, 30);
+    expect(read(mirror)).toMatchObject({ health: 0, returnIn: 4, shaken: 30 });
+    mirror.reset();
+    expect(read(mirror)).toEqual(read(new VitalsMirror()));
+    expect(read(mirror)).toMatchObject({ returnIn: 0, shaken: 0, speedScale: 1, handScale: 1 });
+  });
+});
+
 describe('the hub and the meters', () => {
   function solo() {
     const scheduler = new ManualScheduler();

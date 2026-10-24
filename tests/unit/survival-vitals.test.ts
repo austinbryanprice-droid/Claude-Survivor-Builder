@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MOVEMENT } from '../../src/shared/movement';
-import { SIM_HZ } from '../../src/shared/survival-state';
+import { SIM_HZ, createReading } from '../../src/shared/survival-state';
 import { createVitalsReading } from '../../src/shared/vitals-state';
 import { VITALS } from '../../src/systems/survival/balance';
 import { SurvivalSim } from '../../src/systems/survival/sim';
@@ -71,6 +71,32 @@ describe('the players in the survival simulation', () => {
     const out = createVitalsReading();
     expect(sim.readVitals(1, out)?.energy).toBe(VITALS.maxEnergy - 40 * VITALS.energy.perEdit);
     expect(sim.readVitals(2, out)?.energy).toBe(VITALS.maxEnergy);
+  });
+
+  it('counts the blocks placed, for the results screen, and not the ones broken', () => {
+    const sim = new SurvivalSim();
+    sim.addPlayer(1);
+    sim.addPlayer(2);
+    expect(sim.placed).toBe(0);
+    sim.playerBuilt(1);
+    sim.playerBuilt(2, true);
+    sim.playerBuilt(1, false);
+    expect(sim.placed).toBe(2);
+    expect(sim.read(createReading()).placed).toBe(2);
+    // Someone who is not in the run places nothing.
+    sim.playerBuilt(9);
+    expect(sim.placed).toBe(2);
+  });
+
+  it('stops counting blocks placed once the run is over', () => {
+    const sim = new SurvivalSim();
+    sim.addPlayer(1);
+    sim.playerBuilt(1);
+    sim.hurtCore(100_000);
+    expect(sim.over).toBe(true);
+    sim.playerBuilt(1);
+    expect(sim.placed).toBe(1);
+    expect(sim.read(createReading()).placed).toBe(1);
   });
 
   it('plays the meters with the clock, a step at a time', () => {

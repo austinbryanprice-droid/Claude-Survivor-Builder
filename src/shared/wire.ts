@@ -230,6 +230,7 @@ export function decodeHostFrame(text: string): HostFrame | null {
         !isInt(raw.seq, 0, MAX_U31) ||
         !isNum(raw.hostTime, 1e12) ||
         !isInt(raw.epoch, 0, 255) ||
+        !isInt(raw.run, 1, MAX_U16) ||
         !isInt(raw.parts, 0, maxParts) ||
         !isInt(raw.edits, 0, NET.maxSnapshotEdits)
       ) {
@@ -246,6 +247,7 @@ export function decodeHostFrame(text: string): HostFrame | null {
         hostTime: raw.hostTime,
         spawn: { x: spawn.x, y: spawn.y, z: spawn.z },
         epoch: raw.epoch,
+        run: raw.run,
         players,
         parts: raw.parts,
         edits: raw.edits,
@@ -293,6 +295,11 @@ export function decodeHostFrame(text: string): HostFrame | null {
       if (!Array.isArray(raw.rc) || raw.rc.length !== 2) return null;
       const [charges, chargeMax] = raw.rc as unknown[];
       if (!isInt(chargeMax, 0, MAX_U16) || !isInt(charges, 0, chargeMax)) return null;
+      if (!Array.isArray(raw.st) || raw.st.length !== 3) return null;
+      const [felled, placed, revived] = raw.st as unknown[];
+      if (!isInt(felled, 0, MAX_U31) || !isInt(placed, 0, MAX_U31) || !isInt(revived, 0, MAX_U31)) {
+        return null;
+      }
       // A run that has ended says why; one that has not says nothing.
       const why = raw.over ? readOverrunCause(raw.why) : null;
       if (raw.over ? why === null : raw.why !== undefined) return null;
@@ -303,8 +310,31 @@ export function decodeHostFrame(text: string): HostFrame | null {
         core: [health, max] as const,
         over: raw.over,
         rc: [charges, chargeMax] as const,
+        st: [felled, placed, revived] as const,
       };
       return why ? { ...frame, why } : frame;
+    }
+    case 'run': {
+      const { spawn } = raw;
+      if (!isRecord(spawn)) return null;
+      const limit = NET.move.limit;
+      if (!isNum(spawn.x, limit) || !isNum(spawn.y, limit) || !isNum(spawn.z, limit)) return null;
+      if (
+        !isInt(raw.n, 2, MAX_U16) ||
+        !isInt(raw.seed, -MAX_SEED, MAX_SEED) ||
+        !isInt(raw.seq, 0, MAX_U31) ||
+        !isInt(raw.epoch, 0, 255)
+      ) {
+        return null;
+      }
+      return {
+        t: 'run',
+        n: raw.n,
+        seed: raw.seed,
+        seq: raw.seq,
+        spawn: { x: spawn.x, y: spawn.y, z: spawn.z },
+        epoch: raw.epoch,
+      };
     }
     case 'se': {
       const event = readSurvivalEvent(raw.e);

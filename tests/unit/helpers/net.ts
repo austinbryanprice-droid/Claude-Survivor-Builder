@@ -120,6 +120,12 @@ export interface RoomOptions extends Partial<Omit<LoopbackOptions, 'scheduler'>>
   hostWorld?: TestWorld;
   /** Where a player in each slot starts, for a test whose players have to stand on the ground it uses. */
   spawnFor?: HostSessionOptions['spawnFor'];
+  /**
+   * Lets the host start a lost run over: its world is rebuilt (empty) for the seed it is given, and
+   * the next run is a new simulation from `survival` (a plain one by default). `nextSeed` is what
+   * the host draws for a new valley.
+   */
+  restartable?: boolean | { survival?: SurvivalOptions; nextSeed?: () => number };
 }
 
 /** A host and a loopback network on virtual time. */
@@ -130,16 +136,31 @@ export function makeRoom(options: RoomOptions = {}) {
     random: createRng(99),
     ...options,
   });
-  const hostWorld = options.hostWorld ?? new TestWorld(4242);
+  let hostWorld = options.hostWorld ?? new TestWorld(4242);
+  const restart = options.restartable
+    ? options.restartable === true
+      ? {}
+      : options.restartable
+    : null;
+  const hostBinding: WorldBinding = restart
+    ? {
+        current: () => hostWorld,
+        load: (seed) => {
+          hostWorld = new TestWorld(seed);
+          return Promise.resolve();
+        },
+      }
+    : fixedWorld(hostWorld);
+  const survivalOptions = options.survival && options.survival !== true ? options.survival : {};
   const host = new HostSession({
     scheduler,
-    world: fixedWorld(hostWorld),
+    world: hostBinding,
     name: 'Host',
     token: token(0),
     spawnFor: options.spawnFor,
-    survival: options.survival
-      ? new SurvivalSim(options.survival === true ? {} : options.survival)
-      : undefined,
+    survival: options.survival ? new SurvivalSim(survivalOptions) : undefined,
+    newRun: restart ? () => new SurvivalSim(restart.survival ?? survivalOptions) : undefined,
+    nextSeed: restart?.nextSeed,
   });
 
   const flush = async (): Promise<void> => {
@@ -203,7 +224,21 @@ export function makeRoom(options: RoomOptions = {}) {
     return guest;
   }
 
-  return { scheduler, network, host, hostWorld, openRoom, addGuest, join, settle, flush, guests };
+  return {
+    scheduler,
+    network,
+    host,
+    /** The world the host plays in: a new one after each restart. */
+    get hostWorld(): TestWorld {
+      return hostWorld;
+    },
+    openRoom,
+    addGuest,
+    join,
+    settle,
+    flush,
+    guests,
+  };
 }
 
 /** A sample at a spot, standing still on the ground. */
