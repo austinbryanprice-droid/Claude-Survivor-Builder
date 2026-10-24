@@ -26,6 +26,8 @@ export type IconId =
   | 'moon'
   | 'core'
   | 'bolt'
+  | 'lock'
+  | 'research'
   | 'block-scrap'
   | 'block-composite'
   | 'block-alloy'
@@ -58,6 +60,8 @@ export const ICON_IDS: readonly IconId[] = [
   'moon',
   'core',
   'bolt',
+  'lock',
+  'research',
   'block-scrap',
   'block-composite',
   'block-alloy',
@@ -395,6 +399,30 @@ const SPRITE_BODY = /* html */ `
 <symbol id="ph-i-bolt" viewBox="0 0 48 48">
   <path d="M29 3 L10 26.5 H21 L16.5 45 L38.5 18.5 H27 Z" fill="url(#ph-bolt)" stroke="${INK}" stroke-width="1.9" stroke-linejoin="round"/>
   <path d="M26.5 8.5 L16 22.5" stroke="#fffbe6" stroke-opacity="0.85" stroke-width="1.7" stroke-linecap="round"/>
+</symbol>
+
+<symbol id="ph-i-lock" viewBox="0 0 48 48">
+  <path d="M15.5 22 V14.5 C15.5 9.6 19.3 6 24 6 C28.7 6 32.5 9.6 32.5 14.5 V22" fill="none" stroke="${INK}" stroke-width="7" stroke-linecap="round"/>
+  <path d="M15.5 22 V14.5 C15.5 9.6 19.3 6 24 6 C28.7 6 32.5 9.6 32.5 14.5 V22" fill="none" stroke="url(#ph-steel)" stroke-width="3.2" stroke-linecap="round"/>
+  <rect x="8.5" y="20.5" width="31" height="22" rx="4.5" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M12.5 24.4 H35.5" stroke="#fff6d0" stroke-opacity="0.6" stroke-width="1.7" stroke-linecap="round"/>
+  <circle cx="24" cy="30.2" r="3.5" fill="${INK}"/>
+  <path d="M24 31 V36.4" stroke="${INK}" stroke-width="3.6" stroke-linecap="round"/>
+</symbol>
+
+<symbol id="ph-i-research" viewBox="0 0 48 48">
+  <g fill="none" stroke="${INK}" stroke-width="5.2" stroke-linecap="round">
+    <ellipse cx="24" cy="24" rx="19" ry="7.4" transform="rotate(-32 24 24)"/>
+    <ellipse cx="24" cy="24" rx="19" ry="7.4" transform="rotate(32 24 24)"/>
+    <ellipse cx="24" cy="24" rx="19" ry="7.4" transform="rotate(90 24 24)"/>
+  </g>
+  <g fill="none" stroke="#c4b3ff" stroke-width="2.4" stroke-linecap="round">
+    <ellipse cx="24" cy="24" rx="19" ry="7.4" transform="rotate(-32 24 24)"/>
+    <ellipse cx="24" cy="24" rx="19" ry="7.4" transform="rotate(32 24 24)"/>
+    <ellipse cx="24" cy="24" rx="19" ry="7.4" transform="rotate(90 24 24)"/>
+  </g>
+  <circle cx="24" cy="24" r="6.6" fill="url(#ph-core)" stroke="${INK}" stroke-width="1.8"/>
+  <path d="M20.6 21.4 C21.4 20 22.8 19.2 24.4 19.1" stroke="#ffffff" stroke-opacity="0.85" stroke-width="1.6" fill="none" stroke-linecap="round"/>
 </symbol>
 ${BLOCK_SYMBOLS}
 ${SHAPE_SYMBOLS}

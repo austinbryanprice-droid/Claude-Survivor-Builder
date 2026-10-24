@@ -760,6 +760,106 @@
   }
 }
 
+/* The crew's research: a bar toward the next thing the points open, shown while building and for a while after the points change. */
+
+.ph-research {
+  --tone: #b9a2ff;
+
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 8px);
+  height: calc(var(--u) * 25px);
+  padding: 0 calc(var(--u) * 14px) 0 calc(var(--u) * 8px);
+  border-radius: calc(var(--u) * 12.5px);
+  background: rgb(34 37 45 / 84%);
+  box-shadow:
+    0 2px 6px rgb(0 0 0 / 35%),
+    inset 0 0 0 calc(var(--u) * 1px) rgb(255 255 255 / 9%);
+  font-size: calc(var(--u) * 14px);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: var(--shadow);
+}
+
+.ph-research[data-tone='full'] {
+  --tone: #e3d6ff;
+}
+
+.ph-research-icon {
+  width: calc(var(--u) * 18px);
+  height: calc(var(--u) * 18px);
+}
+
+.ph-research-label {
+  font-size: calc(var(--u) * 11px);
+  letter-spacing: 0.17em;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+}
+
+.ph-research-track {
+  position: relative;
+  width: calc(var(--u) * 92px);
+  height: calc(var(--u) * 7px);
+  overflow: hidden;
+  border-radius: calc(var(--u) * 3.5px);
+  background: rgb(0 0 0 / 45%);
+  box-shadow: inset 0 0 0 calc(var(--u) * 1px) rgb(255 255 255 / 10%);
+}
+
+.ph-research-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tone), white 38%), var(--tone));
+  transition: width 0.25s ease-out;
+}
+
+.ph-research-value {
+  min-width: calc(var(--u) * 44px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-align: right;
+}
+
+/* Points earned flash the pill in its own colour (two names, so the animation restarts every time). */
+
+.ph-research[data-hit='0'] {
+  animation: ph-research-hit-a 0.7s ease-out;
+}
+
+.ph-research[data-hit='1'] {
+  animation: ph-research-hit-b 0.7s ease-out;
+}
+
+@keyframes ph-research-hit-a {
+  0% {
+    box-shadow:
+      0 0 calc(var(--u) * 14px) #b9a2ff,
+      inset 0 0 0 calc(var(--u) * 2px) #b9a2ff;
+  }
+}
+
+@keyframes ph-research-hit-b {
+  0% {
+    box-shadow:
+      0 0 calc(var(--u) * 14px) #b9a2ff,
+      inset 0 0 0 calc(var(--u) * 2px) #b9a2ff;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ph-research[data-hit] {
+    animation: none;
+  }
+
+  .ph-research-fill {
+    transition: none;
+  }
+}
+
 /* A player who is down: the edges of the screen darken, and the Core says when it brings them back. */
 
 .ph-down {
@@ -1072,6 +1172,36 @@
 /* A pool that has none of the material: the count is told, but quietly. */
 .ph-count[data-none] {
   opacity: 0.55;
+}
+
+/* A material the crew has not researched: the slot is dim and has no grid, behind a padlock. */
+
+.ph-slot[data-locked] {
+  background: linear-gradient(180deg, rgb(28 32 30 / 30%), rgb(14 16 16 / 46%));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%);
+}
+
+.ph-slot[data-locked][data-selected] {
+  background: linear-gradient(180deg, rgb(112 96 150 / 40%), rgb(52 40 84 / 52%));
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 1.5px) #fff,
+    0 0 calc(var(--u) * 8px) rgb(210 190 255 / 24%);
+}
+
+.ph-slot[data-locked] .ph-slot-icon {
+  opacity: 0.34;
+  filter: grayscale(0.75) drop-shadow(0 2px 2px rgb(0 0 0 / 45%));
+}
+
+.ph-slot-lock {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  width: calc(var(--u) * 24px);
+  height: calc(var(--u) * 24px);
+  transform: translate(-50%, -44%);
+  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 55%));
 }
 
 /* The caption above the hotbar: the piece in hand and what it costs, or why a click would do nothing. */

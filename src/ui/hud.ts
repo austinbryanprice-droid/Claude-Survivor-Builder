@@ -1,5 +1,5 @@
 import type { Game } from '../engine/game';
-import type { EconomyView } from '../shared/economy';
+import { createEconomyReading, type EconomyView } from '../shared/economy';
 import type { Flags } from '../shared/flags';
 import { nextQuality } from '../shared/quality';
 import { createReading, type RestartKind, type SurvivalView } from '../shared/survival-state';
@@ -12,6 +12,7 @@ import { createFrameOverlay } from './frame-overlay';
 import { createPausePanel } from './pause-panel';
 import { createPlaceholderHud } from './placeholder-hud';
 import { harvestMessage, messageFor, resultsForHud, runLine, type Namer } from './run-hud';
+import { ResearchWatcher } from './research-hud';
 import { createRunResults } from './run-results';
 import { saveSettings } from './settings-store';
 import { createStatusPanel } from './status-panel';
@@ -39,8 +40,9 @@ export interface Hud {
   /** Shows the player's own Health, Energy and status icons from this view; null shows full bars. */
   setVitals(view: VitalsView | null): void;
   /**
-   * Shows the crew's pool on the block slots of the hotbar from this view, and a message when the
-   * player `localId()` names strips a heap; null shows no counts.
+   * Shows the crew's pool on the block slots of the hotbar from this view, a message when the
+   * player `localId()` names strips a heap, and one when the crew's research grows or opens a
+   * material; null shows no counts.
    */
   setEconomy(view: EconomyView | null, localId?: () => number): void;
   dispose(): void;
@@ -103,9 +105,12 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
   overlay.setVisible(view.stats && (flags.bench || flags.debug));
 
   let run: SurvivalView | null = null;
+  let economy: EconomyView | null = null;
+  let researchWatch = new ResearchWatcher();
   let stopRunEvents: (() => void) | null = null;
   let stopStrips: (() => void) | null = null;
   const runReading = createReading();
+  const poolReading = createEconomyReading();
   let runLineText: string | null = null;
   let over = false;
   /**
@@ -114,7 +119,10 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
    */
   function refreshRun(): boolean {
     const reading = run ? run.read(runReading) : null;
-    const lost = reading ? resultsForHud(reading) : null;
+    const pool = economy ? economy.read(poolReading) : null;
+    const lost = reading
+      ? resultsForHud(reading, pool && pool.cap > 0 ? pool.research : null)
+      : null;
     const line = reading && !lost ? runLine(reading) : null;
     if (line !== runLineText) {
       runLineText = line;
@@ -176,6 +184,10 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
     const dt = Math.min(MAX_HUD_STEP_SECONDS, (now - lastFrame) / 1000);
     lastFrame = now;
     playerHud.update(dt);
+    // The points that arrived and the materials they opened are told in the order they come.
+    if (economy) {
+      for (const message of researchWatch.update(economy.read(poolReading))) toast.queue(message);
+    }
     const building = build.hudState().buildMode;
     if (building !== buildMode) {
       buildMode = building;
@@ -208,7 +220,7 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
       stopRunEvents = null;
       run = view;
       playerHud.setSurvival(view);
-      if (view) stopRunEvents = view.onEvent((event) => toast.show(messageFor(event, nameOf)));
+      if (view) stopRunEvents = view.onEvent((event) => toast.queue(messageFor(event, nameOf)));
       // The run takes the sky when it arrives, which the pause card's Time of day should show.
       pause.refresh();
       if (refreshRun()) place();
@@ -225,6 +237,8 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
     setEconomy(view, localId) {
       stopStrips?.();
       stopStrips = null;
+      economy = view;
+      researchWatch = new ResearchWatcher();
       playerHud.setEconomy(view);
       // The player's own strips are answered with what they brought in; the others' are seen in the pool.
       if (view && localId) {

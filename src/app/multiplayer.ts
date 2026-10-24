@@ -109,14 +109,19 @@ export interface MultiplayerDebug {
     x: number;
     y: number;
     z: number;
+    /** The way it lies (radians) and how big it is drawn (a multiple of its model). */
+    yaw: number;
+    scale: number;
     harvests: number;
     left: number;
     from: number;
+    /** The material its strips give. */
+    grade: number;
   }[];
   /** The heaps drawn now: how far up out of the ground each is, the share of its strips shown, the flash of a strip and the glow of the cursor. */
   heapsShown(): DebrisShown[];
-  /** The crew's pool as this screen has it: the count of each material in tier order, and the most it holds. */
-  pool(): { stock: number[]; cap: number };
+  /** The crew's pool as this screen has it: the count of each material in tier order, the most it holds, the research points and the highest tier they have opened. */
+  pool(): { stock: number[]; cap: number; research: number; tier: number };
   /**
    * Asks the host to strip the heap with this place in the list, as the interact key does but with
    * no aim and no pace of the hands (the host's rules still apply, reach included). Returns false,
@@ -125,6 +130,8 @@ export interface MultiplayerDebug {
   harvest(index: number): boolean;
   /** Sets how much of a material (a `MATERIAL` id) the pool holds, within its ceiling. Only a host (or single-player) can. */
   setPool(material: number, amount: number): void;
+  /** Sets the research points the crew has earned, which opens the material tiers they reach (heaps of a newly opened grade rise at the next dawn). Only a host (or single-player) can. */
+  setResearch(points: number): void;
   /** A fingerprint of every player-made block in the world being played. */
   blocks(): BlockDigest;
   block(x: number, y: number, z: number): CellState;
@@ -350,14 +357,22 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
         x: node.x,
         y: node.y,
         z: node.z,
+        yaw: node.yaw,
+        scale: node.scale,
         harvests: node.harvests,
         left: hub.economy.debris.leftOf(node.index),
         from: node.from,
+        grade: node.grade,
       })),
     heapsShown: () => debris.list(),
     pool: () => {
       const reading = hub.economy.read(createEconomyReading());
-      return { stock: [...reading.stock], cap: reading.cap };
+      return {
+        stock: [...reading.stock],
+        cap: reading.cap,
+        research: reading.research,
+        tier: reading.tier,
+      };
     },
     harvest: (index) => {
       const node = hub.economy.debris.nodes[index];
@@ -373,6 +388,10 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     setPool: (material, amount) => {
       const session = hub.current;
       if (session instanceof HostSession) session.survivalSim?.economy?.pool.set(material, amount);
+    },
+    setResearch: (points) => {
+      const session = hub.current;
+      if (session instanceof HostSession) session.survivalSim?.economy?.research.set(points);
     },
     blocks: () => digestBlocks(options.world.world()),
     block: (x, y, z) => options.world.world().getBlock(x, y, z),

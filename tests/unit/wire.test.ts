@@ -232,8 +232,8 @@ describe('host control frames', () => {
     },
     { t: 'run', n: 2, seed: 20261020, seq: 17, spawn: { x: 2.5, y: 0, z: 0.5 }, epoch: 1 },
     { t: 'run', n: 12, seed: -7, seq: 0, spawn: { x: -40, y: 12.25, z: 33 }, epoch: 255 },
-    { t: 'ec', pl: [30, 0, 0, 0], cap: 400 },
-    { t: 'ec', pl: [400, 12, 3, 0], cap: 400 },
+    { t: 'ec', pl: [30, 0, 0, 0], cap: 400, rp: 0 },
+    { t: 'ec', pl: [400, 12, 3, 0], cap: 400, rp: 9999 },
     { t: 'nl', n: [] },
     {
       t: 'nl',
@@ -463,8 +463,8 @@ describe('host control frames', () => {
     }
   });
 
-  it('refuses a pool word with the wrong number of materials, a count that is not a whole number or a ceiling that is missing', () => {
-    const base = { t: 'ec', pl: [30, 0, 0, 0], cap: 400 };
+  it('refuses a pool word with the wrong number of materials, a count that is not a whole number, a ceiling that is missing or research points that make no sense', () => {
+    const base = { t: 'ec', pl: [30, 0, 0, 0], cap: 400, rp: 20 };
     expect(decodeHostFrame(JSON.stringify(base))).toEqual(base);
     for (const bad of [
       { pl: undefined },
@@ -479,6 +479,11 @@ describe('host control frames', () => {
       { cap: -1 },
       { cap: 1.5 },
       { cap: '400' },
+      { rp: undefined },
+      { rp: -1 },
+      { rp: 1.5 },
+      { rp: '20' },
+      { rp: 3000000000 },
     ]) {
       const text = JSON.stringify({ ...base, ...bad });
       expect(decodeHostFrame(text), text).toBeNull();

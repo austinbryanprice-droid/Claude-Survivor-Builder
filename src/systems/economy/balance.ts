@@ -2,16 +2,16 @@ import { MATERIAL } from '../../shared/blocks';
 
 /**
  * Every number that shapes the economy, in one table so it can be tuned and tested without
- * hunting through the code (docs/decisions.md, Phase 5a). They are first guesses to be tuned by
- * playing, and later by the balance simulator: the spec asks for enough materials in a day for one
- * or two meaningful upgrades, and for progress to feel fast early and earned later.
+ * hunting through the code (docs/decisions.md, Phases 5a to 5c). They are first guesses to be tuned
+ * by playing, and later by the balance simulator: the spec asks for enough materials in a day for
+ * one or two meaningful upgrades, and for progress to feel fast early and earned later.
  */
 
 /** The crew's shared pool of materials. */
 export const POOL = {
   /** What the pool holds when a run begins, by material id; a material that is not listed starts at 0. */
   start: { [MATERIAL.scrap]: 30 } as Readonly<Record<number, number>>,
-  /** The most the pool holds of any one material, until Storage (Phase 5g) raises it. */
+  /** The most the pool holds of any one material, until Storage (Phase 5h) raises it. */
   cap: 400,
 } as const;
 
@@ -49,9 +49,33 @@ export const DEBRIS = {
   /** How hard the generator tries to find a place for each heap before it gives up on it. */
   attempts: 60,
 
-  /** Strips a heap gives before it is gone, and what each strip gives, both whole numbers from `min` to `max`. */
+  /** Strips a heap of Scrap gives before it is gone, and what each strip gives, both whole numbers from `min` to `max`. */
   harvests: { min: 2, max: 4 },
   yield: { min: 8, max: 12 },
+  /**
+   * The better grades of heap (SPEC section 9: higher tiers "appear less frequently or require
+   * research unlocks", and the notes: a heap gives 8 to 12 Scrap). Each takes one place in every
+   * dawn's batch from the batch `from` on: the heap drawn `slot`th of the batch (counting from 0)
+   * is of that grade. A heap of a grade whose tier is not researched yet is not uncovered at its
+   * dawn; it waits for a later one. They give less than Scrap, in fewer strips, because a block
+   * costs one of them and the upgrades that spend them are few (Phase 5e on).
+   */
+  grades: [
+    {
+      material: MATERIAL.composite,
+      from: 2,
+      slot: 3,
+      harvests: { min: 2, max: 3 },
+      yield: { min: 5, max: 7 },
+    },
+    {
+      material: MATERIAL.alloy,
+      from: 5,
+      slot: 2,
+      harvests: { min: 2, max: 2 },
+      yield: { min: 4, max: 6 },
+    },
+  ],
   /** How big a heap is drawn: a multiple of its model, from `min` to `max`. */
   size: { min: 0.85, max: 1.25 },
 
@@ -76,4 +100,27 @@ export const DEBRIS = {
    * hands were slow enough to ask for. Low Energy stretches it, as it does the blaster's pace.
    */
   pace: 0.6,
+} as const;
+
+/**
+ * Research (SPEC sections 9 and 10): the points the crew earns by surviving nights, and the ladder of
+ * what they open. Points are only ever added, never spent, so a step is open for good once the
+ * total reaches it (docs/decisions.md, Phase 5c).
+ */
+export const RESEARCH = {
+  /** What a night the crew has survived is worth, credited at the dawn that ends it (the notes: 8 to 12). */
+  perNight: 10,
+  /** Extra for a night in which the Core took no damage at all (the spec's small bonus for low base damage). */
+  cleanNight: 2,
+  /**
+   * What the points open, by total points in rising order: the material tier they unlock. The Power
+   * group (10 points) and the module upgrades (40) join with the modules that use them.
+   */
+  steps: [
+    { points: 20, tier: 2 },
+    { points: 55, tier: 3 },
+    { points: 100, tier: 4 },
+  ],
+  /** The most points the `?research=` switch or the debug page can set. */
+  max: 9999,
 } as const;

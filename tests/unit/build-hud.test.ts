@@ -27,7 +27,7 @@ import {
   refusalText,
   type BuildHudInput,
 } from '../../src/ui/build-hud';
-import { DEBRIS_IN_THE_WAY, notEnough } from '../../src/systems/economy/build-rules';
+import { DEBRIS_IN_THE_WAY, needsResearch, notEnough } from '../../src/systems/economy/build-rules';
 import { VITALS } from '../../src/systems/survival/balance';
 import { ICON_IDS, ICON_SPRITE } from '../../src/ui/player-hud/icons';
 
@@ -46,6 +46,7 @@ function hands(overrides: Partial<BuildHudInput> = {}): BuildHudInput {
     hits: 0,
     kill: false,
     salvage: 0,
+    salvageGrade: 0,
     ...overrides,
   };
 }
@@ -167,6 +168,17 @@ describe('the prompt under the crosshair', () => {
     expect(interactPrompt(1)?.detail).toBe('last strip');
   });
 
+  it('says what a heap of a better grade gives, and nothing more for Scrap', () => {
+    expect(interactPrompt(3, MATERIAL.composite)).toEqual({
+      key: INTERACT_KEY,
+      label: 'Strip debris',
+      detail: 'Reinforced Composite · 3 strips left',
+    });
+    expect(interactPrompt(1, MATERIAL.alloy)?.detail).toBe('Advanced Alloy · last strip');
+    expect(interactPrompt(3, MATERIAL.scrap)?.detail).toBe('3 strips left');
+    expect(interactPrompt(2, 99)?.detail).toBe('2 strips left');
+  });
+
   it('is nothing when the cursor is on no heap', () => {
     expect(interactPrompt(0)).toBeNull();
     expect(interactPrompt(-1)).toBeNull();
@@ -235,6 +247,71 @@ describe('the caption above the hotbar', () => {
       detail: 'Nothing to break there',
       tone: 'warn',
     });
+  });
+});
+
+describe('the caption of a material that is not researched', () => {
+  const lock = { name: 'Reinforced Composite', have: 12, need: 20 };
+  const composite = packState(SHAPE.cube, MATERIAL.composite);
+  const inHand = { selected: 1, piece: composite };
+
+  it('says how many points the crew has and how many open it, in Build Mode', () => {
+    const tracker = new BuildPromptTracker();
+    expect(tracker.update(0.016, hands({ ...inHand, buildMode: true }), lock)).toEqual({
+      title: 'Reinforced Composite Block',
+      detail: 'Needs research · 12 of 20',
+      tone: 'warn',
+    });
+  });
+
+  it('says it for a moment after the slot is chosen outside Build Mode, and then goes quiet', () => {
+    const tracker = new BuildPromptTracker();
+    tracker.update(0.016, hands(), null);
+    expect(tracker.update(0.016, hands(inHand), lock)).toMatchObject({
+      detail: 'Needs research · 12 of 20',
+      tone: 'warn',
+    });
+    expect(tracker.update(NAME_SECONDS, hands(inHand), lock)).toBeNull();
+  });
+
+  it('says it in place of the host’s words for the same thing', () => {
+    const tracker = new BuildPromptTracker();
+    const words = needsResearch('Reinforced Composite');
+    expect(tracker.update(0.016, hands({ ...inHand, refusal: words }), lock)).toEqual({
+      title: 'Reinforced Composite Block',
+      detail: 'Needs research · 12 of 20',
+      tone: 'warn',
+    });
+  });
+
+  it('lets another reason speak first: out of reach is still out of reach', () => {
+    const tracker = new BuildPromptTracker();
+    expect(
+      tracker.update(
+        0.016,
+        hands({ ...inHand, buildMode: true, refusal: AIM_REFUSAL.outOfReach }),
+        lock,
+      ),
+    ).toMatchObject({ detail: 'Out of reach', tone: 'warn' });
+  });
+
+  it('is the ordinary caption once the material is open', () => {
+    const tracker = new BuildPromptTracker();
+    expect(tracker.update(0.016, hands({ ...inHand, buildMode: true }), null)).toEqual({
+      title: 'Reinforced Composite Block',
+      detail: 'Cost 1 Reinforced Composite',
+      tone: 'info',
+    });
+  });
+
+  it('says nothing of a lock to the blaster or an empty slot', () => {
+    const tracker = new BuildPromptTracker();
+    const blaster = hands({ selected: 4, piece: 0, blaster: true, buildMode: true });
+    expect(tracker.update(0.016, blaster, lock)).toMatchObject({
+      title: BLASTER_NAME,
+      tone: 'info',
+    });
+    expect(tracker.update(0.016, hands({ piece: 0, buildMode: true }), lock)).toBeNull();
   });
 });
 

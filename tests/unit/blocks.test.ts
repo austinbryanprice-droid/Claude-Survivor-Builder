@@ -7,6 +7,7 @@ import {
   isCellState,
   isKnownState,
   materialOf,
+  materialTier,
   packState,
   pieceName,
   stateMaterial,
@@ -86,6 +87,12 @@ describe('naming and pricing a piece', () => {
     expect(pieceName(packState(SHAPE.cube, MATERIAL.energy))).toBe('Energy-Infused Block');
     expect(pieceName(0)).toBe('');
     expect(pieceName(packState(200, MATERIAL.scrap))).toBe('');
+  });
+
+  it('tell the tier of a material, and the first tier for an id the tables do not know', () => {
+    expect(MATERIALS.map((m) => materialTier(m.id))).toEqual([1, 2, 3, 4]);
+    expect(materialTier(MATERIAL.none)).toBe(1);
+    expect(materialTier(99)).toBe(1);
   });
 
   it('price every material at a whole number of units, never free', () => {

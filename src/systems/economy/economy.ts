@@ -1,5 +1,5 @@
 import type { CellState } from '../../shared/block-world';
-import { MATERIALS } from '../../shared/blocks';
+import { MATERIAL, MATERIALS, materialTier } from '../../shared/blocks';
 import {
   createEconomyReading,
   type DebrisNode,
@@ -7,9 +7,17 @@ import {
   type HarvestEvent,
 } from '../../shared/economy';
 import { hash3 } from '../../shared/hash';
-import { DEBRIS, POOL } from './balance';
-import { DEBRIS_IN_THE_WAY, heapInTheWay, pieceCost, shortfall } from './build-rules';
+import { POOL } from './balance';
+import {
+  DEBRIS_IN_THE_WAY,
+  heapInTheWay,
+  lockedRefusal,
+  pieceCost,
+  shortfall,
+} from './build-rules';
+import { yieldOfGrade } from './grades';
 import { Pool } from './pool';
+import { Research } from './research';
 
 /**
  * The host's economy for one run: the crew's shared pool and the field of debris that fills it.
@@ -17,7 +25,9 @@ import { Pool } from './pool';
  * simulation tells it when a dawn comes, and the session tells it when a player strips a heap,
  * places a block (which the pool pays for) or breaks one (which the pool gets back).
  * What a strip yields comes from a hash of the seed, the heap and how many strips it has given,
- * so a run plays the same every time and a test can say what the next strip gives.
+ * so a run plays the same every time and a test can say what the next strip gives. It keeps the
+ * run's research too (5c), because what the crew has researched decides which materials its heaps
+ * give up and which blocks it may place.
  */
 
 const YIELD_SALT = 0x91e1d;
@@ -39,14 +49,21 @@ export function cellKey(x: number, y: number, z: number): number {
   return ((x + 1024) * 2048 + (z + 1024)) * 128 + y;
 }
 
-/** What the strip number `ordinal` (counting from 0) of a heap gives. */
-export function stripYield(seed: number, node: number, ordinal: number): number {
-  const span = DEBRIS.yield.max - DEBRIS.yield.min + 1;
-  return DEBRIS.yield.min + (hash3(seed, YIELD_SALT, node, ordinal) % span);
+/** What the strip number `ordinal` (counting from 0) of a heap of this grade gives. */
+export function stripYield(
+  seed: number,
+  node: number,
+  ordinal: number,
+  grade: number = MATERIAL.scrap,
+): number {
+  const { min, max } = yieldOfGrade(grade);
+  return min + (hash3(seed, YIELD_SALT, node, ordinal) % (max - min + 1));
 }
 
 export class Economy {
   readonly pool: Pool;
+  /** The points the crew has earned by surviving nights, and the material tiers they have opened. */
+  readonly research = new Research();
   private readonly left: number[];
   /** Whether each heap has come up out of the ground: the heaps of the first batch have, the others wait for a dawn. */
   private readonly risen: boolean[];
@@ -102,7 +119,7 @@ export class Economy {
   nextYield(index: number): number {
     const node = this.nodes[index];
     const left = this.left[index] ?? 0;
-    return node && left > 0 ? stripYield(this.seed, index, node.harvests - left) : 0;
+    return node && left > 0 ? stripYield(this.seed, index, node.harvests - left, node.grade) : 0;
   }
 
   /**
@@ -114,7 +131,7 @@ export class Economy {
     if (!node) return { ok: false, reason: 'nothing' };
     const left = this.left[index] as number;
     if (left <= 0) return { ok: false, reason: 'depleted' };
-    const offered = stripYield(this.seed, index, node.harvests - left);
+    const offered = stripYield(this.seed, index, node.harvests - left, node.grade);
     const gained = this.pool.add(node.grade, offered);
     if (gained <= 0) return { ok: false, reason: 'full' };
     this.left[index] = left - 1;
@@ -137,12 +154,14 @@ export class Economy {
    * A dawn: the heaps that night `night` and the nights before it leave uncovered come up out of the
    * ground for the day. Returns how many did. A heap whose ground has a block built on it
    * (`builtOver` says so) waits for a later dawn, when the block may be gone, rather than rise
-   * through the crew's work or take it down.
+   * through the crew's work or take it down, and so does a heap of a material the crew has not
+   * researched yet, which comes up at the first dawn after the research is done.
    */
   dawn(night: number, builtOver?: (node: DebrisNode) => boolean): number {
     let uncovered = 0;
     for (const node of this.nodes) {
       if (node.from > night || this.risen[node.index]) continue;
+      if (materialTier(node.grade) > this.research.tier) continue;
       if (builtOver?.(node)) continue;
       this.risen[node.index] = true;
       this.left[node.index] = node.harvests;
@@ -154,11 +173,15 @@ export class Economy {
 
   /**
    * Why the crew cannot place `state` at a cell, in the host's words, or null when it can: a heap
-   * of debris lying there keeps the cell clear, and the pool must hold what the piece costs.
+   * of debris lying there keeps the cell clear, the piece's material must be researched, and the
+   * pool must hold what the piece costs.
    */
   placementRefusal(x: number, y: number, z: number, state: CellState): string | null {
     if (heapInTheWay(this, x, y, z)) return DEBRIS_IN_THE_WAY;
-    return shortfall((material) => this.pool.amount(material), state);
+    return (
+      lockedRefusal(this.research.tier, state) ??
+      shortfall((material) => this.pool.amount(material), state)
+    );
   }
 
   /** The crew pays for a piece it has placed. False, and nothing taken, when the pool cannot pay. */
@@ -173,10 +196,12 @@ export class Economy {
     return cost === null ? 0 : this.pool.add(cost.material, cost.amount);
   }
 
-  /** Fills `out` with the pool as it stands. */
+  /** Fills `out` with the pool and the research as they stand. */
   read(out: EconomyReading = createEconomyReading()): EconomyReading {
     this.pool.read(out.stock);
     out.cap = this.pool.cap;
+    out.research = this.research.points;
+    out.tier = this.research.tier;
     return out;
   }
 }

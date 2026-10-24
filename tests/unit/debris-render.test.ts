@@ -107,6 +107,33 @@ describe('the heaps of wreckage on screen', () => {
     expect([0, 1, 2, 3].map((i) => rig.value('iState', i, 4)[2])).toEqual(dressings);
   });
 
+  it('dress each heap in the grade of its strips, Scrap first', () => {
+    const rig = setup();
+    const view = field([
+      heap(0),
+      heap(1, { grade: MATERIAL.composite }),
+      heap(2, { grade: MATERIAL.alloy }),
+      heap(3, { grade: MATERIAL.scrap }),
+    ]);
+    rig.renderer.update(0.016, view, 1);
+    expect([0, 1, 2, 3].map((i) => rig.value('iGrade', i, 1)[0])).toEqual([0, 1, 2, 0]);
+    expect(rig.renderer.list().map((shown) => shown.grade)).toEqual([
+      MATERIAL.scrap,
+      MATERIAL.composite,
+      MATERIAL.alloy,
+      MATERIAL.scrap,
+    ]);
+    // The grade belongs to the heap, not to the slot it is drawn in: a heap before it going away moves it up.
+    view.set(0, 0);
+    pass(rig, view, 2);
+    expect(rig.renderer.list().map((shown) => shown.grade)).toEqual([
+      MATERIAL.composite,
+      MATERIAL.alloy,
+      MATERIAL.scrap,
+    ]);
+    expect([0, 1, 2].map((i) => rig.value('iGrade', i, 1)[0])).toEqual([1, 2, 0]);
+  });
+
   it('show a heap that has nothing left, or is not uncovered yet, as not there at all', () => {
     const { renderer, geometry } = setup();
     const view = field([heap(0), heap(1), heap(2, { from: 2 })], [3, 0, 0]);

@@ -52,7 +52,7 @@ export interface MaterialDef {
   /**
    * What one block costs, in units of the shared pool's stock of this material, whatever its shape.
    * Build Mode shows it, the host takes it from the pool when a block is placed and gives it back
-   * when a player breaks one (Phase 5b), and the balance pass (5i) tunes the numbers.
+   * when a player breaks one (Phase 5b), and the balance pass (5j) tunes the numbers.
    */
   readonly cost: number;
 }
@@ -153,6 +153,11 @@ export function isKnownState(state: CellState): boolean {
 export function materialOf(state: CellState): MaterialDef | undefined {
   const id = stateMaterial(state);
   return MATERIALS.find((m) => m.id === id);
+}
+
+/** The tier of a material (1 for Scrap up to 4), or 1 for an id the table does not know. */
+export function materialTier(id: number): number {
+  return MATERIALS.find((m) => m.id === id)?.tier ?? 1;
 }
 
 /** What a player calls a placed piece, such as "Scrap Block", or an empty string for a state the tables do not know. */

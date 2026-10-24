@@ -31,7 +31,7 @@ import type { Vec3 } from '../../src/shared/look';
 import { turnCount } from '../../src/shared/placement';
 import type { BlockCommand } from '../../src/shared/protocol';
 import { DEBRIS } from '../../src/systems/economy/balance';
-import { DEBRIS_IN_THE_WAY, notEnough } from '../../src/systems/economy/build-rules';
+import { DEBRIS_IN_THE_WAY, needsResearch, notEnough } from '../../src/systems/economy/build-rules';
 import { BLASTER } from '../../src/systems/survival/balance';
 import { createTerrainGround } from '../../src/world/terrain/collision';
 import { createWorld, type VoxelWorld } from '../../src/world/voxels/world';
@@ -52,8 +52,11 @@ interface Rig {
   readonly gun: { ready: boolean };
   /** The heaps of debris in the fake valley, and the strips left of each (a heap not listed has none). */
   readonly heaps: { nodes: DebrisNode[]; left: Record<number, number> };
-  /** The crew's pool in the fake economy: with no ceiling (`cap` 0) there is no pool, and nothing costs anything. */
-  readonly pool: { cap: number; stock: number[] };
+  /**
+   * The crew's pool in the fake economy: with no ceiling (`cap` 0) there is no pool, and nothing costs
+   * anything or is locked. `tier` is the highest material the crew has researched (all of them, unless a test says less).
+   */
+  readonly pool: { cap: number; stock: number[]; tier: number; research: number };
   /** The ground height at the spot. */
   readonly surface: number;
   /** A view from `height` above the ground at the spot, looking straight down. */
@@ -70,7 +73,7 @@ function rig(): Rig {
   const shots: { origin: Vec3; dir: Vec3 }[] = [];
   const gun = { ready: true };
   const heaps: Rig['heaps'] = { nodes: [], left: {} };
-  const pool: Rig['pool'] = { cap: 0, stock: [] };
+  const pool: Rig['pool'] = { cap: 0, stock: [], tier: 4, research: 0 };
   const ports: BuildPorts = {
     blocks: () => world,
     ground: () => ground,
@@ -100,6 +103,8 @@ function rig(): Rig {
       read(out) {
         for (let i = 0; i < out.stock.length; i++) out.stock[i] = pool.stock[i] ?? 0;
         out.cap = pool.cap;
+        out.tier = pool.tier;
+        out.research = pool.research;
         return out;
       },
       debris: { nodes: heaps.nodes, leftOf: (index) => heaps.left[index] ?? 0 },
@@ -925,6 +930,50 @@ describe('what the pool says about a placement', () => {
       type: 'place',
       state: packState(SHAPE.cube, MATERIAL.alloy),
     });
+  });
+
+  it('shows a material the crew has not researched as refused, in the words the host would use, whatever the pool holds', () => {
+    const r = stocked(40, 0, 9, 0);
+    r.pool.tier = 1;
+    r.controller.toggleBuildMode();
+    r.controller.selectSlot(1);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBe(needsResearch('Reinforced Composite'));
+    expect(r.controller.hudState().crosshair).toBe('blocked');
+    // Alloy has plenty in the pool and is still shut; opening its tier opens the slot.
+    r.controller.selectSlot(2);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBe(needsResearch('Advanced Alloy'));
+    r.pool.tier = 3;
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBeNull();
+    expect(r.controller.hudState().crosshair).toBe('place');
+  });
+
+  it('sends nothing for a click on a material it has not researched, and says why for a moment', () => {
+    const r = stocked(40, 9, 0, 0);
+    r.pool.tier = 1;
+    r.controller.selectSlot(1);
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    r.controller.release('secondary');
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().refusal).toBe('Reinforced Composite needs research');
+    r.controller.update(NOTICE_SECONDS + 0.1, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBeNull();
+    r.pool.tier = 2;
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    expect(r.sent).toHaveLength(1);
+  });
+
+  it('locks nothing where there is no pool, whatever the tier', () => {
+    const r = rig();
+    r.pool.tier = 1;
+    r.controller.selectSlot(3);
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    expect(r.sent).toHaveLength(1);
   });
 
   it('charges every shape of a material the same: a slab or a wedge costs what a block does', () => {

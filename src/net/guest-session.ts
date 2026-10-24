@@ -510,7 +510,7 @@ export class GuestSession implements GameSession {
         this.onRunFrame(frame);
         break;
       case 'ec':
-        this.economyMirror.applyPool(frame.pl, frame.cap);
+        this.economyMirror.applyPool(frame.pl, frame.cap, frame.rp);
         break;
       case 'nl':
         this.economyMirror.debris.setList(frame.n);
