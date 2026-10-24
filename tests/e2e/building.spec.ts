@@ -38,7 +38,9 @@ async function open(page: Page): Promise<string[]> {
     if (message.type() === 'error') problems.push(`console: ${message.text()}`);
   });
   page.on('pageerror', (error) => problems.push(`page error: ${error.message}`));
-  await page.goto('./?debug&quality=low&freeze=1&stats=0');
+  // Blocks cost the crew's pool something now, and a run opens with a little Scrap and none of the
+  // dearer materials, so this page opens with plenty of each: what a block costs is tested in costs.spec.ts.
+  await page.goto('./?debug&quality=low&freeze=1&stats=0&stock=50');
   await wait(page.locator('html')).toHaveAttribute('data-ready', 'true');
   // The session arrives with the network code, a moment after the game is up.
   await page.waitForFunction(() => !!window.__ashbound?.mp, null, { timeout: STATE_TIMEOUT });

@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../src/shared/daycycle';
-import { DEBRIS } from '../../src/systems/economy/balance';
+import { DEBRIS, POOL } from '../../src/systems/economy/balance';
 import { RESPAWN, VITALS } from '../../src/systems/survival/balance';
 import { recordToasts, toasts } from './support/toasts';
 
@@ -130,6 +130,8 @@ async function openPlayer(
     network?: string;
     /** False for a page that has already drawn blocks (a `?demo=` page) or must not touch its world. */
     warm?: boolean;
+    /** Opens the crew's pool with this much of every material (the host's page decides), where the test builds in the dearer ones. */
+    stock?: number;
   } = {},
 ): Promise<Player> {
   const context = await browser.newContext({ baseURL, viewport: options.size ?? SMALL });
@@ -140,7 +142,8 @@ async function openPlayer(
     if (message.type() === 'error') problems.push(`console: ${message.text()}`);
   });
   page.on('pageerror', (error) => problems.push(`page error: ${error.message}`));
-  await page.goto(`./?debug&quality=low&${options.network ?? NETWORK}&name=${name}`);
+  const stock = options.stock === undefined ? '' : `&stock=${options.stock}`;
+  await page.goto(`./?debug&quality=low&${options.network ?? NETWORK}&name=${name}${stock}`);
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'true', { timeout: 90_000 });
   await page.waitForFunction(() => Boolean(window.__ashbound?.mp));
   if (options.warm !== false) await warmUpBlocks(page);
@@ -252,7 +255,8 @@ test.describe('multiplayer', () => {
     browser,
     baseURL,
   }, testInfo) => {
-    const host = await openPlayer(browser, baseURL, 'Host');
+    // Two of them build in Alloy, which a run opens with none of: the crew's pool starts with some.
+    const host = await openPlayer(browser, baseURL, 'Host', { stock: 20 });
     const everyone: Player[] = [host];
     try {
       // The start screen offers a room, and the room panel explains what hosting means.
@@ -1132,6 +1136,109 @@ test.describe('multiplayer', () => {
       await expect
         .poll(async () => (await shownOf(bo)).length, { ...slow, message: 'Bo sees the heaps' })
         .toBe((await shownOf(host)).length);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
+  test("the crew's pool pays for everyone's building: a guest's block and the host's come out of one count, a break gives the price back, and the host's words reach a guest whose ghost went red from the same count", async ({
+    browser,
+    baseURL,
+  }) => {
+    const host = await openPlayer(browser, baseURL, 'Host');
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone: Player[] = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and the picture and the hands only change when one is drawn.
+    const slow = { timeout: 60_000 };
+    const start = POOL.start[MATERIAL.scrap] ?? 0;
+    const scrapOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.pool())).stock[0] as number;
+    const rejectionsOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.rejections())).map((r) => r.reason);
+    const expectPool = async (count: number) => {
+      for (const p of everyone) {
+        await expect
+          .poll(() => scrapOf(p), { ...slow, message: `${p.name} sees the pool` })
+          .toBe(count);
+        await expect(p.page.locator('.ph-slot').nth(0).locator('.ph-count')).toHaveText(
+          String(count),
+          slow,
+        );
+      }
+    };
+    // Her seat is on a rise, so the view has to look steeply down to meet ground within reach; what a click
+    // there would be refused for is what the ghost's colour comes from.
+    const aimOf = (p: Player) =>
+      p.page.evaluate(() => {
+        const { game, build } = window.__ashbound!;
+        game.look.pitch = -0.9;
+        const aim = build!.aim();
+        return aim.hasPlace ? aim.placeRefusal : 'no ground to place on';
+      });
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) {
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+      }
+      // The pool is the host's, the same on both screens and in both hotbars.
+      await expectPool(start);
+
+      // Ada's block and the host's come out of the one count, and neither is the other's to pay.
+      await ada.page.evaluate(([state]) => window.__ashbound!.mp!.placeNear(4, 0, state!), [
+        SCRAP,
+      ] as const);
+      await expectSameWorld(everyone, 1);
+      await expectPool(start - 1);
+      const hostBlock = await host.page.evaluate(
+        ([state]) => window.__ashbound!.mp!.placeNear(-4, 0, state!),
+        [SCRAP] as const,
+      );
+      await expectSameWorld(everyone, 2);
+      await expectPool(start - 2);
+
+      // A break gives the price back to the one pool, whoever placed the block.
+      await ada.page.evaluate(([x, y, z]) => window.__ashbound!.mp!.breakBlock(x!, y!, z!), [
+        hostBlock.x,
+        hostBlock.y,
+        hostBlock.z,
+      ] as const);
+      await expectSameWorld(everyone, 1);
+      await expectPool(start - 1);
+      expect(await rejectionsOf(ada)).toEqual([]);
+      expect(await rejectionsOf(host)).toEqual([]);
+
+      // The pool runs dry: the host says why in words, to the guest alone, and builds nothing.
+      await host.page.evaluate(([material]) => window.__ashbound!.mp!.setPool(material!, 0), [
+        MATERIAL.scrap,
+      ] as const);
+      await expectPool(0);
+      await ada.page.evaluate(([state]) => window.__ashbound!.mp!.placeNear(0, 4, state!), [
+        SCRAP,
+      ] as const);
+      await expect
+        .poll(() => rejectionsOf(ada), { ...slow, message: 'the host turns Ada down' })
+        .toEqual(['not enough Scrap']);
+      expect(await rejectionsOf(host)).toEqual([]);
+      await expectSameWorld(everyone, 1);
+
+      // Ada's own screen knows before she clicks: what her aim would be refused for is read from her
+      // copy of the pool (Build Mode only changes how it is drawn, and its first look at the ghost
+      // is seconds of shader work that a page in a room should not spend).
+      await ada.page.locator('.play-button').click();
+      await expect(ada.page.locator('#hud')).toHaveAttribute('data-pointer', 'locked', slow);
+      await expect
+        .poll(() => aimOf(ada), { ...slow, message: "Ada's aim is refused for the pool" })
+        .toBe('not enough Scrap');
+
+      // The host puts some back, and her aim clears without her doing a thing.
+      await host.page.evaluate(([material]) => window.__ashbound!.mp!.setPool(material!, 2), [
+        MATERIAL.scrap,
+      ] as const);
+      await expect.poll(() => aimOf(ada), { ...slow, message: "Ada's aim clears" }).toBeNull();
+      await expectPool(2);
       expectNoProblems(everyone);
     } finally {
       await closeAll(everyone);
