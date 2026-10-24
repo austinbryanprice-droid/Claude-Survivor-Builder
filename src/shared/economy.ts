@@ -27,10 +27,14 @@ export interface EconomyReading {
   stock: number[];
   /** The most the pool holds of any one material. 0 where there is no run to show. */
   cap: number;
+  /** The research points the crew has earned this run. They are never spent. */
+  research: number;
+  /** The highest material tier the crew has researched: 1 (Scrap) until the points say more. */
+  tier: number;
 }
 
 export function createEconomyReading(): EconomyReading {
-  return { stock: new Array<number>(POOL_SLOTS).fill(0), cap: 0 };
+  return { stock: new Array<number>(POOL_SLOTS).fill(0), cap: 0, research: 0, tier: 1 };
 }
 
 /**
@@ -94,6 +98,8 @@ export const IDLE_ECONOMY: EconomyView = {
   read(out) {
     out.stock.fill(0);
     out.cap = 0;
+    out.research = 0;
+    out.tier = 1;
     return out;
   },
   debris: {

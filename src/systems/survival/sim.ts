@@ -58,6 +58,12 @@ export interface SurvivalOptions {
    * build a lot; the table's opening stock (a little Scrap) when absent.
    */
   stock?: number | null;
+  /**
+   * The research points the crew opens the run with, for the `?research=` switch and for tests; the
+   * points of the nights a later start has already had when absent. The points open the material
+   * tiers, so a run can open with Composite or Alloy researched.
+   */
+  research?: number | null;
 }
 
 /** How a shot of the blaster ended. One object is filled by every call to `fire`. */
@@ -110,6 +116,8 @@ export class SurvivalSim {
   private felledCount = 0;
   private placedCount = 0;
   private revivedCount = 0;
+  /** The Core has been wounded since night fell: the dawn then pays no bonus for a clean night. */
+  private hurtTonight = false;
   private readonly core: Outpost | null;
   private readonly players = new Map<number, PlayerVitals>();
   private readonly pending: SurvivalEvent[] = [];
@@ -149,8 +157,13 @@ export class SurvivalSim {
             options.stock == null ? undefined : evenStock(options.stock),
           )
         : null;
-    // A run that starts at a later night has had the dawns before it.
-    for (let night = 1; night < this.cycle; night++) this.wealth?.dawn(night);
+    // A run that starts at a later night has had the dawns before it: their research (which the
+    // `?research=` switch then replaces) and the heaps they uncovered, the better grades included.
+    if (this.wealth) {
+      for (let night = 1; night < this.cycle; night++) this.wealth.research.credit(night, false);
+      if (options.research != null) this.wealth.research.set(options.research);
+      for (let night = 1; night < this.cycle; night++) this.wealth.dawn(night);
+    }
   }
 
   /** The crew's shared pool and the heaps of debris that fill it, or null where the world gave the run no ground. */
@@ -252,6 +265,7 @@ export class SurvivalSim {
    */
   hurtCore(amount: number): boolean {
     if (this.over || !(amount > 0)) return false;
+    this.hurtTonight = true;
     this.health = Math.max(0, this.health - amount);
     if (this.health > 0) return false;
     this.fell = true;
@@ -429,10 +443,14 @@ export class SurvivalSim {
     const beginsByDay = this.tickValue % CYCLE_TICKS < DAY_TICKS;
     this.tickValue++;
     const inCycle = this.tickValue % CYCLE_TICKS;
-    if (inCycle === DAY_TICKS) this.pending.push({ k: 'nightfall', n: this.cycle });
-    else if (inCycle === 0) {
+    if (inCycle === DAY_TICKS) {
+      this.pending.push({ k: 'nightfall', n: this.cycle });
+      this.hurtTonight = false;
+    } else if (inCycle === 0) {
       this.pending.push({ k: 'dawn', n: this.cycle - 1 });
       this.grantDawnCharges();
+      // The night is survived: its research comes first, so the heaps it opens rise at this dawn.
+      this.wealth?.research.credit(this.cycle - 1, !this.hurtTonight);
       this.wealth?.dawn(this.cycle - 1, (node) => this.builtOverHeap(node));
     }
     if (beginsByDay) {

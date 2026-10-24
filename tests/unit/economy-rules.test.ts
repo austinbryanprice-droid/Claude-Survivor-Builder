@@ -7,6 +7,8 @@ import {
   builtOver,
   heapInTheWay,
   keepsClear,
+  lockedRefusal,
+  needsResearch,
   notEnough,
   pieceCost,
   placementRefusal,
@@ -16,6 +18,7 @@ import {
 
 const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
 const COMPOSITE = packState(SHAPE.cube, MATERIAL.composite);
+const ALLOY = packState(SHAPE.cube, MATERIAL.alloy);
 
 function heap(index: number, overrides: Partial<DebrisNode> = {}): DebrisNode {
   return {
@@ -161,11 +164,18 @@ describe('ground a block stands on where a heap would come up', () => {
 });
 
 describe('what a screen asks before it shows a block as placeable', () => {
-  function view(stock: number[], cap: number, left: Record<number, number>): PlacementEconomy {
+  /** A pool that holds `stock`, for a crew that has researched up to `tier` (all of them, unless said). */
+  function view(
+    stock: number[],
+    cap: number,
+    left: Record<number, number>,
+    tier = 4,
+  ): PlacementEconomy {
     return {
       read(out) {
         out.stock.splice(0, out.stock.length, ...stock);
         out.cap = cap;
+        out.tier = tier;
         return out;
       },
       debris: { nodes: [heap(0)], leftOf: (index) => left[index] ?? 0 },
@@ -195,5 +205,55 @@ describe('what a screen asks before it shows a block as placeable', () => {
   it('charges nothing where there is no pool to read', () => {
     const none = view([0, 0, 0, 0], 0, {});
     expect(placementRefusal(none, scratch, 30, 10, -7, SCRAP)).toBeNull();
+  });
+
+  it('refuses a material the crew has not researched, however full the pool is', () => {
+    const plenty = [99, 99, 99, 99];
+    expect(placementRefusal(view(plenty, 400, {}, 1), scratch, 30, 10, -7, COMPOSITE)).toBe(
+      needsResearch('Reinforced Composite'),
+    );
+    expect(placementRefusal(view(plenty, 400, {}, 2), scratch, 30, 10, -7, COMPOSITE)).toBeNull();
+    expect(placementRefusal(view(plenty, 400, {}, 2), scratch, 30, 10, -7, ALLOY)).toBe(
+      needsResearch('Advanced Alloy'),
+    );
+    expect(placementRefusal(view(plenty, 400, {}, 3), scratch, 30, 10, -7, ALLOY)).toBeNull();
+  });
+
+  it('asks about the lock before the pool, and about the heap before the lock', () => {
+    const empty = [0, 0, 0, 0];
+    expect(placementRefusal(view(empty, 400, {}, 1), scratch, 30, 10, -7, COMPOSITE)).toBe(
+      needsResearch('Reinforced Composite'),
+    );
+    expect(placementRefusal(view(empty, 400, { 0: 3 }, 1), scratch, 20, 10, -7, COMPOSITE)).toBe(
+      DEBRIS_IN_THE_WAY,
+    );
+  });
+
+  it('locks nothing where there is no pool to read', () => {
+    const none = view([0, 0, 0, 0], 0, {}, 1);
+    expect(placementRefusal(none, scratch, 30, 10, -7, COMPOSITE)).toBeNull();
+  });
+});
+
+describe('the words for a material that is not researched', () => {
+  it('name the material', () => {
+    expect(needsResearch('Reinforced Composite')).toBe('Reinforced Composite needs research');
+  });
+
+  it('refuse a state above the tier and none at or below it', () => {
+    expect(lockedRefusal(1, SCRAP)).toBeNull();
+    expect(lockedRefusal(1, COMPOSITE)).toBe('Reinforced Composite needs research');
+    expect(lockedRefusal(2, COMPOSITE)).toBeNull();
+    expect(lockedRefusal(2, ALLOY)).toBe('Advanced Alloy needs research');
+    expect(lockedRefusal(3, ALLOY)).toBeNull();
+    expect(lockedRefusal(3, packState(SHAPE.wedge, MATERIAL.energy))).toBe(
+      'Energy-Infused needs research',
+    );
+    expect(lockedRefusal(4, packState(SHAPE.slab, MATERIAL.energy))).toBeNull();
+  });
+
+  it('say nothing of a state the tables do not know', () => {
+    expect(lockedRefusal(1, 0)).toBeNull();
+    expect(lockedRefusal(1, packState(SHAPE.cube, 99))).toBeNull();
   });
 });

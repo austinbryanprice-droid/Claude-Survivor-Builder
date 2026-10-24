@@ -1,7 +1,7 @@
-import { MATERIAL } from '../../shared/blocks';
 import type { DebrisNode } from '../../shared/economy';
 import { createRng, hash3 } from '../../shared/hash';
 import { DEBRIS } from './balance';
+import { gradeAt, harvestsOfGrade } from './grades';
 
 /**
  * Where the heaps of debris lie in the valley: a pure function of the seed and the ground, so the
@@ -101,6 +101,10 @@ export function debrisField(
         const z = snap(center.z + Math.sin(angle) * radius);
         if (!usable(ground, x, z)) continue;
         if (nodes.some((other) => Math.hypot(other.x - x, other.z - z) < DEBRIS.gap)) continue;
+        // The grade comes from the heap's place in its batch, not from the generator, so the better
+        // grades move no heap: a run's Scrap lies where it did before they existed.
+        const grade = gradeAt(batch, n);
+        const span = harvestsOfGrade(grade);
         nodes.push({
           index: nodes.length,
           x,
@@ -109,12 +113,9 @@ export function debrisField(
           yaw: snap(yaw),
           scale: snap(DEBRIS.size.min + size * (DEBRIS.size.max - DEBRIS.size.min)),
           harvests:
-            DEBRIS.harvests.min +
-            Math.min(
-              DEBRIS.harvests.max - DEBRIS.harvests.min,
-              Math.floor(strips * (DEBRIS.harvests.max - DEBRIS.harvests.min + 1)),
-            ),
-          grade: MATERIAL.scrap,
+            span.min +
+            Math.min(span.max - span.min, Math.floor(strips * (span.max - span.min + 1))),
+          grade,
           from: batch,
         });
         break;

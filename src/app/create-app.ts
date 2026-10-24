@@ -104,6 +104,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           night: view.night,
           waves: view.waves,
           stock: view.stock,
+          research: view.research,
           // A fixed moment (`?time=`, a named `?shot=`) or the demo clock (`?clock`) keeps the sky to itself.
           skyFollowsClock: view.time === null && !view.clock && !shot,
         });

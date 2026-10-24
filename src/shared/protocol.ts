@@ -211,11 +211,17 @@ export type HostFrame =
   /** Something the survival loop announces as it happens (nightfall, a wave, dawn, a player down or back, the run ending). */
   | { readonly t: 'se'; readonly e: SurvivalEvent }
   /**
-   * What the crew's shared pool holds: the count of each material in tier order (`pl`) and the
-   * most it holds of any one (`cap`). Sent within a fifth of a second of a change and to every
-   * newcomer.
+   * What the crew's shared pool holds: the count of each material in tier order (`pl`), the most
+   * it holds of any one (`cap`) and the research points the crew has earned (`rp`; the tiers they
+   * open are worked out from the points by the same table on every peer). Sent within a fifth of a
+   * second of a change and to every newcomer.
    */
-  | { readonly t: 'ec'; readonly pl: readonly number[]; readonly cap: number }
+  | {
+      readonly t: 'ec';
+      readonly pl: readonly number[];
+      readonly cap: number;
+      readonly rp: number;
+    }
   /**
    * The run's heaps of debris, all of them, in list order (the index is the name of a heap):
    * `[x, y, z, yaw, scale, harvests, grade, from, left]`, where `left` is how many strips it has

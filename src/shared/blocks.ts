@@ -155,6 +155,11 @@ export function materialOf(state: CellState): MaterialDef | undefined {
   return MATERIALS.find((m) => m.id === id);
 }
 
+/** The tier of a material (1 for Scrap up to 4), or 1 for an id the table does not know. */
+export function materialTier(id: number): number {
+  return MATERIALS.find((m) => m.id === id)?.tier ?? 1;
+}
+
 /** What a player calls a placed piece, such as "Scrap Block", or an empty string for a state the tables do not know. */
 export function pieceName(state: CellState): string {
   const material = materialOf(state);

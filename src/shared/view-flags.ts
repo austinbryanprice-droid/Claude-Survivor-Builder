@@ -26,6 +26,8 @@ export interface ViewFlags {
   readonly waves: boolean;
   /** Open the crew's pool with this much of every material (`?stock=200`; the pool's ceiling still holds), to build without gathering; null opens it as the economy's table says. */
   readonly stock: number | null;
+  /** Open the run with this many research points (`?research=55` has Composite and Alloy researched), to build with the better materials without surviving the nights; null earns them by surviving as usual. */
+  readonly research: number | null;
   /** Named viewpoint to take photos from (see `world/terrain/viewpoints.ts`); the player walks when absent. */
   readonly shot: string | null;
   readonly terrain: TerrainMode;
@@ -62,6 +64,15 @@ function readStock(value: string | null): number | null {
   return Math.min(MAX_START_STOCK, Number(value));
 }
 
+/** The most `?research=` can ask for; the economy's own ceiling for research points is the same. */
+export const MAX_START_RESEARCH = 9999;
+
+/** `?research=55` opens the run with 55 research points. Anything that is not a whole number from 0 up is ignored. */
+function readResearch(value: string | null): number | null {
+  if (value === null || !/^\d{1,4}$/.test(value)) return null;
+  return Math.min(MAX_START_RESEARCH, Number(value));
+}
+
 /** `?benchPresets=balanced,ultra` picks which presets the benchmark runs. */
 function readBenchPresets(value: string | null): readonly QualityName[] {
   const picked = (value ?? '')
@@ -85,6 +96,7 @@ export function readViewFlags(search: string): ViewFlags {
     night: readNight(p.get('night')),
     waves: p.get('waves') !== '0',
     stock: readStock(p.get('stock')),
+    research: readResearch(p.get('research')),
     shot: p.get('shot'),
     terrain: p.get('terrain') === 'heightfield' ? 'heightfield' : 'surface-nets',
     demo: p.get('demo'),
