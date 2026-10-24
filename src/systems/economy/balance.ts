@@ -61,6 +61,13 @@ export const DEBRIS = {
   lift: 0.75,
   /** How far from its middle the cursor can be and still be on a heap, in blocks, before its size is counted in. */
   radius: 1.5,
+  /**
+   * The room a heap keeps clear of blocks while it lies there, so that nothing is built on top of it
+   * (Phase 5b): a column round its middle, `radius` across and `height` tall for a heap of size 1
+   * (a bigger heap keeps more clear), reaching `below` under the ground its middle is on. The pile
+   * is drawn about as wide and tall as this; its mast is thin and goes higher.
+   */
+  keepClear: { radius: 1.7, height: 2.4, below: 0.5 },
   /** Seconds the host makes a player wait between strips. */
   cooldown: 0.5,
   /**

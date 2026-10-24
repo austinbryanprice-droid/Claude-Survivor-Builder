@@ -921,6 +921,11 @@ export class HostSession implements GameSession {
       return;
     }
     const state = command.type === 'place' ? command.state : 0;
+    // What a block was made of before it is broken, for the refund.
+    const broken =
+      command.type === 'break'
+        ? this.binding.current().getBlock(command.x, command.y, command.z)
+        : 0;
     if (!this.applyEdit(command.x, command.y, command.z, state, member.id)) {
       this.counters.rejections++;
       if (member.link && commandId !== null) {
@@ -930,6 +935,10 @@ export class HostSession implements GameSession {
       }
       return;
     }
+    // The crew's pool pays for a block that was placed (the refusal checked that it could) and gets back one that was broken.
+    const economy = this.sim?.economy;
+    if (command.type === 'place') economy?.pay(command.state);
+    else economy?.refund(broken);
     this.sim?.playerBuilt(member.id, command.type === 'place');
   }
 
@@ -983,7 +992,9 @@ export class HostSession implements GameSession {
           return REFUSAL.body;
         }
       }
-      return null;
+      // Then the economy's: a heap of debris keeps its ground clear, and the pool must hold the cost.
+      const economy = this.sim?.economy;
+      return economy?.placementRefusal(command.x, command.y, command.z, command.state) ?? null;
     }
     return world.checkBreak(command.x, command.y, command.z);
   }

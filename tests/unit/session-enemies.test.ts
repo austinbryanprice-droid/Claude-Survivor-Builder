@@ -163,7 +163,9 @@ describe('the machines and the blocks', () => {
   });
 
   it('meet a wall the host builds in their way, and chew through it rather than walk through', async () => {
-    const { room, hostWorld, machines } = arena();
+    // A wall of sixty-one blocks is more than the pool opens with, so the run opens with plenty. A
+    // heap keeps its ground clear of blocks, and the valley of seed 3 lays none across this wall.
+    const { room, hostWorld, machines } = arena({}, { stock: 500, seed: 3 });
     room.host.setLocalActive(true);
     // The way east is open: a crawler walks straight in.
     machines().spawnAt(14.5, -3.5);
