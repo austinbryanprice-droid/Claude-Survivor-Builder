@@ -35,6 +35,8 @@ export interface AttachOptions {
   night: number | null;
   /** The nights send their waves. False (the `?waves=0` switch) keeps them empty. */
   waves: boolean;
+  /** Open the pool with this much of every material (the `?stock=` switch), or null for the table's opening stock. */
+  stock: number | null;
   /** The sky follows the run's clock. False when the page holds a moment or runs its own demo clock. */
   skyFollowsClock: boolean;
 }
@@ -57,6 +59,7 @@ export function attachMultiplayer({
   buildId,
   night,
   waves,
+  stock,
   skyFollowsClock,
 }: AttachOptions): Multiplayer {
   const multiplayer = createMultiplayer({
@@ -101,6 +104,7 @@ export function attachMultiplayer({
           ray: rayWorld(),
           seed: game.world.seed,
           waves,
+          stock,
         }),
     },
     groundAt: (x, z) => game.world.groundAt(x, z),

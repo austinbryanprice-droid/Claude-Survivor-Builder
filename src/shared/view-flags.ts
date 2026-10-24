@@ -24,6 +24,8 @@ export interface ViewFlags {
   readonly night: number | null;
   /** False keeps the nights empty (`?waves=0`), for pictures and tests that want a quiet night; the waves come by default. */
   readonly waves: boolean;
+  /** Open the crew's pool with this much of every material (`?stock=200`; the pool's ceiling still holds), to build without gathering; null opens it as the economy's table says. */
+  readonly stock: number | null;
   /** Named viewpoint to take photos from (see `world/terrain/viewpoints.ts`); the player walks when absent. */
   readonly shot: string | null;
   readonly terrain: TerrainMode;
@@ -51,6 +53,15 @@ function readNight(value: string | null): number | null {
   return night >= 1 && night <= MAX_START_NIGHT ? night : null;
 }
 
+/** The most `?stock=` can ask for; the pool's own ceiling is lower. */
+export const MAX_START_STOCK = 9999;
+
+/** `?stock=200` opens the pool with 200 of every material. Anything that is not a whole number from 0 up is ignored. */
+function readStock(value: string | null): number | null {
+  if (value === null || !/^\d{1,4}$/.test(value)) return null;
+  return Math.min(MAX_START_STOCK, Number(value));
+}
+
 /** `?benchPresets=balanced,ultra` picks which presets the benchmark runs. */
 function readBenchPresets(value: string | null): readonly QualityName[] {
   const picked = (value ?? '')
@@ -73,6 +84,7 @@ export function readViewFlags(search: string): ViewFlags {
     clock: p.has('clock') && p.get('clock') !== '0',
     night: readNight(p.get('night')),
     waves: p.get('waves') !== '0',
+    stock: readStock(p.get('stock')),
     shot: p.get('shot'),
     terrain: p.get('terrain') === 'heightfield' ? 'heightfield' : 'surface-nets',
     demo: p.get('demo'),
