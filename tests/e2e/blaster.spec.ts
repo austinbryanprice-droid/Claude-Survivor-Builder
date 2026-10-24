@@ -73,6 +73,20 @@ const click = (page: Page): Promise<void> =>
     window.dispatchEvent(new MouseEvent('mouseup', init));
   });
 
+/**
+ * A click and a reading taken in the same task. The game ages its effects by the time a frame took
+ * (up to a quarter of a second) and a bolt lives a tenth, so a reading that waits for a round trip
+ * of its own can come after a frame and find the bolt already gone.
+ */
+const clickAndRead = <T>(page: Page, expression: string): Promise<T> =>
+  page.evaluate<T>(`(() => {
+    const init = { button: 0, bubbles: true };
+    window.dispatchEvent(new MouseEvent('mousedown', init));
+    window.dispatchEvent(new MouseEvent('mouseup', init));
+    const { mp } = window.__ashbound;
+    return ${expression};
+  })()`);
+
 interface Cell {
   x: number;
   y: number;
@@ -173,7 +187,7 @@ test.describe('the pulse blaster', () => {
     expect(before).toBe(Math.ceil(BATTERY));
     await test.step('a click fires it: a bolt is drawn at once, and the block is not broken', async () => {
       await poll(aimAtBlock).toBe('block');
-      await click(page);
+      const live = await clickAndRead<{ bolts: number }>(page, 'mp.shots().live');
       // The bolt was drawn by the click, and the host (this very page, playing alone) answered
       // before the click returned: the shot is in the log twice, the drawing first.
       const shots = await shotsOf(page);
@@ -185,7 +199,7 @@ test.describe('the pulse blaster', () => {
       expect(shots[0]?.y).toBeGreaterThan(cell.y - 0.01);
       expect(shots[0]?.y).toBeLessThan(cell.y + 1.01);
       // One bolt in the air, not two, and the block is still there.
-      expect(await read<{ bolts: number }>(page, 'mp.shots().live')).toMatchObject({ bolts: 1 });
+      expect(live).toMatchObject({ bolts: 1 });
       expect(await read<number>(page, `mp.block(${cell.x}, ${cell.y}, ${cell.z})`)).not.toBe(0);
       expect(await read<number>(page, 'mp.blocks().count')).toBe(1);
     });
