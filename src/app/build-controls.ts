@@ -3,6 +3,7 @@ import type { Game } from '../engine/game';
 import type { GameSession } from '../net/session';
 import type { CellState } from '../shared/block-world';
 import { stateShape } from '../shared/blocks';
+import { IDLE_ECONOMY } from '../shared/economy';
 import type { Vec3 } from '../shared/look';
 import { PLAYER } from '../shared/movement';
 import { SHOT_FLAG } from '../shared/shot';
@@ -12,7 +13,7 @@ import type { ValleyWorld } from './valley-world';
 
 /**
  * Puts the player's building hands on the running game: the mouse buttons, the number keys, the
- * wheel, B, Q and R go to the build controller; each frame it aims from the camera and shows the
+ * wheel, B, Q, R and E go to the build controller; each frame it aims from the camera and shows the
  * ghost block and the outline of the block a click would break; and its commands go to the session. The
  * game, the valley and the session each change over the life of a page (a joining player's valley
  * replaces the first one, and the session arrives when the network code has loaded), so all three
@@ -25,7 +26,14 @@ export const IDLE_WARM_UP_MS = 3000;
 /** The part of a session that the player's hands use. */
 export type BuildSession = Pick<
   GameSession,
-  'phase' | 'localId' | 'sendCommand' | 'fire' | 'onRejected' | 'onShot' | 'sampleRemotes'
+  | 'phase'
+  | 'localId'
+  | 'sendCommand'
+  | 'fire'
+  | 'onRejected'
+  | 'onShot'
+  | 'sampleRemotes'
+  | 'economy'
 >;
 
 export interface BuildControlsOptions {
@@ -57,6 +65,8 @@ export interface BuildControlsDebug {
   handScale(): number;
   /** Whether the player is down, which leaves the hands idle. */
   isDown(): boolean;
+  /** The heap of debris the cursor is on, as of the last frame: its place in the run's list (-1 for none), the strips it has left and how far off it is. */
+  salvage(): { index: number; left: number; distance: number };
 }
 
 export interface BuildControls {
@@ -117,6 +127,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
       return bodies;
     },
     warmUp,
+    debris: () => session?.economy.debris ?? IDLE_ECONOMY.debris,
   });
 
   // The player's eyes are where reach is measured from; the camera is where the cursor looks from.
@@ -128,7 +139,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
   const forward = new Vector3();
 
   // The benchmark has no hands: while it flies the valley, the buttons, the number keys, the wheel,
-  // B, Q and R do nothing, and nothing is prepared for them, so it measures the game alone.
+  // B, Q, R and E do nothing, and nothing is prepared for them, so it measures the game alone.
   const stops = [
     input.onPointer((button, down) => {
       if (!down) controller.release(button);
@@ -144,6 +155,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
       if (action === 'toggleBuild') controller.toggleBuildMode();
       else if (action === 'cycleShape') controller.cycleShape();
       else if (action === 'turnPiece') controller.turnPiece();
+      else if (action === 'interact') controller.interact();
     }),
   ];
 
@@ -153,6 +165,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
   const stopLock = input.onChange(() => {
     if (!input.locked) {
       controller.releaseAll();
+      controller.clearAim();
       return;
     }
     idleTimer ??= setTimeout(() => {
@@ -229,6 +242,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
     hands: () => ({ ...controller.hudState() }),
     handScale: () => controller.handScale,
     isDown: () => controller.isDown,
+    salvage: () => ({ ...controller.salvageTarget }),
     ghost: () => {
       const shown = valley()?.view.ghost.shown;
       return {

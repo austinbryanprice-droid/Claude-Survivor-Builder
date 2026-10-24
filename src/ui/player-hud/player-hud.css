@@ -1065,7 +1065,13 @@
   bottom: calc(var(--u) * 8px);
   font-size: calc(var(--u) * 12px);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   text-shadow: var(--shadow);
+}
+
+/* A pool that has none of the material: the count is told, but quietly. */
+.ph-count[data-none] {
+  opacity: 0.55;
 }
 
 /* The caption above the hotbar: the piece in hand and what it costs, or why a click would do nothing. */
@@ -1100,6 +1106,45 @@
 .ph-prompt[data-tone='warn'] .ph-prompt-detail {
   color: #ff9a86;
   font-weight: 600;
+}
+
+/* What the interact key would do for what the cursor is on, a little under the crosshair: a heap of debris to strip. */
+
+.ph-interact {
+  position: absolute;
+  top: calc(50% + var(--u) * 34px);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 8px);
+  padding: calc(var(--u) * 4px) calc(var(--u) * 12px) calc(var(--u) * 4px) calc(var(--u) * 5px);
+  border-radius: calc(var(--u) * 7px);
+  background: rgb(20 22 28 / 54%);
+  box-shadow: inset 0 0 0 1px rgb(255 205 130 / 34%);
+  backdrop-filter: blur(6px);
+  transform: translateX(-50%);
+  text-shadow: var(--shadow);
+  white-space: nowrap;
+}
+
+.ph-interact .ph-key {
+  min-width: calc(var(--u) * 19px);
+  height: calc(var(--u) * 19px);
+  background: #ffd9a0;
+  box-shadow: 0 0 calc(var(--u) * 7px) rgb(255 190 100 / 45%);
+  font-size: calc(var(--u) * 11.5px);
+}
+
+.ph-interact-label {
+  font-size: calc(var(--u) * 14px);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.ph-interact-detail {
+  font-size: calc(var(--u) * 12px);
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
 }
 
 /* A small dot at the screen center. Over a surface a click could build on it gets a cyan ring, and a red one over a surface it could not. */

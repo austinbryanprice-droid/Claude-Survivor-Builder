@@ -1,4 +1,5 @@
 import type { Object3D } from 'three';
+import { createDebrisRenderer, type DebrisShown } from '../engine/debris-render';
 import { createEnemyRenderer } from '../engine/enemy-render';
 import type { MaterialRegistry } from '../engine/materials';
 import { createRemotePlayers } from '../engine/remote-players';
@@ -22,8 +23,10 @@ import {
 } from '../shared/net-flags';
 import { createPlayerSample, type PlayerId, type PlayerSample } from '../shared/protocol';
 import type { RayWorld } from '../shared/raycast';
+import { createEconomyReading } from '../shared/economy';
 import { createReading, type RestartKind, type SurvivalReading } from '../shared/survival-state';
 import { createVitalsReading, type VitalsReading } from '../shared/vitals-state';
+import { DEBRIS } from '../systems/economy/balance';
 import { hitboxOf } from '../systems/survival/balance';
 import { createRoomPanel } from '../ui/room-panel';
 import { browserStore } from './browser-storage';
@@ -48,6 +51,8 @@ export interface MultiplayerOptions {
   groundAt(x: number, z: number): number;
   /** What stops a bolt of the pulse blaster in the world being played now (its blocks, ground and Core), or null where there is none. */
   rayWorld(): RayWorld | null;
+  /** The heap of debris the player's cursor is on, by its place in the run's list, or -1: the heap glows. */
+  aimedDebris(): number;
   /** The scene node the other players' avatars are added to, and the materials they are lit with. */
   scene: Object3D;
   registry: MaterialRegistry;
@@ -98,6 +103,28 @@ export interface MultiplayerDebug {
   spawnCrawlerAt(x: number, z: number): number | null;
   /** Removes every machine from the field. Only a host (or single-player) can. */
   clearEnemies(): void;
+  /** Every heap of debris in the run's list and the strips each has left, as this screen has the list. */
+  heaps(): {
+    index: number;
+    x: number;
+    y: number;
+    z: number;
+    harvests: number;
+    left: number;
+    from: number;
+  }[];
+  /** The heaps drawn now: how far up out of the ground each is, the share of its strips shown, the flash of a strip and the glow of the cursor. */
+  heapsShown(): DebrisShown[];
+  /** The crew's pool as this screen has it: the count of each material in tier order, and the most it holds. */
+  pool(): { stock: number[]; cap: number };
+  /**
+   * Asks the host to strip the heap with this place in the list, as the interact key does but with
+   * no aim and no pace of the hands (the host's rules still apply, reach included). Returns false,
+   * and asks nothing, for a place with no heap.
+   */
+  harvest(index: number): boolean;
+  /** Sets how much of a material (a `MATERIAL` id) the pool holds, within its ceiling. Only a host (or single-player) can. */
+  setPool(material: number, amount: number): void;
   /** A fingerprint of every player-made block in the world being played. */
   blocks(): BlockDigest;
   block(x: number, y: number, z: number): CellState;
@@ -177,6 +204,8 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
   options.scene.add(remotes.object);
   const enemies = createEnemyRenderer({ registry: options.registry });
   options.scene.add(enemies.object);
+  const debris = createDebrisRenderer({ registry: options.registry });
+  options.scene.add(debris.object);
   const shotFx = createShotFx();
   options.scene.add(shotFx.object);
   const shots = createShotEffects({
@@ -186,6 +215,11 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     player: options.player,
   });
   const stopShots = hub.onShot((shot) => shots.hear(shot));
+  // A strip, anyone's, throws scrap off the heap it was taken from.
+  const stopStrips = hub.economy.debris.onHarvest((event) => {
+    const node = hub.economy.debris.nodes[event.node];
+    if (node) shotFx.strip({ x: node.x, y: node.y + DEBRIS.lift, z: node.z });
+  });
 
   const panel = createRoomPanel({
     lobby,
@@ -310,6 +344,36 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       const session = hub.current;
       if (session instanceof HostSession) session.survivalSim?.enemies?.clear();
     },
+    heaps: () =>
+      hub.economy.debris.nodes.map((node) => ({
+        index: node.index,
+        x: node.x,
+        y: node.y,
+        z: node.z,
+        harvests: node.harvests,
+        left: hub.economy.debris.leftOf(node.index),
+        from: node.from,
+      })),
+    heapsShown: () => debris.list(),
+    pool: () => {
+      const reading = hub.economy.read(createEconomyReading());
+      return { stock: [...reading.stock], cap: reading.cap };
+    },
+    harvest: (index) => {
+      const node = hub.economy.debris.nodes[index];
+      if (!node) return false;
+      hub.sendCommand({
+        type: 'harvest',
+        x: Math.floor(node.x),
+        y: Math.floor(node.y),
+        z: Math.floor(node.z),
+      });
+      return true;
+    },
+    setPool: (material, amount) => {
+      const session = hub.current;
+      if (session instanceof HostSession) session.survivalSim?.economy?.pool.set(material, amount);
+    },
     blocks: () => digestBlocks(options.world.world()),
     block: (x, y, z) => options.world.world().getBlock(x, y, z),
     place: (x, y, z, state) => hub.sendCommand({ type: 'place', x, y, z, state }),
@@ -366,6 +430,8 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       sync.update(dt);
       remotes.update(dt, hub.sampleRemotes());
       enemies.update(dt, hub.sampleEnemies());
+      debris.setAimed(options.aimedDebris());
+      debris.update(dt, hub.economy.debris, hub.run);
       shots.update(dt);
     },
     dispose() {
@@ -377,11 +443,13 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       stopRejected();
       stopEvents();
       stopShots();
+      stopStrips();
       panel.dispose();
       sync.dispose();
       options.scene.remove(remotes.object);
       remotes.dispose();
       enemies.dispose();
+      debris.dispose();
       shotFx.dispose();
       lobby.dispose();
     },

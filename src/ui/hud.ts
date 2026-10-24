@@ -1,4 +1,5 @@
 import type { Game } from '../engine/game';
+import type { EconomyView } from '../shared/economy';
 import type { Flags } from '../shared/flags';
 import { nextQuality } from '../shared/quality';
 import { createReading, type RestartKind, type SurvivalView } from '../shared/survival-state';
@@ -10,7 +11,7 @@ import { el } from './dom';
 import { createFrameOverlay } from './frame-overlay';
 import { createPausePanel } from './pause-panel';
 import { createPlaceholderHud } from './placeholder-hud';
-import { messageFor, resultsForHud, runLine, type Namer } from './run-hud';
+import { harvestMessage, messageFor, resultsForHud, runLine, type Namer } from './run-hud';
 import { createRunResults } from './run-results';
 import { saveSettings } from './settings-store';
 import { createStatusPanel } from './status-panel';
@@ -37,6 +38,11 @@ export interface Hud {
   setRun(controls: RunControls | null): void;
   /** Shows the player's own Health, Energy and status icons from this view; null shows full bars. */
   setVitals(view: VitalsView | null): void;
+  /**
+   * Shows the crew's pool on the block slots of the hotbar from this view, and a message when the
+   * player `localId()` names strips a heap; null shows no counts.
+   */
+  setEconomy(view: EconomyView | null, localId?: () => number): void;
   dispose(): void;
 }
 
@@ -98,6 +104,7 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
 
   let run: SurvivalView | null = null;
   let stopRunEvents: (() => void) | null = null;
+  let stopStrips: (() => void) | null = null;
   const runReading = createReading();
   let runLineText: string | null = null;
   let over = false;
@@ -215,7 +222,19 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
     setVitals(view) {
       playerHud.setVitals(view);
     },
+    setEconomy(view, localId) {
+      stopStrips?.();
+      stopStrips = null;
+      playerHud.setEconomy(view);
+      // The player's own strips are answered with what they brought in; the others' are seen in the pool.
+      if (view && localId) {
+        stopStrips = view.debris.onHarvest((event) => {
+          if (event.by === localId()) toast.show(harvestMessage(event));
+        });
+      }
+    },
     dispose() {
+      stopStrips?.();
       stopRunEvents?.();
       stopInput();
       stopSweep();

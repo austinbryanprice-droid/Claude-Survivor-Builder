@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { MATERIAL } from '../../src/shared/blocks';
 import { DAY_SECONDS, NIGHT_SECONDS } from '../../src/shared/daycycle';
+import type { HarvestEvent } from '../../src/shared/economy';
 import {
   createReading,
   readClock,
@@ -15,6 +17,7 @@ import {
   clockForHud,
   coreForHud,
   downForHud,
+  harvestMessage,
   messageFor,
   objectiveForRun,
   resultsForHud,
@@ -313,18 +316,20 @@ describe('the results of a lost run', () => {
     const lost = withCore(720 + DAY_SECONDS + 90, 0, true);
     lost.felled = 31;
     lost.placed = 212;
+    lost.gathered = 460;
     lost.revived = 3;
     expect(resultsForHud(lost)?.stats).toEqual([
       { label: 'Time held', value: '21:30' },
       { label: 'Machines destroyed', value: '31' },
       { label: 'Blocks placed', value: '212' },
+      { label: 'Materials gathered', value: '460' },
       { label: 'Respawns used', value: '3' },
     ]);
   });
 
   it('show a crew that did nothing as zeros, not as gaps', () => {
     const stats = resultsForHud(withCore(DAY_SECONDS + 30, 0, true))?.stats ?? [];
-    expect(stats.map((stat) => stat.value)).toEqual(['8:30', '0', '0', '0']);
+    expect(stats.map((stat) => stat.value)).toEqual(['8:30', '0', '0', '0', '0']);
   });
 });
 
@@ -368,5 +373,39 @@ describe('the messages about a player going down and coming back', () => {
       { k: 'back', n: 1, p: 2, c: 1 },
     ];
     for (const event of events) expect(messageFor(event, nameOf).length).toBeGreaterThan(5);
+  });
+});
+
+describe('the message about a strip', () => {
+  const strip = (extra: Partial<HarvestEvent> = {}): HarvestEvent => ({
+    by: 1,
+    node: 4,
+    material: MATERIAL.scrap,
+    gained: 10,
+    left: 2,
+    full: false,
+    ...extra,
+  });
+
+  it('says what went into the pool, in the material’s own name', () => {
+    expect(harvestMessage(strip())).toBe('+10 Scrap');
+    expect(harvestMessage(strip({ material: MATERIAL.composite, gained: 7 }))).toBe(
+      '+7 Reinforced Composite',
+    );
+  });
+
+  it('says when that was the last of the heap', () => {
+    expect(harvestMessage(strip({ left: 0 }))).toBe('+10 Scrap · that heap is stripped bare');
+  });
+
+  it('says when the pool could take only part of it, which matters more than the heap being bare', () => {
+    expect(harvestMessage(strip({ gained: 4, full: true }))).toBe('+4 Scrap · the pool is full');
+    expect(harvestMessage(strip({ gained: 4, full: true, left: 0 }))).toBe(
+      '+4 Scrap · the pool is full',
+    );
+  });
+
+  it('does not make up a name for a material the table does not know', () => {
+    expect(harvestMessage(strip({ material: 99 }))).toBe('+10 materials');
   });
 });

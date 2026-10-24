@@ -13,7 +13,7 @@ import {
 } from '../shared/blocks';
 import { AIM_REFUSAL } from '../shared/build-aim';
 import { VITALS } from '../systems/survival/balance';
-import type { HotbarSlot, HudPrompt } from './player-hud/player-hud';
+import type { HotbarSlot, HudInteract, HudPrompt } from './player-hud/player-hud';
 import type { IconId } from './player-hud/icons';
 
 /**
@@ -38,6 +38,8 @@ export interface BuildHudInput {
   /** How many of the player's shots have hit a machine so far, and whether the latest felled it. */
   readonly hits: number;
   readonly kill: boolean;
+  /** Strips left of the heap of debris the cursor is on and the player can reach, or 0 when it is on none. */
+  readonly salvage: number;
 }
 
 export interface BuildHudSource {
@@ -113,6 +115,19 @@ export function refusalText(code: string): string {
   return code.charAt(0).toUpperCase() + code.slice(1);
 }
 
+/** The key that strips a heap of debris, as its cap reads. */
+export const INTERACT_KEY = 'E';
+
+/** What the cursor on a heap of debris tells the player: the key, what it does, and how many strips the heap has left. */
+export function interactPrompt(strips: number): HudInteract | null {
+  if (!(strips > 0)) return null;
+  return {
+    key: INTERACT_KEY,
+    label: 'Strip debris',
+    detail: strips === 1 ? 'last strip' : `${strips} strips left`,
+  };
+}
+
 /** How long the name of a newly chosen piece stays up outside Build Mode, in seconds. */
 export const NAME_SECONDS = 1.6;
 
@@ -134,6 +149,7 @@ export const BUILD_KEYS: readonly KeyRow[] = [
   { keys: ['Wheel'], label: 'Next block' },
   { keys: ['Q'], label: 'Block, slab or wedge' },
   { keys: ['R'], label: 'Turn it' },
+  { keys: [INTERACT_KEY], label: 'Strip debris' },
   { keys: ['B'], label: 'Leave Build Mode' },
   { keys: ['Esc'], label: 'Free the mouse' },
 ];

@@ -487,6 +487,7 @@
 }
 
 .overrun-card .stats {
+  grid-template-columns: repeat(5, 1fr);
   margin-top: 10px;
 }
 
@@ -610,7 +611,8 @@
     grid-template-columns: 1fr;
   }
 
-  .stats {
+  .stats,
+  .overrun-card .stats {
     grid-template-columns: 1fr 1fr;
   }
 

@@ -14,8 +14,10 @@ import './player-hud.css';
 /** One slot of the hotbar. Everything but the icon is optional. */
 export interface HotbarSlot {
   readonly icon: IconId | null;
-  /** Stack size shown bottom right. */
+  /** Stack size shown bottom right; a stack of one shows nothing. */
   readonly count?: number;
+  /** How much of this slot's material the crew's pool holds, shown bottom right even at 0 or 1 (a stack that is out is dimmed). */
+  readonly stock?: number;
   /** 0 to 1, drawn as the green bar along the bottom. */
   readonly durability?: number;
   /** A small status glyph in the top right corner. */
@@ -30,6 +32,16 @@ export interface HudPrompt {
   readonly detail: string;
   /** 'warn' draws the detail in red. */
   readonly tone: 'info' | 'warn';
+}
+
+/** What the interact key would do for what the cursor is on: a key cap, a verb, and a short line under it. */
+export interface HudInteract {
+  /** The key, as its cap reads. */
+  readonly key: string;
+  /** What it does: "Strip debris". */
+  readonly label: string;
+  /** What is worth knowing before pressing it: "3 strips left". */
+  readonly detail: string;
 }
 
 /**
@@ -136,6 +148,8 @@ export interface PlayerHudState {
   readonly selected: number;
   /** The caption above the hotbar; absent or null for none. */
   readonly prompt?: HudPrompt | null;
+  /** What the interact key would do for what the cursor is on, under the crosshair; absent or null for nothing. */
+  readonly interact?: HudInteract | null;
   /** Absent means a plain dot. */
   readonly crosshair?: CrosshairState;
   /** The hit marker; absent never flashes it. */
@@ -218,6 +232,10 @@ export class PlayerHud {
   private readonly prompt: HTMLElement;
   private readonly promptTitle: HTMLElement;
   private readonly promptDetail: HTMLElement;
+  private readonly interact: HTMLElement;
+  private readonly interactKey: HTMLElement;
+  private readonly interactLabel: HTMLElement;
+  private readonly interactDetail: HTMLElement;
   private readonly crosshair: HTMLElement;
   private readonly hitmark: HTMLElement;
   private readonly buildHint: HTMLElement;
@@ -244,6 +262,7 @@ export class PlayerHud {
   private readonly lastSlots: string[] = [];
   private lastSelected = -1;
   private lastPrompt = '';
+  private lastInteract = '';
   private lastCrosshair = '';
   private lastHits = -1;
   private hitTurns = 0;
@@ -363,6 +382,14 @@ export class PlayerHud {
     this.promptDetail = el('span', 'ph-prompt-detail');
     this.prompt.append(this.promptTitle, this.promptDetail);
 
+    // What the interact key would do, under the crosshair.
+    this.interact = el('div', 'ph-interact');
+    this.interact.hidden = true;
+    this.interactKey = el('kbd', 'ph-key');
+    this.interactLabel = el('strong', 'ph-interact-label');
+    this.interactDetail = el('span', 'ph-interact-detail');
+    this.interact.append(this.interactKey, this.interactLabel, this.interactDetail);
+
     this.crosshair = el('div', 'ph-crosshair');
     // Four ticks that flash round the crosshair on a hit; they sit inside it so they are always centered.
     this.hitmark = el('div', 'ph-hitmark');
@@ -379,6 +406,7 @@ export class PlayerHud {
       this.objective,
       this.prompt,
       bar,
+      this.interact,
       this.crosshair,
     );
     parent.append(this.root);
@@ -631,14 +659,21 @@ export class PlayerHud {
   private updateHotbar(state: PlayerHudState): void {
     this.slots.forEach((refs, i) => {
       const slot = state.slots[i] ?? { icon: null };
-      const key = `${slot.icon ?? ''}|${slot.count ?? ''}|${slot.badge ?? ''}|${slot.blueprint ? 1 : 0}|${
-        slot.durability === undefined ? '' : slot.durability.toFixed(2)
-      }`;
+      const key = `${slot.icon ?? ''}|${slot.count ?? ''}|${slot.stock ?? ''}|${slot.badge ?? ''}|${
+        slot.blueprint ? 1 : 0
+      }|${slot.durability === undefined ? '' : slot.durability.toFixed(2)}`;
       if (key === this.lastSlots[i]) return;
       this.lastSlots[i] = key;
       refs.icon.innerHTML = slot.icon ? iconMarkup(slot.icon) : '';
       refs.badge.innerHTML = slot.badge ? iconMarkup(slot.badge) : '';
-      refs.count.textContent = slot.count && slot.count > 1 ? String(slot.count) : '';
+      // A pool's count is always told, down to none; a stack is told only when there is more than one.
+      refs.count.textContent =
+        slot.stock !== undefined
+          ? String(slot.stock)
+          : slot.count && slot.count > 1
+            ? String(slot.count)
+            : '';
+      refs.count.toggleAttribute('data-none', slot.stock === 0);
       refs.durability.hidden = slot.durability === undefined;
       if (slot.durability !== undefined) {
         refs.durabilityFill.style.width = `${(clamp01(slot.durability) * 100).toFixed(1)}%`;
@@ -665,6 +700,17 @@ export class PlayerHud {
         this.promptTitle.hidden = prompt.title === '';
         this.promptDetail.textContent = prompt.detail;
         this.prompt.dataset.tone = prompt.tone;
+      }
+    }
+    const interact = state.interact ?? null;
+    const interactKey = interact ? `${interact.key}|${interact.label}|${interact.detail}` : '';
+    if (interactKey !== this.lastInteract) {
+      this.lastInteract = interactKey;
+      this.interact.hidden = interact === null;
+      if (interact) {
+        this.interactKey.textContent = interact.key;
+        this.interactLabel.textContent = interact.label;
+        this.interactDetail.textContent = interact.detail;
       }
     }
     const crosshair = state.crosshair ?? 'none';
