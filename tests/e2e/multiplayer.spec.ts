@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../src/shared/daycycle';
+import { DEBRIS } from '../../src/systems/economy/balance';
 import { RESPAWN, VITALS } from '../../src/systems/survival/balance';
 import { recordToasts, toasts } from './support/toasts';
 
@@ -952,6 +953,185 @@ test.describe('multiplayer', () => {
       expect(await paidMoreThanHost()).toBeLessThanOrEqual(3);
       expect(await ada.page.evaluate(() => window.__ashbound!.mp!.rejections())).toEqual([]);
       expect(await host.page.evaluate(() => window.__ashbound!.mp!.rejections())).toEqual([]);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
+  test("a guest strips a heap of debris: the host's pool and both pictures follow, only the guest is told, and a latecomer is told how things stand", async ({
+    browser,
+    baseURL,
+  }) => {
+    const host = await openPlayer(browser, baseURL, 'Host');
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone: Player[] = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and the picture and the hands only change when one is drawn.
+    const slow = { timeout: 60_000 };
+    const heapsOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.heaps());
+    const shownOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.heapsShown());
+    const scrapOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.pool())).stock[0] as number;
+    const positionOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.position());
+    const rejectionsOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.rejections());
+    const salvageOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.build!.salvage());
+    const gatheredOf = async (p: Player) => (await clockOf(p)).gathered;
+    const apart = (a: { x: number; z: number }, b: { x: number; z: number }) =>
+      Math.hypot(a.x - b.x, a.z - b.z);
+    const avatarOf = async (viewer: Player, name: string) =>
+      (await remotes(viewer)).find((r) => r.name === name);
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) {
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+        await recordToasts(p.page);
+      }
+
+      // The valley's heaps and the crew's pool are the host's, the same on every screen.
+      await expect
+        .poll(async () => (await heapsOf(ada)).length, {
+          ...slow,
+          message: 'Ada has the list of heaps',
+        })
+        .toBeGreaterThan(0);
+      const list = await heapsOf(host);
+      expect(await heapsOf(ada)).toEqual(list);
+      const startPool = await scrapOf(host);
+      expect(await scrapOf(ada)).toBe(startPool);
+
+      // The heap nearest to Ada's seat with three strips, and the one farthest from it.
+      const seat = await positionOf(ada);
+      const lying = list.filter((h) => h.from === 0);
+      const byDistance = (a: { x: number; z: number }, b: { x: number; z: number }) =>
+        apart(a, seat) - apart(b, seat);
+      const heap = lying.filter((h) => h.harvests >= 3).sort(byDistance)[0]!;
+      const far = [...lying].sort(byDistance).at(-1)!;
+      expect(apart(far, seat)).toBeGreaterThan(DEBRIS.reach);
+
+      // Ada walks up to it, in hops the host's movement check allows, and looks at its middle.
+      const spot = {
+        x: heap.x + ((seat.x - heap.x) / apart(seat, heap)) * 2.6,
+        z: heap.z + ((seat.z - heap.z) / apart(seat, heap)) * 2.6,
+      };
+      for (
+        let here = await positionOf(ada);
+        apart(here, spot) > 0.5;
+        here = await positionOf(ada)
+      ) {
+        const go = Math.min(1, 8 / apart(here, spot));
+        const next = { x: here.x + (spot.x - here.x) * go, z: here.z + (spot.z - here.z) * go };
+        await ada.page.evaluate(
+          ([x, z]) => {
+            const game = window.__ashbound!.game;
+            game.teleport(x!, game.world.groundAt(x!, z!) + 0.05, z!, 0);
+          },
+          [next.x, next.z] as const,
+        );
+        await expect
+          .poll(async () => apart((await avatarOf(host, 'Ada')) ?? seat, next), {
+            ...slow,
+            message: 'the host sees Ada arrive',
+          })
+          .toBeLessThan(1.5);
+      }
+      await ada.page.locator('.play-button').click();
+      await expect(ada.page.locator('#hud')).toHaveAttribute('data-pointer', 'locked', slow);
+      const lookAtHeap = () =>
+        ada.page.evaluate(
+          ({ heap, lift }) => {
+            const game = window.__ashbound!.game;
+            const eye = game.player.y + 1.62;
+            const dx = heap.x - game.player.x;
+            const dz = heap.z - game.player.z;
+            game.look.yaw = Math.atan2(-dx, -dz);
+            game.look.pitch = Math.atan2(heap.y + lift - eye, Math.hypot(dx, dz));
+          },
+          { heap, lift: DEBRIS.lift },
+        );
+      await expect
+        .poll(
+          async () => {
+            await lookAtHeap();
+            return (await salvageOf(ada)).index;
+          },
+          { ...slow, message: "the heap is under Ada's cursor" },
+        )
+        .toBe(heap.index);
+      await expect(ada.page.locator('.ph-interact-label')).toHaveText('Strip debris', slow);
+
+      // E strips it: the host's pool takes what came off, and the heap has lost a strip on both screens.
+      await ada.page.keyboard.press('KeyE');
+      await expect
+        .poll(async () => (await heapsOf(host))[heap.index]?.left, {
+          ...slow,
+          message: 'the host sees the strip',
+        })
+        .toBe(heap.harvests - 1);
+      await expect
+        .poll(async () => (await heapsOf(ada))[heap.index]?.left, {
+          ...slow,
+          message: 'Ada sees the strip',
+        })
+        .toBe(heap.harvests - 1);
+      const gained = (await scrapOf(host)) - startPool;
+      expect(gained).toBeGreaterThanOrEqual(DEBRIS.yield.min);
+      expect(gained).toBeLessThanOrEqual(DEBRIS.yield.max);
+      for (const p of everyone) {
+        await expect
+          .poll(() => scrapOf(p), { ...slow, message: `${p.name} sees the pool` })
+          .toBe(startPool + gained);
+        await expect
+          .poll(() => gatheredOf(p), { ...slow, message: `${p.name} sees what was gathered` })
+          .toBe(gained);
+        await expect
+          .poll(async () => (await shownOf(p)).find((s) => s.index === heap.index)?.share, {
+            ...slow,
+            message: `${p.name} sees the heap lose a layer`,
+          })
+          .toBe((heap.harvests - 1) / heap.harvests);
+      }
+      // The hotbar of every screen tells the one pool, and only the one who stripped is told.
+      for (const p of everyone) {
+        await expect(p.page.locator('.ph-slot').nth(0).locator('.ph-count')).toHaveText(
+          String(startPool + gained),
+          slow,
+        );
+      }
+      await expect.poll(async () => (await toasts(ada.page)).at(-1), slow).toBe(`+${gained} Scrap`);
+      expect((await toasts(host.page)).filter((t) => t.includes('Scrap'))).toEqual([]);
+
+      // A heap out of Ada's reach is refused by the host, and nothing comes of it.
+      expect(await ada.page.evaluate((i) => window.__ashbound!.mp!.harvest(i), far.index)).toBe(
+        true,
+      );
+      await expect
+        .poll(async () => (await rejectionsOf(ada)).map((r) => r.reason), {
+          ...slow,
+          message: 'the host refuses Ada',
+        })
+        .toEqual(['out of reach']);
+      expect(await rejectionsOf(host)).toEqual([]);
+      expect((await heapsOf(host))[far.index]?.left).toBe(far.harvests);
+
+      // A player who joins now is told how things stand: the heap short of a strip, and the pool.
+      const bo = await openPlayer(browser, baseURL, 'Bo');
+      everyone.push(bo);
+      await joinRoom(bo, code);
+      await expect
+        .poll(async () => (await heapsOf(bo))[heap.index]?.left, {
+          ...slow,
+          message: 'Bo is told the heap was stripped',
+        })
+        .toBe(heap.harvests - 1);
+      expect(await heapsOf(bo)).toEqual(await heapsOf(host));
+      await expect
+        .poll(() => scrapOf(bo), { ...slow, message: 'Bo is told the pool' })
+        .toBe(startPool + gained);
+      await expect
+        .poll(async () => (await shownOf(bo)).length, { ...slow, message: 'Bo sees the heaps' })
+        .toBe((await shownOf(host)).length);
       expectNoProblems(everyone);
     } finally {
       await closeAll(everyone);

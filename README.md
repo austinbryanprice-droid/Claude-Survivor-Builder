@@ -2,7 +2,7 @@
 
 A browser co-op survivor-builder for two to four players. By day you scavenge the wreckage of a crashed orbital station and build a shared outpost from refined, beveled blocks and modular machines. By night rogue machines attack in waves that grow every night.
 
-> **Status: early development.** You can run, jump and look around the Ashbound Valley: seeded terrain, a lake, trees and a golden-hour sky. You can build in it: right click places a beveled block, a slab or a wedge, left click breaks one, and the hotbar holds the four materials (Q changes the shape, so a roof is a row of wedges). Up to four players can share the valley (one hosts a room, the others join with a code), see each other move and see every block anyone builds. Enemies, nights and the economy are not in yet, so blocks cost nothing for now (`/?demo=outpost` raises a finished base to look at). The [roadmap](docs/roadmap.md) lists what comes next.
+> **Status: early development.** You can run, jump and look around the Ashbound Valley: seeded terrain, a lake, trees and a golden-hour sky. You can build in it: right click places a beveled block, a slab or a wedge, left click breaks one, and the hotbar holds the four materials (Q changes the shape, so a roof is a row of wedges). Up to four players can share the valley (one hosts a room, the others join with a code), see each other move and see every block anyone builds. The nights are in: a day and night clock, the Outpost Core, machines that come for it in waves, a pulse blaster, going down and coming back, and the Outpost Overrun card when a run is lost. The economy has started: heaps of wreckage lie in the valley, and E strips them into the crew's shared pool of materials. Blocks still cost nothing until the next step (`/?demo=outpost` raises a finished base to look at). The [roadmap](docs/roadmap.md) lists what comes next.
 
 ## Play
 
@@ -21,6 +21,7 @@ Click the page to take the mouse. Esc gives it back.
 | Right click         | Place the selected block where the cursor is (hold it to keep going) |
 | Left click          | Break the block under the cursor (hold it to keep going)             |
 | 1 to 8, mouse wheel | Choose a hotbar slot; the first four hold the four materials         |
+| E                   | Strip the heap of debris under the cursor into the crew's pool       |
 | Q                   | Choose block, slab or wedge for every slot                           |
 | R                   | Turn the slab or wedge (a wedge rises away from you by default)      |
 | B                   | Build Mode: a ghost of the next block, its name and cost, the keys   |
