@@ -172,6 +172,7 @@ describe('host control frames', () => {
       hostTime: 123456.5,
       spawn: { x: 2.5, y: 0, z: 0.5 },
       epoch: 0,
+      run: 1,
       players: [
         { id: 1, slot: 0, name: 'Host' },
         { id: 2, slot: 1, name: 'Ada' },
@@ -187,10 +188,30 @@ describe('host control frames', () => {
     { t: 'rej', id: 4, r: 'occupied' },
     { t: 'fix', epoch: 3, x: 1, y: 0, z: -2 },
     { t: 'pong', n: 9 },
-    { t: 'sv', tick: 14400, run: true, core: [1000, 1000], over: false, rc: [6, 6] },
-    { t: 'sv', tick: 0, run: false, core: [1, 1000], over: false, rc: [0, 0] },
-    { t: 'sv', tick: 9600, run: false, core: [0, 1000], over: true, why: 'core', rc: [2, 6] },
-    { t: 'sv', tick: 9700, run: false, core: [640, 1000], over: true, why: 'crew', rc: [0, 9] },
+    { t: 'sv', tick: 14400, run: true, core: [1000, 1000], over: false, rc: [6, 6], st: [0, 0, 0] },
+    { t: 'sv', tick: 0, run: false, core: [1, 1000], over: false, rc: [0, 0], st: [12, 340, 2] },
+    {
+      t: 'sv',
+      tick: 9600,
+      run: false,
+      core: [0, 1000],
+      over: true,
+      why: 'core',
+      rc: [2, 6],
+      st: [31, 212, 4],
+    },
+    {
+      t: 'sv',
+      tick: 9700,
+      run: false,
+      core: [640, 1000],
+      over: true,
+      why: 'crew',
+      rc: [0, 9],
+      st: [2_000_000, 900_000, 99],
+    },
+    { t: 'run', n: 2, seed: 20261020, seq: 17, spawn: { x: 2.5, y: 0, z: 0.5 }, epoch: 1 },
+    { t: 'run', n: 12, seed: -7, seq: 0, spawn: { x: -40, y: 12.25, z: 33 }, epoch: 255 },
     { t: 'se', e: { k: 'nightfall', n: 1 } },
     { t: 'se', e: { k: 'wave', n: 1, i: 1, of: 1, c: 6 } },
     { t: 'se', e: { k: 'wave', n: 14, i: 6, of: 6, c: 7 } },
@@ -254,11 +275,13 @@ describe('host control frames', () => {
     ).toBeNull();
   });
 
-  /** A survival frame with the respawn word a current host always sends, so a case tests only its own defect. */
-  const withCharges = (text: string): string =>
-    text.startsWith('{"t":"sv"') && !text.includes('"rc"')
-      ? text.replace(/\}$/, ',"rc":[2,3]}')
-      : text;
+  /** A survival frame with the respawn and totals words a current host always sends, so a case tests only its own defect. */
+  const withCharges = (text: string): string => {
+    if (!text.startsWith('{"t":"sv"')) return text;
+    const rc = text.includes('"rc"') ? '' : ',"rc":[2,3]';
+    const st = text.includes('"st"') ? '' : ',"st":[0,0,0]';
+    return text.replace(/\}$/, `${rc}${st}}`);
+  };
   /** A word about a player's meters with the two countdowns a current host always sends. */
   const withCountdowns = (text: string): string =>
     text.startsWith('{"t":"vt"') && !text.includes('"rt"')
@@ -360,7 +383,7 @@ describe('host control frames', () => {
   });
 
   it('refuses a survival frame whose respawn charges are missing, malformed or more than the crew can hold', () => {
-    const base = '{"t":"sv","tick":9,"run":true,"core":[5,10],"over":false';
+    const base = '{"t":"sv","tick":9,"run":true,"core":[5,10],"over":false,"st":[0,0,0]';
     expect(decodeHostFrame(`${base},"rc":[2,3]}`)).not.toBeNull();
     for (const rc of [
       '',
@@ -379,8 +402,72 @@ describe('host control frames', () => {
     }
   });
 
+  it('refuses a survival frame whose totals are missing, malformed or negative', () => {
+    const base = '{"t":"sv","tick":9,"run":false,"core":[0,10],"over":true,"why":"core","rc":[1,3]';
+    expect(decodeHostFrame(`${base},"st":[31,212,4]}`)).toMatchObject({ st: [31, 212, 4] });
+    for (const st of [
+      '',
+      ',"st":null',
+      ',"st":5',
+      ',"st":[1,2]',
+      ',"st":[1,2,3,4]',
+      ',"st":["1",2,3]',
+      ',"st":[1.5,2,3]',
+      ',"st":[1,2.5,3]',
+      ',"st":[1,2,3.5]',
+      ',"st":[-1,2,3]',
+      ',"st":[1,-2,3]',
+      ',"st":[1,2,-3]',
+      ',"st":[3000000000,2,3]',
+      ',"st":[1,null,3]',
+    ]) {
+      expect(decodeHostFrame(`${base}${st}}`), st).toBeNull();
+    }
+  });
+
+  it('refuses a welcome that does not say which run the room is in', () => {
+    const base = frames[0] as Extract<HostFrame, { t: 'welcome' }>;
+    for (const run of [undefined, 0, -1, 1.5, '1', null, 70000]) {
+      const text = JSON.stringify({ ...base, run });
+      expect(decodeHostFrame(text), text).toBeNull();
+    }
+    expect(decodeHostFrame(JSON.stringify({ ...base, run: 12 }))).toMatchObject({ run: 12 });
+  });
+
+  it('refuses a restart that has no valley, no place to stand or no run to count', () => {
+    const base = frames.find((frame) => frame.t === 'run') as Extract<HostFrame, { t: 'run' }>;
+    expect(decodeHostFrame(JSON.stringify(base))).toEqual(base);
+    for (const bad of [
+      { n: undefined },
+      { n: 1 },
+      { n: 0 },
+      { n: 2.5 },
+      { n: '2' },
+      { n: 70000 },
+      { seed: undefined },
+      { seed: 1.5 },
+      { seed: '7' },
+      { seed: 2 ** 60 },
+      { seq: undefined },
+      { seq: -1 },
+      { seq: 1.5 },
+      { epoch: undefined },
+      { epoch: -1 },
+      { epoch: 256 },
+      { epoch: 1.5 },
+      { spawn: undefined },
+      { spawn: null },
+      { spawn: { x: 1, y: 2 } },
+      { spawn: { x: 1, y: 2, z: 'x' } },
+      { spawn: { x: NET.move.limit + 1, y: 0, z: 0 } },
+    ]) {
+      const text = JSON.stringify({ ...base, ...bad });
+      expect(decodeHostFrame(text), text).toBeNull();
+    }
+  });
+
   it('wants a cause exactly when the run is over, and only the two it knows', () => {
-    const open = '{"t":"sv","tick":9,"run":false,"core":[5,10],"rc":[1,3]';
+    const open = '{"t":"sv","tick":9,"run":false,"core":[5,10],"rc":[1,3],"st":[0,0,0]';
     expect(decodeHostFrame(`${open},"over":true,"why":"crew"}`)).toMatchObject({ why: 'crew' });
     expect(decodeHostFrame(`${open},"over":true,"why":"core"}`)).toMatchObject({ why: 'core' });
     for (const text of [

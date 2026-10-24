@@ -321,6 +321,40 @@ describe("the guest's mirror of the Core", () => {
   });
 });
 
+describe("the guest's mirror when the host starts the run over", () => {
+  it('carries what the run came to, as the host last said it', () => {
+    const mirror = new SurvivalMirror(new ManualScheduler());
+    expect(read(mirror)).toMatchObject({ felled: 0, placed: 0, revived: 0 });
+    mirror.apply(20 * 600, false, 0, 1000, true, 'core', 2, 6, 31, 212, 4);
+    expect(read(mirror)).toMatchObject({ felled: 31, placed: 212, revived: 4, over: true });
+  });
+
+  it('forgets the lost run, and its clock with it, so the new one is not held back by the old', () => {
+    const scheduler = new ManualScheduler();
+    const mirror = new SurvivalMirror(scheduler);
+    mirror.apply(20 * 600, false, 0, 1000, true, 'core', 0, 6, 31, 212, 4);
+    // What is shown is remembered, so a clock that jumps back by a moment's worth is held.
+    expect(read(mirror).elapsed).toBe(600);
+    mirror.reset();
+    expect(read(mirror)).toMatchObject({
+      elapsed: 0,
+      over: false,
+      overWhy: null,
+      running: false,
+      coreHealth: 0,
+      coreMax: 0,
+      respawns: 0,
+      felled: 0,
+      placed: 0,
+      revived: 0,
+    });
+    // The host's first word of the new run is taken from its own count.
+    mirror.apply(20 * 3, true, 1000, 1000, false);
+    expect(read(mirror)).toMatchObject({ coreHealth: 1000, over: false });
+    expect(read(mirror).elapsed).toBeCloseTo(3, 1);
+  });
+});
+
 describe('the hub and the survival view', () => {
   function solo(survival: boolean) {
     const scheduler = new ManualScheduler();

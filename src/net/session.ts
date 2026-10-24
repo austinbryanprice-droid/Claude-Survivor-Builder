@@ -12,7 +12,7 @@ import type {
   WorldEvent,
 } from '../shared/protocol';
 import type { ShotEvent } from '../shared/shot';
-import type { SurvivalView, Unsubscribe } from '../shared/survival-state';
+import type { RestartKind, SurvivalView, Unsubscribe } from '../shared/survival-state';
 import type { VitalsView } from '../shared/vitals-state';
 
 export type { Unsubscribe } from '../shared/survival-state';
@@ -99,6 +99,12 @@ export interface GameSession {
    */
   readonly vitals: VitalsView;
 
+  /**
+   * Which run this is: 1 for the first, one more each time the host starts over after a loss. A
+   * guest's follows the host's once its new world is up.
+   */
+  readonly run: number;
+
   /** Asks the host to change the world. Fire and forget: the result arrives as an event or a rejection. */
   sendCommand(command: BlockCommand): void;
 
@@ -108,6 +114,15 @@ export interface GameSession {
    * the shooter included, hears what became of it through `onShot`.
    */
   fire(origin: Vec3, dir: Vec3): void;
+
+  /**
+   * Starts a lost run over: the same valley (`retry`) or another one (`new`), with nothing built, a
+   * fresh clock, a whole Core, the crew's respawn charges again and every player at their seat.
+   * Only the host (or a player alone) can, and only once the run is over; anyone else's call, and
+   * a call while the run goes on, does nothing. A room's guests follow, each as soon as the new
+   * world is built.
+   */
+  restartRun(kind: RestartKind): void;
 
   /**
    * Tells the session whether the local player is playing right now (the mouse is captured).
@@ -125,6 +140,8 @@ export interface GameSession {
   onPhase(listener: (phase: SessionPhase) => void): Unsubscribe;
   /** The host moved the local player (a failed movement check, or the Core bringing them back at the base): teleport there. */
   onCorrection(listener: (correction: Correction) => void): Unsubscribe;
+  /** A new run has begun on this screen (the world is rebuilt and the clock is at its start); `run` is its number. */
+  onRun(listener: (run: number) => void): Unsubscribe;
 
   /**
    * Tells the session where the local player is. Call it every frame or tick; the session sends

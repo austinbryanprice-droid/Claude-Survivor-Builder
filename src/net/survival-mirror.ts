@@ -30,6 +30,9 @@ export class SurvivalMirror implements SurvivalView {
   private overWhy: OverrunCause | null = null;
   private respawns = 0;
   private respawnMax = 0;
+  private felled = 0;
+  private placed = 0;
+  private revived = 0;
   private shown = 0;
   private readonly events = new Emitter<SurvivalEvent>();
 
@@ -37,7 +40,8 @@ export class SurvivalMirror implements SurvivalView {
 
   /**
    * The host's step count, whether its clock runs, the Core's health, whether the run is over and
-   * what ended it, and the crew's respawn charges and the most it can hold, as of now.
+   * what ended it, the crew's respawn charges and the most it can hold, and what the run has come
+   * to (machines felled, blocks placed, charges spent), as of now.
    */
   apply(
     tick: number,
@@ -48,6 +52,9 @@ export class SurvivalMirror implements SurvivalView {
     why: OverrunCause | null = null,
     respawns = 0,
     respawnMax = 0,
+    felled = 0,
+    placed = 0,
+    revived = 0,
   ): void {
     this.base = tick / SIM_HZ;
     this.at = this.scheduler.now();
@@ -58,6 +65,15 @@ export class SurvivalMirror implements SurvivalView {
     this.overWhy = over ? why : null;
     this.respawns = respawns;
     this.respawnMax = respawnMax;
+    this.felled = felled;
+    this.placed = placed;
+    this.revived = revived;
+  }
+
+  /** The host started the run over: forget the old one, down to the time that was last shown, so the new clock is not held at the old one. */
+  reset(): void {
+    this.apply(0, false, 0, 0, false);
+    this.shown = 0;
   }
 
   announce(event: SurvivalEvent): void {
@@ -84,6 +100,9 @@ export class SurvivalMirror implements SurvivalView {
     out.overWhy = this.overWhy;
     out.respawns = this.respawns;
     out.respawnMax = this.respawnMax;
+    out.felled = this.felled;
+    out.placed = this.placed;
+    out.revived = this.revived;
     return out;
   }
 

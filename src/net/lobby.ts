@@ -94,6 +94,9 @@ export interface LobbyState {
 export const TOKEN_KEY = 'ashbound.token';
 export const NAME_KEY = 'ashbound.name';
 
+/** A new valley's seed is a whole number from 1 up to this. */
+const NEW_SEED_RANGE = 2_000_000_000;
+
 const TOKEN_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 const TOKEN_LENGTH = 24;
 
@@ -322,13 +325,18 @@ export class Lobby {
   }
 
   private makeSolo(): HostSession {
+    const { game, random } = this.options;
+    const survival = game.survival?.bind(game);
     return new HostSession({
       scheduler: this.options.scheduler,
       world: this.binding,
       name: this.nameValue,
       token: this.token,
-      spawnFor: (slot) => this.options.game.spawnPoint(slot),
-      survival: this.options.game.survival?.(),
+      spawnFor: (slot) => game.spawnPoint(slot),
+      survival: survival?.(),
+      // A lost run starts over from a new simulation, built once the world has been rebuilt for it.
+      newRun: survival,
+      nextSeed: () => 1 + Math.floor(random() * NEW_SEED_RANGE),
     });
   }
 

@@ -97,6 +97,10 @@ export class SurvivalSim {
   private readonly brought = new Set<number>();
   /** The players who are down, in the order they fell. */
   private readonly fallen: number[] = [];
+  /** What the run has come to so far, for the results screen: it stops counting once the run is over. */
+  private felledCount = 0;
+  private placedCount = 0;
+  private revivedCount = 0;
   private readonly core: Outpost | null;
   private readonly players = new Map<number, PlayerVitals>();
   private readonly pending: SurvivalEvent[] = [];
@@ -165,6 +169,19 @@ export class SurvivalSim {
   /** The crew's respawn charges. */
   get respawns(): number {
     return this.charges;
+  }
+
+  /** Machines the crew's blasters have felled, blocks the crew has placed and charges the Core has spent: what the run came to. */
+  get felled(): number {
+    return this.felledCount;
+  }
+
+  get placed(): number {
+    return this.placedCount;
+  }
+
+  get revived(): number {
+    return this.revivedCount;
   }
 
   /**
@@ -267,9 +284,11 @@ export class SurvivalSim {
     this.players.get(id)?.spend(amount);
   }
 
-  /** A player placed or broke a block: it costs them a little Energy. */
-  playerBuilt(id: number): void {
+  /** A player placed (`placed`) or broke a block: it costs them a little Energy, and a block placed counts toward the run's total. */
+  playerBuilt(id: number, placed = true): void {
+    if (!this.players.has(id)) return;
     this.spendEnergy(id, VITALS.energy.perEdit);
+    if (placed && !this.over) this.placedCount++;
   }
 
   /**
@@ -311,6 +330,7 @@ export class SurvivalSim {
       out.enemy = struck;
       if (this.machines?.hurt(struck, BLASTER.damage * vitals.damageScale)) {
         out.flags |= SHOT_FLAG.kill;
+        this.felledCount++;
       }
     }
     vitals.spend(VITALS.energy.perShot);
@@ -355,6 +375,9 @@ export class SurvivalSim {
     out.overWhy = this.overWhy;
     out.respawns = this.charges;
     out.respawnMax = this.respawnMax;
+    out.felled = this.felledCount;
+    out.placed = this.placedCount;
+    out.revived = this.revivedCount;
     return out;
   }
 
@@ -415,6 +438,7 @@ export class SurvivalSim {
       if (this.charges <= 0 || vitals.downSeconds + STEP_EPSILON < RESPAWN.delaySeconds) return;
       this.fallen.shift();
       this.charges--;
+      this.revivedCount++;
       vitals.revive();
       this.pending.push({ k: 'back', n: this.cycle, p: id, c: this.charges });
     }

@@ -66,6 +66,7 @@ interface Seat {
 }
 
 type Welcome = Extract<HostFrame, { t: 'welcome' }>;
+type Run = Extract<HostFrame, { t: 'run' }>;
 
 /** Commands a guest remembers so a refusal can say which one it was. */
 const REMEMBERED_COMMANDS = 64;
@@ -110,6 +111,12 @@ export class GuestSession implements GameSession {
   private readonly sync = new ClockSync();
   private lastRelaySeq: number | null = null;
   private lastEnemySeq: number | null = null;
+  /** Which run this screen is in: 1 for the first, one more each time the host starts over. */
+  private runValue = 1;
+  /** The run whose world is being built now, or 0. */
+  private runLoading = 0;
+  /** A start-over that arrived while the world of the first run was still being built: played as soon as that is done. */
+  private deferredRun: Run | null = null;
 
   private readonly parts = new Map<number, EditRecord[]>();
   private readonly queued: { seq: number; event: WorldEvent }[] = [];
@@ -136,6 +143,7 @@ export class GuestSession implements GameSession {
   private readonly playerChanges = new Emitter<void>();
   private readonly phases = new Emitter<SessionPhase>();
   private readonly corrections = new Emitter<Correction>();
+  private readonly runs = new Emitter<number>();
 
   private readonly counters: NetStats = {
     rttMs: null,
@@ -186,6 +194,9 @@ export class GuestSession implements GameSession {
   }
   get vitals(): VitalsView {
     return this.vitalsMirror;
+  }
+  get run(): number {
+    return this.runValue;
   }
   get players(): readonly RosterEntry[] {
     return [...this.seats.values()]
@@ -245,9 +256,17 @@ export class GuestSession implements GameSession {
   onCorrection(listener: (correction: Correction) => void): Unsubscribe {
     return this.corrections.on(listener);
   }
+  onRun(listener: (run: number) => void): Unsubscribe {
+    return this.runs.on(listener);
+  }
 
   /** The host decides whether the clock runs; a guest in the room is always counted as playing. */
   setLocalActive(): void {
+    // Nothing to do on this side.
+  }
+
+  /** Starting over is the host's word. */
+  restartRun(): void {
     // Nothing to do on this side.
   }
 
@@ -470,7 +489,13 @@ export class GuestSession implements GameSession {
           frame.why ?? null,
           frame.rc[0],
           frame.rc[1],
+          frame.st[0],
+          frame.st[1],
+          frame.st[2],
         );
+        break;
+      case 'run':
+        this.onRunFrame(frame);
         break;
       case 'se':
         this.mirror.announce(frame.e);
@@ -523,6 +548,7 @@ export class GuestSession implements GameSession {
     this.localIdValue = frame.id;
     this.hostId = frame.hostId;
     this.epoch = frame.epoch;
+    this.runValue = frame.run;
     this.lastEventSeq = frame.seq;
     for (const player of frame.players) this.seats.set(player.id, { ...player, rtt: null });
     this.sync.observe(this.scheduler.now(), frame.hostTime);
@@ -563,12 +589,62 @@ export class GuestSession implements GameSession {
         for (const { seq, event } of backlog) this.applyEvent(seq, event);
         this.setPhase('open');
         this.corrections.emit({ x: welcome.spawn.x, y: welcome.spawn.y, z: welcome.spawn.z });
+        this.playDeferredRun();
       },
       (error: unknown) => {
         console.error(error);
         this.fail('error');
       },
     );
+  }
+
+  /**
+   * The host started the run over: forget the old run, build the valley for the host's seed with
+   * nothing on it, and stand where the host put this player. The session is `loading` meanwhile, so
+   * nothing is sent and nothing the others do is drawn until the new world is up; what the host
+   * says about it in the meantime is kept and applied then.
+   */
+  private onRunFrame(frame: Run): void {
+    if (this.phaseValue === 'loading' && this.runLoading === 0) {
+      // Still building the first world: start over as soon as it is up.
+      if (!this.deferredRun || frame.n > this.deferredRun.n) this.deferredRun = frame;
+      return;
+    }
+    if (this.phaseValue !== 'open' && this.phaseValue !== 'loading') return;
+    if (frame.n <= Math.max(this.runValue, this.runLoading)) return;
+    this.runLoading = frame.n;
+    this.epoch = frame.epoch;
+    this.lastEventSeq = frame.seq;
+    this.queued.length = 0;
+    this.sent.clear();
+    this.tracks.clear();
+    this.enemyMirror.clear();
+    this.mirror.reset();
+    this.vitalsMirror.reset();
+    this.setPhase('loading');
+    this.binding.load(frame.seed, []).then(
+      () => {
+        if (this.phaseValue !== 'loading' || this.runLoading !== frame.n) return;
+        const backlog = this.queued.splice(0);
+        for (const { seq, event } of backlog) this.applyEvent(seq, event);
+        this.runValue = frame.n;
+        this.runLoading = 0;
+        this.setPhase('open');
+        this.corrections.emit({ x: frame.spawn.x, y: frame.spawn.y, z: frame.spawn.z });
+        this.runs.emit(frame.n);
+        this.playDeferredRun();
+      },
+      (error: unknown) => {
+        console.error(error);
+        this.fail('error');
+      },
+    );
+  }
+
+  private playDeferredRun(): void {
+    const next = this.deferredRun;
+    this.deferredRun = null;
+    if (next) this.onRunFrame(next);
   }
 
   private onWorldEvent(seq: number, event: WorldEvent): void {

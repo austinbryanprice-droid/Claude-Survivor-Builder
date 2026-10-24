@@ -9,7 +9,12 @@ import type {
   WorldEvent,
 } from '../shared/protocol';
 import type { ShotEvent } from '../shared/shot';
-import type { SurvivalEvent, SurvivalReading, SurvivalView } from '../shared/survival-state';
+import type {
+  RestartKind,
+  SurvivalEvent,
+  SurvivalReading,
+  SurvivalView,
+} from '../shared/survival-state';
 import type { VitalsReading, VitalsView } from '../shared/vitals-state';
 import { Emitter } from './emitter';
 import type {
@@ -41,6 +46,7 @@ export class SessionHub implements GameSession {
   private readonly playerChanges = new Emitter<void>();
   private readonly phases = new Emitter<SessionPhase>();
   private readonly corrections = new Emitter<Correction>();
+  private readonly runs = new Emitter<number>();
   private readonly swaps = new Emitter<GameSession>();
   private readonly vitalsView: VitalsView = {
     read: (out: VitalsReading) => this.session.vitals.read(out),
@@ -91,6 +97,7 @@ export class SessionHub implements GameSession {
       session.onPlayers(() => this.playerChanges.emit()),
       session.onPhase((phase) => this.phases.emit(phase)),
       session.onCorrection((correction) => this.corrections.emit(correction)),
+      session.onRun((run) => this.runs.emit(run)),
       session.survival.onEvent((event) => this.survivalEvents.emit(event)),
     ];
   }
@@ -126,12 +133,18 @@ export class SessionHub implements GameSession {
   get vitals(): VitalsView {
     return this.vitalsView;
   }
+  get run(): number {
+    return this.session.run;
+  }
 
   sendCommand(command: BlockCommand): void {
     this.session.sendCommand(command);
   }
   fire(origin: Vec3, dir: Vec3): void {
     this.session.fire(origin, dir);
+  }
+  restartRun(kind: RestartKind): void {
+    this.session.restartRun(kind);
   }
   setLocalActive(active: boolean): void {
     this.localActive = active;
@@ -167,5 +180,8 @@ export class SessionHub implements GameSession {
   }
   onCorrection(listener: (correction: Correction) => void): Unsubscribe {
     return this.corrections.on(listener);
+  }
+  onRun(listener: (run: number) => void): Unsubscribe {
+    return this.runs.on(listener);
   }
 }
