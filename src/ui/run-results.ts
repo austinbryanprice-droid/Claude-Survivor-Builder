@@ -75,6 +75,7 @@ export function createRunResults(onChoose: (kind: RestartKind) => void): RunResu
       tile(String(nights), nights === 1 ? 'night survived' : 'nights survived', 'stat hero'),
     );
     const stats = el('div', 'stats');
+    stats.dataset.tiles = String(results.stats.length);
     for (const { label, value } of results.stats) stats.append(tile(value, label));
     card.append(stats);
 

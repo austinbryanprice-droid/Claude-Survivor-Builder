@@ -1,5 +1,5 @@
 import type { Game } from '../engine/game';
-import type { ShapeKind } from '../shared/blocks';
+import { MATERIALS, type ShapeKind } from '../shared/blocks';
 import { createEconomyReading, type EconomyView } from '../shared/economy';
 import { createReading, type SurvivalView } from '../shared/survival-state';
 import { createVitalsReading, type VitalsView } from '../shared/vitals-state';
@@ -13,6 +13,7 @@ import {
 import { wrapBearing } from './player-hud/format';
 import { PlayerHud, type HotbarSlot, type PlayerHudState } from './player-hud/player-hud';
 import { chargesForHud, clockForHud, coreForHud, downForHud, objectiveForRun } from './run-hud';
+import { ResearchPill, lockForPiece, slotLocked } from './research-hud';
 import { FULL_VITALS, vitalsForHud } from './vitals-hud';
 
 /**
@@ -29,7 +30,7 @@ const TOOLS: readonly HotbarSlot[] = [
 /** The hotbar always has eight slots. */
 const HOTBAR_SLOTS = 8;
 
-/** A slot the HUD may write the pool's count into. */
+/** A slot the HUD may write the pool's count into, and whether the crew has researched its material. */
 type StockSlot = { -readonly [K in keyof HotbarSlot]: HotbarSlot[K] };
 
 const RADIANS_TO_DEGREES = 180 / Math.PI;
@@ -41,7 +42,7 @@ export interface PlaceholderHud {
   setSurvival(view: SurvivalView | null): void;
   /** Takes the player's Health, Energy and status icons from these meters; null draws full bars. */
   setVitals(view: VitalsView | null): void;
-  /** Takes the crew's pool for the counts on the block slots; null shows no counts. */
+  /** Takes the crew's pool for the counts on the block slots, and its research for the padlocks and the pill; null shows neither. */
   setEconomy(view: EconomyView | null): void;
   /** Redraws the HUD from the game as it stands; `dt` seconds is how long the HUD's own timers have run. */
   update(dt: number): void;
@@ -81,6 +82,8 @@ export function createPlaceholderHud(
   const reading = createReading();
   const vitalsReading = createVitalsReading();
   const poolReading = createEconomyReading();
+  const noPool = createEconomyReading();
+  const researchPill = new ResearchPill();
 
   return {
     hud,
@@ -107,11 +110,16 @@ export function createPlaceholderHud(
       const hands = build.hudState();
       const run = survival ? survival.read(reading) : null;
       const own = vitals ? vitalsForHud(vitals.read(vitalsReading)) : FULL_VITALS;
-      // The block slots tell how much of their material the crew's pool holds.
+      // The block slots tell how much of their material the crew's pool holds, or that the crew has
+      // not researched it yet.
       const row = slotRows.get(hands.kind) ?? [];
       const pool = economy ? economy.read(poolReading) : null;
       row.forEach((slot, i) => {
-        if (i < poolReading.stock.length && slot.blueprint) slot.stock = pool?.stock[i];
+        const material = MATERIALS[i];
+        if (i < poolReading.stock.length && slot.blueprint && material) {
+          slot.stock = pool?.stock[i];
+          slot.locked = pool !== null && slotLocked(material.id, pool);
+        }
       });
       const state: PlayerHudState = {
         health: own.health,
@@ -130,14 +138,15 @@ export function createPlaceholderHud(
         clock: run ? clockForHud(run) : null,
         core: run ? coreForHud(run) : null,
         charges: run ? chargesForHud(run) : null,
+        research: researchPill.update(dt, pool ?? noPool, hands.buildMode),
         down: vitals ? downForHud(vitalsReading, run) : null,
         objective: run
           ? objectiveForRun(run)
           : { place: 'The Ashbound Outpost', title: 'Light the beacon at the crash site' },
         slots: row,
         selected: hands.selected,
-        prompt: prompts.update(dt, hands),
-        interact: interactPrompt(hands.salvage),
+        prompt: prompts.update(dt, hands, pool ? lockForPiece(hands.piece, pool) : null),
+        interact: interactPrompt(hands.salvage, hands.salvageGrade),
         crosshair: hands.crosshair,
         hitMarker: { count: hands.hits, kill: hands.kill },
         buildMode: hands.buildMode,

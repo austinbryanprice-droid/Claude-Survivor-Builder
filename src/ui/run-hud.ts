@@ -117,10 +117,14 @@ export interface HudResults {
 
 /**
  * The results of a run that is over: how long the crew held out, how it ended and what it did
- * meanwhile. Null while the run goes on. The spec's upgrades and research join the list when there
- * are any (Phase 5).
+ * meanwhile. Null while the run goes on. `research` is the points the crew earned, from the
+ * economy, or null where the screen has no economy to ask (the line is then left out). The spec's
+ * upgrades join the list when there are any (Phase 5e).
  */
-export function resultsForHud(reading: SurvivalReading): HudResults | null {
+export function resultsForHud(
+  reading: SurvivalReading,
+  research: number | null = null,
+): HudResults | null {
   if (!reading.over) return null;
   const on = phaseName(reading);
   return {
@@ -134,6 +138,7 @@ export function resultsForHud(reading: SurvivalReading): HudResults | null {
       { label: 'Machines destroyed', value: String(reading.felled) },
       { label: 'Blocks placed', value: String(reading.placed) },
       { label: 'Materials gathered', value: String(reading.gathered) },
+      ...(research === null ? [] : [{ label: 'Research earned', value: String(research) }]),
       { label: 'Respawns used', value: String(reading.revived) },
     ],
   };

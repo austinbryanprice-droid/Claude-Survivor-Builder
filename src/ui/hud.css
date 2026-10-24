@@ -491,6 +491,12 @@
   margin-top: 10px;
 }
 
+/* With the research tile there are six: two rows of three read better than six narrow columns. */
+
+.overrun-card .stats[data-tiles='6'] {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .overrun-card .button-row {
   margin-top: 20px;
 }
@@ -584,12 +590,12 @@
   color: var(--amber);
 }
 
-/* A short message after a key press, such as the new graphics preset. */
+/* A short message after a key press, such as the new graphics preset or an unlock. The clock's column of pills (Core, respawns, research) ends about 164px down at 1280 by 720, so the message starts under it. */
 
 .toast {
   position: absolute;
   z-index: 6;
-  top: 22%;
+  top: calc(22% + 24px);
   left: 50%;
   padding: 7px 16px;
   border: 1px solid var(--line);

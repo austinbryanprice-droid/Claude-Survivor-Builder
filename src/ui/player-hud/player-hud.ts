@@ -24,6 +24,8 @@ export interface HotbarSlot {
   readonly badge?: IconId;
   /** The cyan grid of a blueprint or placeable item. */
   readonly blueprint?: boolean;
+  /** Closed to the crew until it is researched: the icon is dim behind a padlock, and no count is shown. */
+  readonly locked?: boolean;
 }
 
 /** The caption above the hotbar: what is in hand and what it costs, or why a click would do nothing. */
@@ -99,6 +101,20 @@ export interface HudCharges {
   readonly tone: 'ok' | 'low' | 'empty';
 }
 
+/** The crew's research, as a pill under the respawn charges: the points earned and how far they are from the next row of the ladder. */
+export interface HudResearch {
+  /** The points the crew has earned. */
+  readonly points: number;
+  /** 0 to 1: the points as a share of the next row's, and 1 once the whole ladder is climbed. */
+  readonly fraction: number;
+  /** The words at the end of the pill: "12/20", or the points alone once there is no next row. */
+  readonly value: string;
+  /** 'full' once the whole ladder is climbed. */
+  readonly tone: 'rising' | 'full';
+  /** How many times the points have risen so far: each rise flashes the pill once. */
+  readonly gains: number;
+}
+
 /** What the screen says to a player who is down. */
 export interface HudDown {
   readonly title: string;
@@ -140,6 +156,8 @@ export interface PlayerHudState {
   readonly core?: HudCore | null;
   /** The crew's respawn charges under the Core's gauge; absent or null hides them. */
   readonly charges?: HudCharges | null;
+  /** The crew's research under the respawn charges; absent or null hides it. */
+  readonly research?: HudResearch | null;
   /** The screen of a player who is down; absent or null for a player who is up. */
   readonly down?: HudDown | null;
   readonly objective: { readonly place: string; readonly title: string } | null;
@@ -182,6 +200,7 @@ interface SlotRefs {
   readonly icon: HTMLElement;
   readonly count: HTMLElement;
   readonly badge: HTMLElement;
+  readonly lock: HTMLElement;
   readonly durability: HTMLElement;
   readonly durabilityFill: HTMLElement;
 }
@@ -221,6 +240,9 @@ export class PlayerHud {
   private readonly charges: HTMLElement;
   private readonly chargePips: HTMLElement;
   private readonly chargeValue: HTMLElement;
+  private readonly research: HTMLElement;
+  private readonly researchFill: HTMLElement;
+  private readonly researchValue: HTMLElement;
   private readonly down: HTMLElement;
   private readonly downTitle: HTMLElement;
   private readonly downDetail: HTMLElement;
@@ -257,6 +279,9 @@ export class PlayerHud {
   private lastCharges = '';
   private lastChargeCount = Number.NaN;
   private chargeHits = 0;
+  private lastResearch = '';
+  private lastResearchGains = -1;
+  private researchHits = 0;
   private lastDown = '';
   private lastObjective = '';
   private readonly lastSlots: string[] = [];
@@ -340,8 +365,24 @@ export class PlayerHud {
       this.chargePips,
       this.chargeValue,
     );
+
+    // The crew's research, a third pill in the same column: on screen while building and for a while after the points change.
+    this.research = el('div', 'ph-research');
+    this.research.hidden = true;
+    const researchIcon = el('span', 'ph-research-icon');
+    researchIcon.innerHTML = iconMarkup('research');
+    const researchTrack = el('i', 'ph-research-track');
+    this.researchFill = el('i', 'ph-research-fill');
+    researchTrack.append(this.researchFill);
+    this.researchValue = el('span', 'ph-research-value');
+    this.research.append(
+      researchIcon,
+      el('span', 'ph-research-label', 'Research'),
+      researchTrack,
+      this.researchValue,
+    );
     this.gauges = el('div', 'ph-gauges');
-    this.gauges.append(this.core, this.charges);
+    this.gauges.append(this.core, this.charges, this.research);
 
     // What a player who is down sees: the edges of the screen darken, and the Core's countdown.
     this.down = el('div', 'ph-down');
@@ -440,13 +481,16 @@ export class PlayerHud {
     root.append(el('span', 'ph-slot-key', String(index + 1)));
     const icon = el('div', 'ph-slot-icon');
     const badge = el('div', 'ph-slot-badge');
+    const lock = el('div', 'ph-slot-lock');
+    lock.hidden = true;
+    lock.innerHTML = iconMarkup('lock');
     const durability = el('div', 'ph-dur');
     const durabilityFill = el('i');
     durability.append(durabilityFill);
     const count = el('span', 'ph-count');
-    root.append(icon, badge, durability, count);
+    root.append(icon, badge, lock, durability, count);
     parent.append(root);
-    return { root, icon, count, badge, durability, durabilityFill };
+    return { root, icon, count, badge, lock, durability, durabilityFill };
   }
 
   update(state: PlayerHudState): void {
@@ -456,6 +500,7 @@ export class PlayerHud {
     this.updateClock(state);
     this.updateCore(state);
     this.updateCharges(state);
+    this.updateResearch(state);
     this.updateDown(state);
     this.updateObjective(state);
     this.updateHotbar(state);
@@ -632,6 +677,25 @@ export class PlayerHud {
     this.lastChargeCount = charges.count;
   }
 
+  private updateResearch(state: PlayerHudState): void {
+    const research = state.research ?? null;
+    const fill = research ? Math.round(clamp01(research.fraction) * 1000) / 10 : -1;
+    const key = research ? `${research.tone}|${research.value}|${fill}|${research.gains}` : '';
+    if (key === this.lastResearch) return;
+    this.lastResearch = key;
+    this.research.hidden = research === null;
+    if (!research) return;
+    this.research.dataset.tone = research.tone;
+    this.researchValue.textContent = research.value;
+    this.researchFill.style.width = `${fill}%`;
+    // Points earned flash the pill. Two animations take turns, because setting the one that is
+    // already running would not restart it. The first look is not a gain: the pill just came up.
+    if (this.lastResearchGains >= 0 && research.gains > this.lastResearchGains) {
+      this.research.dataset.hit = String(++this.researchHits % 2);
+    }
+    this.lastResearchGains = research.gains;
+  }
+
   private updateDown(state: PlayerHudState): void {
     const down = state.down ?? null;
     const key = down ? `${down.title}|${down.detail}|${down.seconds ?? ''}` : '';
@@ -659,21 +723,26 @@ export class PlayerHud {
   private updateHotbar(state: PlayerHudState): void {
     this.slots.forEach((refs, i) => {
       const slot = state.slots[i] ?? { icon: null };
+      const locked = slot.locked === true;
       const key = `${slot.icon ?? ''}|${slot.count ?? ''}|${slot.stock ?? ''}|${slot.badge ?? ''}|${
         slot.blueprint ? 1 : 0
-      }|${slot.durability === undefined ? '' : slot.durability.toFixed(2)}`;
+      }|${locked ? 1 : 0}|${slot.durability === undefined ? '' : slot.durability.toFixed(2)}`;
       if (key === this.lastSlots[i]) return;
       this.lastSlots[i] = key;
       refs.icon.innerHTML = slot.icon ? iconMarkup(slot.icon) : '';
       refs.badge.innerHTML = slot.badge ? iconMarkup(slot.badge) : '';
       // A pool's count is always told, down to none; a stack is told only when there is more than one.
-      refs.count.textContent =
-        slot.stock !== undefined
+      // A slot that is closed tells no count: the padlock is the news.
+      refs.count.textContent = locked
+        ? ''
+        : slot.stock !== undefined
           ? String(slot.stock)
           : slot.count && slot.count > 1
             ? String(slot.count)
             : '';
-      refs.count.toggleAttribute('data-none', slot.stock === 0);
+      refs.count.toggleAttribute('data-none', !locked && slot.stock === 0);
+      refs.lock.hidden = !locked;
+      refs.root.toggleAttribute('data-locked', locked);
       refs.durability.hidden = slot.durability === undefined;
       if (slot.durability !== undefined) {
         refs.durabilityFill.style.width = `${(clamp01(slot.durability) * 100).toFixed(1)}%`;
