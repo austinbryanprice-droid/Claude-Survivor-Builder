@@ -1,7 +1,7 @@
 import type { Game } from '../engine/game';
 import type { Flags } from '../shared/flags';
 import { nextQuality } from '../shared/quality';
-import { createReading, type SurvivalView } from '../shared/survival-state';
+import { createReading, type RestartKind, type SurvivalView } from '../shared/survival-state';
 import type { ViewFlags } from '../shared/view-flags';
 import type { VitalsView } from '../shared/vitals-state';
 import { createBenchPanel } from './bench-panel';
@@ -10,11 +10,22 @@ import { el } from './dom';
 import { createFrameOverlay } from './frame-overlay';
 import { createPausePanel } from './pause-panel';
 import { createPlaceholderHud } from './placeholder-hud';
-import { messageFor, runLine, type Namer } from './run-hud';
+import { messageFor, resultsForHud, runLine, type Namer } from './run-hud';
+import { createRunResults } from './run-results';
 import { saveSettings } from './settings-store';
 import { createStatusPanel } from './status-panel';
 import { createToast } from './toast';
 import './hud.css';
+
+/** Who starts the next run once this one is lost, and how: the host (or a player alone), by a choice on the results card. */
+export interface RunControls {
+  /** True where this screen makes the choice; a guest's waits for the host's. */
+  canChoose(): boolean;
+  /** The name of the player a guest waits for. */
+  hostName(): string;
+  /** Asks for the next run: the same valley again (`retry`) or another one (`new`). */
+  restart(kind: RestartKind): void;
+}
 
 export interface Hud {
   /**
@@ -22,6 +33,8 @@ export interface Hud {
    * player goes down or comes back; `nameOf` says how those messages name a player.
    */
   setSurvival(view: SurvivalView | null, nameOf?: Namer): void;
+  /** Says who may start the next run when this one is lost, so the results card can offer the choice or wait for it. */
+  setRun(controls: RunControls | null): void;
   /** Shows the player's own Health, Energy and status icons from this view; null shows full bars. */
   setVitals(view: VitalsView | null): void;
   dispose(): void;
@@ -36,8 +49,10 @@ export interface HudOptions {
 }
 
 const BANNER_INTERVAL_MS = 200;
-/** The run line on the pause card is brought up to date this often while the card is showing. */
+/** The run is read for the pause card's line and the results card this often. */
 const RUN_LINE_INTERVAL_MS = 500;
+/** A player still in the game when the run is lost keeps the mouse this long, to see it end, before the results card asks for it. */
+const RESULTS_AFTER_MS = 1500;
 /** A long frame (a hidden tab, a breakpoint) is not time passing for the HUD's timers. */
 const MAX_HUD_STEP_SECONDS = 0.1;
 
@@ -58,10 +73,20 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
   const bench = createBenchPanel(game, render);
   const status = createStatusPanel(game);
   const toast = createToast();
+  let controls: RunControls | null = null;
+  let overSince = 0;
+  const results = createRunResults((kind) => {
+    // The click is the gesture the browser wants before it hands over the mouse, so the new run
+    // opens with the player already in it. The mouse is kept for the time the run takes to start.
+    overSince = performance.now();
+    controls?.restart(kind);
+    game.input.requestLock();
+  });
   root.append(
     overlay.element,
     status.element,
     pause.element,
+    results.element,
     bench.banner,
     bench.results,
     toast.element,
@@ -75,24 +100,47 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
   let stopRunEvents: (() => void) | null = null;
   const runReading = createReading();
   let runLineText: string | null = null;
-  function refreshRunLine(): void {
-    const line = run ? runLine(run.read(runReading)) : null;
-    if (line === runLineText) return;
-    runLineText = line;
-    pause.setRun(line);
+  let over = false;
+  /**
+   * Reads the run once: the pause card's line, and the results card once the run is lost. True when
+   * the run has just been lost or started over, which changes what is on screen.
+   */
+  function refreshRun(): boolean {
+    const reading = run ? run.read(runReading) : null;
+    const lost = reading ? resultsForHud(reading) : null;
+    const line = reading && !lost ? runLine(reading) : null;
+    if (line !== runLineText) {
+      runLineText = line;
+      pause.setRun(line);
+    }
+    if (lost) {
+      results.show(lost, controls?.canChoose() ? null : (controls?.hostName() ?? 'the host'));
+    } else {
+      results.clear();
+    }
+    const changed = (lost !== null) !== over;
+    over = lost !== null;
+    if (changed && over) overSince = performance.now();
+    return changed;
   }
 
-  function render(): void {
+  /** Shows the card the screen calls for: the run being played, the pause card, the results of a lost run, or the benchmark's. */
+  function place(): void {
     const playing = game.input.locked;
     const driven = game.sweep.active;
-    bench.refresh();
-    const showResults = bench.showingResults && !playing;
-    pause.element.hidden = playing || driven || showResults;
+    const benchResults = bench.showingResults && !playing;
+    pause.element.hidden = playing || driven || benchResults || over;
+    results.element.hidden = playing || driven || benchResults || !over;
     status.element.hidden = !playing || driven;
     root.dataset.pointer = playing ? 'locked' : 'free';
     root.dataset.bench = game.sweep.state;
+  }
+
+  function render(): void {
+    bench.refresh();
+    refreshRun();
+    place();
     pause.refresh();
-    refreshRunLine();
   }
 
   const stopInput = game.input.onChange(render);
@@ -136,10 +184,13 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
       lastBanner = now;
       bench.refresh();
     }
-    if (!game.input.locked && now - lastRunLine >= RUN_LINE_INTERVAL_MS) {
+    if (now - lastRunLine >= RUN_LINE_INTERVAL_MS) {
       lastRunLine = now;
-      refreshRunLine();
+      if (refreshRun()) place();
     }
+    // A player who is still playing when the run is lost sees it end, and then the mouse is freed
+    // for the results card.
+    if (over && game.input.locked && now - overSince >= RESULTS_AFTER_MS) game.input.releaseLock();
   });
 
   render();
@@ -153,7 +204,13 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
       if (view) stopRunEvents = view.onEvent((event) => toast.show(messageFor(event, nameOf)));
       // The run takes the sky when it arrives, which the pause card's Time of day should show.
       pause.refresh();
-      refreshRunLine();
+      if (refreshRun()) place();
+    },
+    setRun(next) {
+      controls = next;
+      // The card is drawn for whoever chooses, which may just have changed.
+      results.clear();
+      if (refreshRun()) place();
     },
     setVitals(view) {
       playerHud.setVitals(view);
