@@ -13,6 +13,7 @@ import {
   type BufferGeometry,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { MATERIAL } from '../shared/blocks';
 import type { DebrisView } from '../shared/economy';
 import { createRng } from '../shared/hash';
 import { NET } from '../shared/net-config';
@@ -33,6 +34,12 @@ import type { MaterialRegistry } from './materials';
  * left falls below its mark, so the top of a heap goes first and the last strip takes the rest. All of
  * that, and the rise out of the ground when a dawn uncovers a heap and the sink back into it when the
  * last strip is taken, is worked out in the vertex shader from a few numbers per heap.
+ *
+ * A heap is of a grade, the material its strips give: Scrap is the patchwork of rust, chipped paint and
+ * rivets, Reinforced Composite is layered grey-green panels with a cyan strip down each and a cyan
+ * lamp on the mast, and Advanced Alloy is brushed dark steel inlaid with amber and a white lamp. The
+ * model is the same; the grade changes how its plates are dressed and the color of the lamp, so that
+ * a better heap can be told from across the valley and from close by.
  *
  * What a heap shows comes from the view the network layer keeps (`DebrisView`); this only dresses it.
  * What it keeps per heap is what the picture needs and the host does not say: the eased share left,
@@ -84,6 +91,7 @@ const VERTEX_ATTRIBUTES = /* glsl */ `
 attribute vec3 iPos;
 attribute vec4 iData;   // yaw, size, share of strips left (as shown), how far up out of the ground
 attribute vec4 iState;  // flash, aimed, which dressing, a number of its own
+attribute float iGrade; // 0 Scrap, 1 Composite, 2 Alloy
 attribute vec4 aPart;   // look, share at which it goes, dressing it belongs to (0: all), a number of its own
 attribute vec3 aCenter; // the middle of the piece, in the model's own space
 `;
@@ -129,6 +137,7 @@ varying float vLook;
 varying float vPhase;
 varying float vFlash;
 varying float vAimed;
+varying float vGrade;
 
 void main() {
   vec3 wp;
@@ -145,6 +154,7 @@ void main() {
   vPhase = aPart.w + iState.w * 11.0;
   vFlash = iState.x;
   vAimed = iState.y;
+  vGrade = iGrade;
   writeShadowVaryings(wp, wn, vViewDepth);
 }
 `;
@@ -168,6 +178,15 @@ uniform vec3 uLampGlow;
 uniform vec3 uBeaconGlow;
 uniform vec3 uGlass;
 uniform vec3 uScreenGlow;
+uniform vec3 uLamLight;
+uniform vec3 uLamDark;
+uniform vec3 uStrip;
+uniform vec3 uLampCyan;
+uniform vec3 uAlloy;
+uniform vec3 uAlloyBright;
+uniform vec3 uInlay;
+uniform vec3 uInlayGlow;
+uniform vec3 uLampWhite;
 
 varying vec3 vWorld;
 varying vec3 vNormal;
@@ -178,6 +197,7 @@ varying float vLook;
 varying float vPhase;
 varying float vFlash;
 varying float vAimed;
+varying float vGrade;
 
 float vnoise(vec3 p) {
   vec3 i = floor(p);
@@ -202,7 +222,7 @@ vec2 faceUv(vec3 q, vec3 n) {
 }
 
 // The base color of a look at a point of the model, the light it gives off, and x: gloss, y: metalness.
-void surface(float look, vec3 q, vec3 mn, float t, float phase, out vec3 base, out vec3 glow, out vec2 finish) {
+void surface(float look, float grade, vec3 q, vec3 mn, float t, float phase, out vec3 base, out vec3 glow, out vec2 finish) {
   glow = vec3(0.0);
   float wear = vnoise(q * 3.3 + phase);
   float grit = vnoise(q * 13.0 + phase * 2.0);
@@ -216,26 +236,58 @@ void surface(float look, vec3 q, vec3 mn, float t, float phase, out vec3 base, o
     vec2 f = fract(uv);
     float pick = hash13s(vec3(cell, floor(phase)));
     if (look > 0.5) pick = pick * 0.45;
-    vec3 plate;
-    if (pick < 0.3) plate = uPaint;
-    else if (pick < 0.46) plate = mix(uPaint, uPaintDark, 0.5);
-    else if (pick < 0.72) plate = uRust;
-    else if (pick < 0.88) plate = uPrimer;
-    else plate = uRustDark;
-    // Rust blooms through the paint where the plate is worn, and the primer shows in the chips.
-    float chip = smoothstep(0.52, 0.62, wear + grit * 0.25);
-    plate = mix(plate, uRust, chip * (pick < 0.46 ? 0.85 : 0.35));
-    plate = mix(plate, uRustDark, smoothstep(0.55, 0.9, grit) * 0.5);
-    float seam = 1.0 - smoothstep(0.0, 0.05, min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y)));
-    plate *= 1.0 - 0.55 * seam;
+    float edge = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
+    float seam = 1.0 - smoothstep(0.0, 0.05, edge);
     vec2 corner = vec2(0.5) - abs(f - 0.5);
     float rivet = smoothstep(0.075, 0.05, length(corner - vec2(0.1))) * near;
-    plate = mix(plate, uPrimer * 1.25, rivet * 0.8);
+    vec3 plate;
+    if (grade < 0.5) {
+      if (pick < 0.3) plate = uPaint;
+      else if (pick < 0.46) plate = mix(uPaint, uPaintDark, 0.5);
+      else if (pick < 0.72) plate = uRust;
+      else if (pick < 0.88) plate = uPrimer;
+      else plate = uRustDark;
+      // Rust blooms through the paint where the plate is worn, and the primer shows in the chips.
+      float chip = smoothstep(0.52, 0.62, wear + grit * 0.25);
+      plate = mix(plate, uRust, chip * (pick < 0.46 ? 0.85 : 0.35));
+      plate = mix(plate, uRustDark, smoothstep(0.55, 0.9, grit) * 0.5);
+      plate *= 1.0 - 0.55 * seam;
+      plate = mix(plate, uPrimer * 1.25, rivet * 0.8);
+      finish = vec2(0.28, 0.35);
+    } else if (grade < 1.5) {
+      // Reinforced Composite: layered grey-green panels, dark where the layers part, and a cyan strip
+      // down the side of most panels that still has power in it.
+      float layers = smoothstep(0.4, 0.5, abs(fract(uv.y * 3.0 + pick) - 0.5));
+      plate = mix(uLamDark, uLamLight, clamp(pick + wear * 0.4 - 0.2, 0.0, 1.0));
+      plate *= 1.0 - 0.3 * layers;
+      plate = mix(plate, uLamDark, smoothstep(0.55, 0.9, grit) * 0.4);
+      plate *= 1.0 - 0.5 * seam;
+      plate = mix(plate, uLamLight * 1.2, rivet * 0.5);
+      float lit = step(0.3, hash13s(vec3(cell, 7.0))) * smoothstep(0.3, 0.45, wear + 0.15);
+      float strip = smoothstep(0.045, 0.025, abs(f.x - 0.16)) * smoothstep(0.04, 0.08, f.y) * smoothstep(0.04, 0.08, 1.0 - f.y);
+      glow = uStrip * strip * lit * (0.8 + 0.2 * sin(t * 1.7 + phase * 3.0));
+      plate = mix(plate, uStrip * 0.25, strip * lit);
+      finish = vec2(0.42, 0.3);
+    } else {
+      // Advanced Alloy: dark steel brushed in one direction, with an amber inlay running round each
+      // panel just inside its edge.
+      vec2 face = faceUv(q, mn);
+      float brushed = vnoise(vec3(face.x * 1.6, face.y * 60.0, phase));
+      plate = mix(uAlloy, uAlloyBright, brushed * 0.4 + wear * 0.15);
+      plate = mix(plate, uAlloy * 0.55, smoothstep(0.6, 0.95, grit) * 0.5);
+      plate *= 1.0 - 0.6 * seam;
+      float inlay = smoothstep(0.016, 0.006, abs(edge - 0.11));
+      plate = mix(plate, uInlay, inlay);
+      plate = mix(plate, uAlloyBright * 1.1, rivet * 0.7);
+      glow = uInlayGlow * inlay * near;
+      finish = vec2(0.58, 0.85);
+    }
     base = plate;
-    finish = vec2(0.28, 0.35);
   } else if (look < 2.5) {
-    // Dark steel, bright where it has been scraped.
+    // Dark steel, bright where it has been scraped. The frame of a better heap takes some of its tint.
     base = mix(uSteel, uSteelWorn, smoothstep(0.6, 0.9, grit) * 0.5 + smoothstep(0.75, 1.0, wear) * 0.2);
+    if (grade > 0.5 && grade < 1.5) base = mix(base, uLamLight, 0.3);
+    else if (grade > 1.5) base = mix(base * 0.8, uAlloyBright, 0.12);
     finish = vec2(0.5, 0.75);
   } else if (look < 3.5) {
     // Scorched rubble, with embers that have not gone out.
@@ -250,9 +302,11 @@ void surface(float look, vec3 q, vec3 mn, float t, float phase, out vec3 base, o
     base = mix(paint, uRustDark, smoothstep(0.5, 0.75, wear) * 0.7);
     finish = vec2(0.35, 0.3);
   } else if (look < 5.5) {
-    // The mast's lamp: an amber glow that breathes.
-    base = uHazard * 0.5;
-    glow = uLampGlow * (0.65 + 0.35 * sin(t * 2.4 + phase));
+    // The mast's lamp: an amber glow that breathes, cyan on Composite and white on Alloy. The housing
+    // of a better lamp is dark steel, so that the hazard yellow does not tint its glow back to white.
+    base = grade < 0.5 ? uHazard * 0.5 : uSteel * 0.5;
+    vec3 lamp = grade < 0.5 ? uLampGlow : (grade < 1.5 ? uLampCyan : uLampWhite);
+    glow = lamp * (0.65 + 0.35 * sin(t * 2.4 + phase));
     finish = vec2(0.6, 0.2);
   } else if (look < 6.5) {
     // A beacon that blinks cyan: the station's, still talking to nobody.
@@ -282,7 +336,7 @@ void main() {
   vec3 base;
   vec3 glow;
   vec2 finish;
-  surface(vLook, vModel, normalize(vModelNormal), t, vPhase, base, glow, finish);
+  surface(vLook, vGrade, vModel, normalize(vModelNormal), t, vPhase, base, glow, finish);
   float gloss = finish.x;
   float metal = finish.y;
   vec3 albedo = base * (1.0 - 0.6 * metal);
@@ -294,7 +348,12 @@ void main() {
   // The foot of a heap is darker where it meets the ground.
   float ground = mix(0.55, 1.0, smoothstep(0.0, 0.7, vModel.y));
 
-  vec3 lit = albedo * (uKeyColor * diff * shadow + ambientLight(N)) * ground
+  // A better grade is taken less warm by the low orange sun, as the blocks of its material are
+  // (structure-material.ts): grey-green Composite does not go olive and dark steel does not go to wood.
+  // Scrap keeps the sun's full color, which its rust is made to catch.
+  float keyLuma = dot(uKeyColor, vec3(0.2126, 0.7152, 0.0722));
+  vec3 keyDiffuse = mix(uKeyColor, vec3(keyLuma), step(0.5, vGrade) * (0.3 + 0.45 * metal));
+  vec3 lit = albedo * (keyDiffuse * diff * shadow + ambientLight(N)) * ground
            + uKeyColor * specColor * shine * shadow
            + uAmbSky * rim * 0.18 * (0.4 + 0.6 * metal)
            + glow;
@@ -546,6 +605,8 @@ export interface DebrisShown {
   z: number;
   /** Strips it has left, as the view says. */
   left: number;
+  /** The material its strips give: the grade it is dressed in. */
+  grade: number;
   /** The share of its strips left as the picture shows it, easing toward the real share. */
   share: number;
   /** 0 buried and 1 standing, in between while it rises or sinks. */
@@ -605,13 +666,16 @@ export function createDebrisRenderer({
   const positions = new Float32Array(capacity * 3);
   const datas = new Float32Array(capacity * 4);
   const states = new Float32Array(capacity * 4);
+  const grades = new Float32Array(capacity);
   const pos = new InstancedBufferAttribute(positions, 3);
   const data = new InstancedBufferAttribute(datas, 4);
   const state = new InstancedBufferAttribute(states, 4);
-  for (const attribute of [pos, data, state]) attribute.setUsage(DynamicDrawUsage);
+  const grade = new InstancedBufferAttribute(grades, 1);
+  for (const attribute of [pos, data, state, grade]) attribute.setUsage(DynamicDrawUsage);
   geometry.setAttribute('iPos', pos);
   geometry.setAttribute('iData', data);
   geometry.setAttribute('iState', state);
+  geometry.setAttribute('iGrade', grade);
   geometry.instanceCount = 0;
 
   const glow = (hex: string, strength: number): Color => new Color(hex).multiplyScalar(strength);
@@ -634,6 +698,17 @@ export function createDebrisRenderer({
       uBeaconGlow: { value: glow('#3ad1e0', 2.8) },
       uGlass: { value: new Color('#071a1f') },
       uScreenGlow: { value: glow('#3ad1e0', 1.1) },
+      uLamLight: { value: new Color('#5b7468') },
+      uLamDark: { value: new Color('#33433b') },
+      uStrip: { value: glow('#3ad1e0', 1.4) },
+      // Saturated and not too bright: the bloom and the tone mapper take a lamp like the beacon's, with its
+      // red channel up, to white, and the cyan lamp has to read as cyan from across the valley.
+      uLampCyan: { value: glow('#10c4ee', 2.4) },
+      uAlloy: { value: new Color('#2b323a') },
+      uAlloyBright: { value: new Color('#6b7783') },
+      uInlay: { value: new Color('#c98a28') },
+      uInlayGlow: { value: glow('#f2a43a', 0.5) },
+      uLampWhite: { value: glow('#ffe6b0', 3.2) },
     },
   });
   const depth = new ShaderMaterial({ vertexShader: DEPTH_VERTEX, fragmentShader: DEPTH_FRAGMENT });
@@ -755,6 +830,7 @@ export function createDebrisRenderer({
         states[written * 4 + 1] = track.aimed;
         states[written * 4 + 2] = 1 + (node.index % VARIANTS);
         states[written * 4 + 3] = (node.index * 0.618034) % 1;
+        grades[written] = Math.max(0, node.grade - MATERIAL.scrap);
         indexes[written] = node.index;
         written++;
       }
@@ -765,6 +841,7 @@ export function createDebrisRenderer({
       pos.needsUpdate = true;
       data.needsUpdate = true;
       state.needsUpdate = true;
+      grade.needsUpdate = true;
     },
 
     setAimed(index) {
@@ -783,6 +860,7 @@ export function createDebrisRenderer({
           y: positions[i * 3 + 1] as number,
           z: positions[i * 3 + 2] as number,
           left: track.left,
+          grade: (grades[i] as number) + MATERIAL.scrap,
           share: track.share,
           presence: track.presence,
           flash: track.flash,

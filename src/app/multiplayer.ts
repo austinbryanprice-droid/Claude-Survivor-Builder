@@ -109,9 +109,14 @@ export interface MultiplayerDebug {
     x: number;
     y: number;
     z: number;
+    /** The way it lies (radians) and how big it is drawn (a multiple of its model). */
+    yaw: number;
+    scale: number;
     harvests: number;
     left: number;
     from: number;
+    /** The material its strips give. */
+    grade: number;
   }[];
   /** The heaps drawn now: how far up out of the ground each is, the share of its strips shown, the flash of a strip and the glow of the cursor. */
   heapsShown(): DebrisShown[];
@@ -352,9 +357,12 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
         x: node.x,
         y: node.y,
         z: node.z,
+        yaw: node.yaw,
+        scale: node.scale,
         harvests: node.harvests,
         left: hub.economy.debris.leftOf(node.index),
         from: node.from,
+        grade: node.grade,
       })),
     heapsShown: () => debris.list(),
     pool: () => {
