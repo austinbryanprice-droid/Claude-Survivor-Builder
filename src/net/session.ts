@@ -1,4 +1,5 @@
 import type { BlockWorld } from '../shared/block-world';
+import type { EconomyView } from '../shared/economy';
 import type { EnemyPose } from '../shared/enemy-state';
 import type { Vec3 } from '../shared/look';
 import type {
@@ -98,6 +99,12 @@ export interface GameSession {
    * guest reads a mirror of what the host last told it.
    */
   readonly vitals: VitalsView;
+
+  /**
+   * The crew's shared pool of materials and the heaps of debris that fill it, as this peer sees
+   * them: the host reads its simulation, a guest a mirror of what the host last told it.
+   */
+  readonly economy: EconomyView;
 
   /**
    * Which run this is: 1 for the first, one more each time the host starts over after a loss. A

@@ -16,12 +16,14 @@ import {
   BLASTER_NAME,
   BUILD_KEYS,
   BuildPromptTracker,
+  INTERACT_KEY,
   NAME_SECONDS,
   blockIcon,
   blockSlot,
   blockSlots,
   blockSlotsByKind,
   costText,
+  interactPrompt,
   refusalText,
   type BuildHudInput,
 } from '../../src/ui/build-hud';
@@ -42,6 +44,7 @@ function hands(overrides: Partial<BuildHudInput> = {}): BuildHudInput {
     blaster: false,
     hits: 0,
     kill: false,
+    salvage: 0,
     ...overrides,
   };
 }
@@ -142,6 +145,29 @@ describe('the keys of Build Mode', () => {
     // The shape key and the turn key are listed.
     expect(keys).toEqual(expect.arrayContaining(['Q', 'R']));
     expect(BUILD_KEYS.every((row) => row.label.length > 0)).toBe(true);
+  });
+});
+
+describe('the prompt under the crosshair', () => {
+  it('names the key, what it does and how many strips the heap has left', () => {
+    expect(interactPrompt(3)).toEqual({
+      key: INTERACT_KEY,
+      label: 'Strip debris',
+      detail: '3 strips left',
+    });
+    expect(interactPrompt(2)?.detail).toBe('2 strips left');
+    expect(interactPrompt(1)?.detail).toBe('last strip');
+  });
+
+  it('is nothing when the cursor is on no heap', () => {
+    expect(interactPrompt(0)).toBeNull();
+    expect(interactPrompt(-1)).toBeNull();
+    expect(interactPrompt(Number.NaN)).toBeNull();
+  });
+
+  it('is in the key list of Build Mode, and the key is the one the game listens for', () => {
+    expect(INTERACT_KEY).toBe('E');
+    expect(BUILD_KEYS).toContainEqual({ keys: ['E'], label: 'Strip debris' });
   });
 });
 

@@ -5,6 +5,7 @@ import {
   createEnemyState,
   type EnemyState,
 } from './enemy-state';
+import { POOL_SLOTS } from './economy';
 import { PITCH_LIMIT, wrapAngle } from './look';
 import { cleanName, isToken } from './names';
 import { NET } from './net-config';
@@ -84,6 +85,7 @@ function readCommand(raw: unknown): BlockCommand | null {
     return null;
   }
   if (raw.type === 'break') return { type: 'break', x, y, z };
+  if (raw.type === 'harvest') return { type: 'harvest', x, y, z };
   if (raw.type === 'place' && isInt(raw.state, 1, MAX_U16)) {
     return { type: 'place', x, y, z, state: raw.state };
   }
@@ -140,6 +142,21 @@ function readSurvivalEvent(raw: unknown): SurvivalEvent | null {
       if (!isInt(raw.p, 1, MAX_U16) || !isInt(raw.c, 0, MAX_U16)) return null;
       return { k: 'back', n: raw.n, p: raw.p, c: raw.c };
   }
+}
+
+/** The most strips one heap can carry on the wire: a byte's worth, far more than the table asks for. */
+const DEBRIS_MAX_LEFT = 255;
+
+/** One heap of the list: `[x, y, z, yaw, scale, harvests, grade, from, left]`, every number checked. */
+function readDebris(raw: unknown): number[] | null {
+  if (!Array.isArray(raw) || raw.length !== 9) return null;
+  const [x, y, z, yaw, scale, harvests, grade, from, left] = raw as unknown[];
+  const limit = NET.move.limit;
+  if (!isNum(x, limit) || !isNum(y, limit) || !isNum(z, limit)) return null;
+  if (!isNum(yaw, 100) || !isNum(scale, 100) || scale <= 0) return null;
+  if (!isInt(harvests, 1, DEBRIS_MAX_LEFT) || !isInt(grade, 1, POOL_SLOTS)) return null;
+  if (!isInt(from, 0, MAX_U16) || !isInt(left, 0, harvests)) return null;
+  return [x, y, z, yaw, scale, harvests, grade, from, left];
 }
 
 function readPlayerWire(raw: unknown): PlayerWire | null {
@@ -295,9 +312,14 @@ export function decodeHostFrame(text: string): HostFrame | null {
       if (!Array.isArray(raw.rc) || raw.rc.length !== 2) return null;
       const [charges, chargeMax] = raw.rc as unknown[];
       if (!isInt(chargeMax, 0, MAX_U16) || !isInt(charges, 0, chargeMax)) return null;
-      if (!Array.isArray(raw.st) || raw.st.length !== 3) return null;
-      const [felled, placed, revived] = raw.st as unknown[];
-      if (!isInt(felled, 0, MAX_U31) || !isInt(placed, 0, MAX_U31) || !isInt(revived, 0, MAX_U31)) {
+      if (!Array.isArray(raw.st) || raw.st.length !== 4) return null;
+      const [felled, placed, revived, gathered] = raw.st as unknown[];
+      if (
+        !isInt(felled, 0, MAX_U31) ||
+        !isInt(placed, 0, MAX_U31) ||
+        !isInt(revived, 0, MAX_U31) ||
+        !isInt(gathered, 0, MAX_U31)
+      ) {
         return null;
       }
       // A run that has ended says why; one that has not says nothing.
@@ -310,7 +332,7 @@ export function decodeHostFrame(text: string): HostFrame | null {
         core: [health, max] as const,
         over: raw.over,
         rc: [charges, chargeMax] as const,
-        st: [felled, placed, revived] as const,
+        st: [felled, placed, revived, gathered] as const,
       };
       return why ? { ...frame, why } : frame;
     }
@@ -340,6 +362,39 @@ export function decodeHostFrame(text: string): HostFrame | null {
       const event = readSurvivalEvent(raw.e);
       return event ? { t: 'se', e: event } : null;
     }
+    case 'ec': {
+      if (!Array.isArray(raw.pl) || raw.pl.length !== POOL_SLOTS || !isInt(raw.cap, 0, MAX_U31)) {
+        return null;
+      }
+      const stock: number[] = [];
+      for (const amount of raw.pl as unknown[]) {
+        if (!isInt(amount, 0, MAX_U31)) return null;
+        stock.push(amount);
+      }
+      return { t: 'ec', pl: stock, cap: raw.cap };
+    }
+    case 'nl': {
+      if (!Array.isArray(raw.n) || raw.n.length > NET.maxDebris) return null;
+      const heaps: number[][] = [];
+      for (const entry of raw.n as unknown[]) {
+        const heap = readDebris(entry);
+        if (!heap) return null;
+        heaps.push(heap);
+      }
+      return { t: 'nl', n: heaps };
+    }
+    case 'hd':
+      if (
+        !isInt(raw.p, 1, MAX_U16) ||
+        !isInt(raw.i, 0, NET.maxDebris - 1) ||
+        !isInt(raw.m, 1, POOL_SLOTS) ||
+        !isInt(raw.g, 0, MAX_U31) ||
+        !isInt(raw.l, 0, DEBRIS_MAX_LEFT) ||
+        typeof raw.f !== 'boolean'
+      ) {
+        return null;
+      }
+      return { t: 'hd', p: raw.p, i: raw.i, m: raw.m, g: raw.g, l: raw.l, f: raw.f };
     case 'vt': {
       if (typeof raw.chg !== 'boolean') return null;
       if (!Array.isArray(raw.hp) || raw.hp.length !== 2) return null;

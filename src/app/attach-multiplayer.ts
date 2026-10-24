@@ -27,6 +27,8 @@ export interface AttachOptions {
   navigation(): NavWorld | null;
   /** What stops a bolt of the pulse blaster in the world being played now (its blocks, its ground and the Core), or null where there is none. */
   rayWorld(): RayWorld | null;
+  /** The heap of debris the player's cursor is on, by its place in the run's list, or -1. */
+  aimedDebris(): number;
   flags: NetFlags;
   buildId: string;
   /** Begin the run at the start of this night (the `?night=` switch), or at the first morning when null. */
@@ -50,6 +52,7 @@ export function attachMultiplayer({
   outpost,
   navigation,
   rayWorld,
+  aimedDebris,
   flags,
   buildId,
   night,
@@ -102,6 +105,7 @@ export function attachMultiplayer({
     },
     groundAt: (x, z) => game.world.groundAt(x, z),
     rayWorld,
+    aimedDebris,
     scene: game.stage.world,
     registry: game.stage.registry,
     input: game.input,

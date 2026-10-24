@@ -22,8 +22,10 @@ export type BlockCommand =
       readonly z: number;
       readonly state: CellState;
     }
-  | { readonly type: 'break'; readonly x: number; readonly y: number; readonly z: number };
-// Phase 5 adds { type: 'upgrade'; x; y; z }.
+  | { readonly type: 'break'; readonly x: number; readonly y: number; readonly z: number }
+  /** Strip the heap of debris whose middle is in this cell (Phase 5a); it changes the pool and the heap, not a block. */
+  | { readonly type: 'harvest'; readonly x: number; readonly y: number; readonly z: number };
+// Phase 5d adds { type: 'upgrade'; x; y; z }.
 
 /** What happened to the world. State based and idempotent: place, break (state 0) and upgrade are all `set`. */
 export interface BlockSetEvent {
@@ -176,7 +178,7 @@ export type HostFrame =
    * Where the run stands: the host's step count (20 a second), whether the clock is running, the
    * Outpost Core's health and full health in whole points, whether the run has ended and why, the
    * crew's respawn charges and the most it can hold, and what the run has come to (machines felled,
-   * blocks placed, charges spent), which the results screen shows once the run is over. Sent about
+   * blocks placed, charges spent, materials gathered), which the results screen shows once the run is over. Sent about
    * twice a second while the clock runs, whenever it stops or starts, within a fifth of a second of
    * the Core's health changing, whenever an event is announced, and to every newcomer, so a guest
    * can show the time, the Core and the charges and move the sky between frames.
@@ -190,7 +192,7 @@ export type HostFrame =
       /** What ended the run; present once it has ended. */
       readonly why?: OverrunCause;
       readonly rc: readonly [charges: number, max: number];
-      readonly st: readonly [felled: number, placed: number, revived: number];
+      readonly st: readonly [felled: number, placed: number, revived: number, gathered: number];
     }
   /**
    * The host started the run over (Retry or New Run): build the valley for `seed` with nothing on
@@ -208,6 +210,29 @@ export type HostFrame =
     }
   /** Something the survival loop announces as it happens (nightfall, a wave, dawn, a player down or back, the run ending). */
   | { readonly t: 'se'; readonly e: SurvivalEvent }
+  /**
+   * What the crew's shared pool holds: the count of each material in tier order (`pl`) and the
+   * most it holds of any one (`cap`). Sent within a fifth of a second of a change and to every
+   * newcomer.
+   */
+  | { readonly t: 'ec'; readonly pl: readonly number[]; readonly cap: number }
+  /**
+   * The run's heaps of debris, all of them, in list order (the index is the name of a heap):
+   * `[x, y, z, yaw, scale, harvests, grade, from, left]`, where `left` is how many strips it has
+   * now (0 for one that is gone or not uncovered yet). Sent to every newcomer, at each dawn (which
+   * uncovers some) and when a run starts over.
+   */
+  | { readonly t: 'nl'; readonly n: readonly (readonly number[])[] }
+  /** Player `p` stripped heap `i`: `g` went into the pool as material `m` (less than offered when `f` says the pool was full) and `l` strips are left. */
+  | {
+      readonly t: 'hd';
+      readonly p: PlayerId;
+      readonly i: number;
+      readonly m: number;
+      readonly g: number;
+      readonly l: number;
+      readonly f: boolean;
+    }
   /**
    * This guest's own Health and Energy in whole points (`[points, full]`), whether it stands in
    * the Core's charge field, the whole seconds until the Core brings it back if it is down (`rt`;

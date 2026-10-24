@@ -60,6 +60,8 @@ export interface SurvivalReading {
   placed: number;
   /** Respawn charges the Core has spent bringing players back this run. */
   revived: number;
+  /** Materials the crew has gathered this run, all kinds together. Counted until the run is over, then final. */
+  gathered: number;
 }
 
 export function createReading(): SurvivalReading {
@@ -80,6 +82,7 @@ export function createReading(): SurvivalReading {
     felled: 0,
     placed: 0,
     revived: 0,
+    gathered: 0,
   };
 }
 

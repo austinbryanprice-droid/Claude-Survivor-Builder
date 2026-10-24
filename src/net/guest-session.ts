@@ -1,4 +1,5 @@
 import { ClockSync } from '../shared/clock-sync';
+import type { EconomyView } from '../shared/economy';
 import type { EnemyPose } from '../shared/enemy-state';
 import { RemoteTrack, createPoseOut } from '../shared/interpolation';
 import type { Vec3 } from '../shared/look';
@@ -30,6 +31,7 @@ import {
 } from '../shared/wire';
 import type { SurvivalView } from '../shared/survival-state';
 import type { VitalsView } from '../shared/vitals-state';
+import { EconomyMirror } from './economy-sync';
 import { Emitter } from './emitter';
 import { EnemyMirror } from './enemy-mirror';
 import type { Scheduler } from './scheduler';
@@ -95,6 +97,7 @@ export class GuestSession implements GameSession {
   private readonly transport: Transport;
   private readonly mirror: SurvivalMirror;
   private readonly vitalsMirror = new VitalsMirror();
+  private readonly economyMirror = new EconomyMirror();
   private readonly enemyMirror = new EnemyMirror();
 
   private phaseValue: SessionPhase = 'connecting';
@@ -194,6 +197,9 @@ export class GuestSession implements GameSession {
   }
   get vitals(): VitalsView {
     return this.vitalsMirror;
+  }
+  get economy(): EconomyView {
+    return this.economyMirror;
   }
   get run(): number {
     return this.runValue;
@@ -492,10 +498,32 @@ export class GuestSession implements GameSession {
           frame.st[0],
           frame.st[1],
           frame.st[2],
+          frame.st[3],
         );
         break;
       case 'run':
+        // The frames that follow are the new run's economy: the old one goes now, once, even if the
+        // restart itself has to wait for the first world to finish building.
+        if (frame.n > Math.max(this.runValue, this.runLoading, this.deferredRun?.n ?? 0)) {
+          this.economyMirror.reset();
+        }
         this.onRunFrame(frame);
+        break;
+      case 'ec':
+        this.economyMirror.applyPool(frame.pl, frame.cap);
+        break;
+      case 'nl':
+        this.economyMirror.debris.setList(frame.n);
+        break;
+      case 'hd':
+        this.economyMirror.debris.strip({
+          by: frame.p,
+          node: frame.i,
+          material: frame.m,
+          gained: frame.g,
+          left: frame.l,
+          full: frame.f,
+        });
         break;
       case 'se':
         this.mirror.announce(frame.e);

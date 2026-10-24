@@ -1,5 +1,6 @@
 import type { BlockWorld } from '../shared/block-world';
 import { ClockSync } from '../shared/clock-sync';
+import type { EconomyView } from '../shared/economy';
 import { createEnemyState, type EnemyPose, type EnemyState } from '../shared/enemy-state';
 import { RemoteTrack, createPoseOut } from '../shared/interpolation';
 import type { Vec3 } from '../shared/look';
@@ -43,8 +44,10 @@ import {
   seqNewer,
   type RelayEntry,
 } from '../shared/wire';
+import { DEBRIS } from '../systems/economy/balance';
 import type { NavCell } from '../systems/survival/nav';
 import { createShotOutcome, type SurvivalSim } from '../systems/survival/sim';
+import { HostEconomyReport } from './economy-sync';
 import { Emitter } from './emitter';
 import { EnemyMirror } from './enemy-mirror';
 import type { Scheduler } from './scheduler';
@@ -70,6 +73,10 @@ export const REFUSAL = {
   body: 'a player is in the way',
   failed: 'could not change that block',
   down: 'you are down',
+  over: 'the run is over',
+  nothing: 'nothing to salvage there',
+  depleted: 'nothing left there',
+  poolFull: 'the pool is full',
 } as const;
 
 export interface HostSessionOptions {
@@ -115,6 +122,8 @@ interface Member {
   vitalsSent: VitalsSent | null;
   /** When that word was sent, on the host's clock. */
   vitalsAt: number;
+  /** When this player last stripped a heap of debris, on the host's clock. */
+  harvestAt: number;
 }
 
 /** The part of a guest's meters that is news when it changes: whole points, the charge field, and the two countdowns. */
@@ -222,6 +231,8 @@ export class HostSession implements GameSession {
   private restarting = false;
   private readonly survivalView: SurvivalView;
   private readonly vitalsView: VitalsView;
+  /** What the guests are told of the economy of the run being played now, and what the host's screen reads of it. */
+  private readonly economyReport = new HostEconomyReport(() => this.sim?.economy ?? null);
   /** Scratch space for reading a guest's meters without allocating every tick. */
   private readonly vitalsScratch: VitalsReading = createVitalsReading();
   private localActive = false;
@@ -336,6 +347,9 @@ export class HostSession implements GameSession {
   }
   get vitals(): VitalsView {
     return this.vitalsView;
+  }
+  get economy(): EconomyView {
+    return this.economyReport.view;
   }
   get run(): number {
     return this.runValue;
@@ -656,6 +670,7 @@ export class HostSession implements GameSession {
     if (this.sim) {
       this.sendTo(member, this.survivalFrame());
       this.sendVitals(member, now);
+      for (const frame of this.economyReport.hello()) this.sendTo(member, frame);
     }
 
     const joined = encodeFrame({ t: 'join', p: { id, slot, name } });
@@ -699,6 +714,7 @@ export class HostSession implements GameSession {
       editAt: now,
       vitalsSent: null,
       vitalsAt: now,
+      harvestAt: -Infinity,
     };
   }
 
@@ -848,6 +864,7 @@ export class HostSession implements GameSession {
     this.survivalAt = now;
     this.survivalRunning = false;
     this.survivalDirty = true;
+    this.economyReport.reset();
     this.coreSent = -1;
     this.lastSurvivalSend = -Infinity;
     this.enemyMirror.clear();
@@ -897,6 +914,10 @@ export class HostSession implements GameSession {
       } else if (!member.link) {
         this.rejections.emit({ command, reason: refusal });
       }
+      return;
+    }
+    if (command.type === 'harvest') {
+      this.runHarvest(member, commandId, command);
       return;
     }
     const state = command.type === 'place' ? command.state : 0;
@@ -951,6 +972,8 @@ export class HostSession implements GameSession {
       if (dx * dx + dy * dy + dz * dz > reach * reach) return REFUSAL.reach;
     }
 
+    if (command.type === 'harvest') return this.harvestRefusal(member, command);
+
     const world: BlockWorld = this.binding.current();
     if (command.type === 'place') {
       const reason = world.checkPlace(command.x, command.y, command.z, command.state);
@@ -963,6 +986,57 @@ export class HostSession implements GameSession {
       return null;
     }
     return world.checkBreak(command.x, command.y, command.z);
+  }
+
+  // --------------------------------------------------------------------------------------------
+  // Salvage.
+  // --------------------------------------------------------------------------------------------
+
+  /** Why player `member` cannot strip the heap in the cell right now, or null when they can. */
+  private harvestRefusal(
+    member: Member,
+    command: Extract<BlockCommand, { type: 'harvest' }>,
+  ): string | null {
+    const economy = this.sim?.economy;
+    if (!this.sim || !economy) return REFUSAL.nothing;
+    if (this.sim.over) return REFUSAL.over;
+    const node = economy.nodeAt(command.x, command.y, command.z);
+    if (!node) return REFUSAL.nothing;
+    if (economy.leftOf(node.index) <= 0) return REFUSAL.depleted;
+    const sample = member.sample;
+    if (sample) {
+      const dx = node.x - sample.x;
+      const dy = node.y + DEBRIS.lift - (sample.y + PLAYER.eyeHeight);
+      const dz = node.z - sample.z;
+      const reach = DEBRIS.reach + NET.editReachSlack;
+      if (dx * dx + dy * dy + dz * dz > reach * reach) return REFUSAL.reach;
+    }
+    const now = this.scheduler.now();
+    if (now - member.harvestAt < DEBRIS.cooldown * 1000) return REFUSAL.rate;
+    return null;
+  }
+
+  /** Strips the heap a checked command names: the strip goes into the pool and everyone is told. */
+  private runHarvest(
+    member: Member,
+    commandId: number | null,
+    command: Extract<BlockCommand, { type: 'harvest' }>,
+  ): void {
+    const economy = this.sim?.economy;
+    const node = economy?.nodeAt(command.x, command.y, command.z);
+    const result = economy && node ? economy.harvest(node.index, member.id) : null;
+    if (!result || !result.ok) {
+      const reason = result?.reason === 'full' ? REFUSAL.poolFull : REFUSAL.nothing;
+      this.counters.rejections++;
+      if (member.link && commandId !== null) {
+        this.sendTo(member, encodeFrame({ t: 'rej', id: commandId, r: reason }));
+      } else if (!member.link) {
+        this.rejections.emit({ command, reason });
+      }
+      return;
+    }
+    member.harvestAt = this.scheduler.now();
+    this.broadcast(this.economyReport.harvested(result.event));
   }
 
   // --------------------------------------------------------------------------------------------
@@ -1182,6 +1256,7 @@ export class HostSession implements GameSession {
     sim.drainEvents(this.survivalQueue);
     for (const event of this.survivalQueue) {
       if (event.k === 'back') this.placeAtBase(event.p);
+      if (event.k === 'dawn') this.economyReport.markList();
       if (guests) this.broadcast(encodeFrame({ t: 'se', e: event }));
       this.survivalDirty = true;
       this.survivalEvents.emit(event);
@@ -1200,6 +1275,7 @@ export class HostSession implements GameSession {
     this.survivalDirty = false;
 
     if (guests) {
+      for (const frame of this.economyReport.due(now)) this.broadcast(frame);
       for (const member of this.members.values()) {
         if (!member.link) continue;
         const due = member.vitalsSent === null || now - member.vitalsAt >= NET.vitalsIntervalMs;
@@ -1306,7 +1382,7 @@ export class HostSession implements GameSession {
       over: sim?.over ?? false,
       ...(why ? { why } : {}),
       rc: [sim?.respawns ?? 0, sim?.respawnMax ?? 0],
-      st: [sim?.felled ?? 0, sim?.placed ?? 0, sim?.revived ?? 0],
+      st: [sim?.felled ?? 0, sim?.placed ?? 0, sim?.revived ?? 0, sim?.gathered ?? 0],
     });
   }
 

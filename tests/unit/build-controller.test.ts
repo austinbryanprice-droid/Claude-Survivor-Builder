@@ -26,9 +26,11 @@ import {
   wedgeShape,
 } from '../../src/shared/blocks';
 import { AIM_REFUSAL, BUILD_REACH } from '../../src/shared/build-aim';
+import type { DebrisNode } from '../../src/shared/economy';
 import type { Vec3 } from '../../src/shared/look';
 import { turnCount } from '../../src/shared/placement';
 import type { BlockCommand } from '../../src/shared/protocol';
+import { DEBRIS } from '../../src/systems/economy/balance';
 import { BLASTER } from '../../src/systems/survival/balance';
 import { createTerrainGround } from '../../src/world/terrain/collision';
 import { createWorld, type VoxelWorld } from '../../src/world/voxels/world';
@@ -47,6 +49,8 @@ interface Rig {
   /** The shots fired, with the view each was aimed from, and whether the fake session takes them. */
   readonly shots: { origin: Vec3; dir: Vec3 }[];
   readonly gun: { ready: boolean };
+  /** The heaps of debris in the fake valley, and the strips left of each (a heap not listed has none). */
+  readonly heaps: { nodes: DebrisNode[]; left: Record<number, number> };
   /** The ground height at the spot. */
   readonly surface: number;
   /** A view from `height` above the ground at the spot, looking straight down. */
@@ -62,6 +66,7 @@ function rig(): Rig {
   const bodies: Vec3[] = [];
   const shots: { origin: Vec3; dir: Vec3 }[] = [];
   const gun = { ready: true };
+  const heaps: Rig['heaps'] = { nodes: [], left: {} };
   const ports: BuildPorts = {
     blocks: () => world,
     ground: () => ground,
@@ -87,6 +92,7 @@ function rig(): Rig {
       shots.push({ origin: { ...origin }, dir: { ...dir } });
       return true;
     },
+    debris: () => ({ nodes: heaps.nodes, leftOf: (index) => heaps.left[index] ?? 0 }),
   };
   const surface = world.terrain.grid.groundAt(SPOT.x + 0.5, SPOT.z + 0.5);
   return {
@@ -98,6 +104,7 @@ function rig(): Rig {
     bodies,
     shots,
     gun,
+    heaps,
     surface,
     lookDown(height) {
       const origin = { x: SPOT.x + 0.5, y: surface + height, z: SPOT.z + 0.5 };
@@ -716,5 +723,139 @@ describe('the hands of a player who is down', () => {
     r.controller.setDown(true);
     r.controller.press('primary');
     expect(r.controller.hudState().refusal).toBeNull();
+  });
+});
+
+describe('the interact key and heaps of debris', () => {
+  /** A rig with one heap of debris on the ground at the spot, and a view from `height` above it looking straight down. */
+  function heapAtSpot(height = 3) {
+    const r = rig();
+    const heap: DebrisNode = {
+      index: 0,
+      x: SPOT.x + 0.5,
+      y: r.surface,
+      z: SPOT.z + 0.5,
+      yaw: 0,
+      scale: 1,
+      harvests: 3,
+      grade: MATERIAL.scrap,
+      from: 0,
+    };
+    r.heaps.nodes.push(heap);
+    r.heaps.left[0] = 3;
+    const view = r.lookDown(height);
+    r.controller.update(0.016, view);
+    return { ...r, heap, view };
+  }
+
+  it('strips the heap the cursor is on, naming the cell its middle is in', () => {
+    const r = heapAtSpot();
+    expect(r.controller.hudState().salvage).toBe(3);
+    expect(r.controller.salvageTarget.index).toBe(0);
+    r.controller.interact();
+    expect(r.sent).toEqual([{ type: 'harvest', x: SPOT.x, y: Math.floor(r.surface), z: SPOT.z }]);
+  });
+
+  it('does nothing when the cursor is on no heap, and says nothing about it', () => {
+    const r = rig();
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().salvage).toBe(0);
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().refusal).toBeNull();
+  });
+
+  it('does nothing for a heap with nothing left, or one out of the eyes’ reach', () => {
+    const r = heapAtSpot();
+    r.heaps.left[0] = 0;
+    r.controller.update(0.016, r.view);
+    expect(r.controller.hudState().salvage).toBe(0);
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+
+    r.heaps.left[0] = 3;
+    // Eyes four blocks higher than reach allows from the middle of the heap.
+    const high = r.lookDown(DEBRIS.reach + 2);
+    r.controller.update(0.016, high);
+    expect(r.controller.hudState().salvage).toBe(0);
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+  });
+
+  it('does not strip a heap behind a block the view meets first', () => {
+    const r = heapAtSpot();
+    // Three blocks off, level with the heap's middle and looking straight at it.
+    const y = r.surface + DEBRIS.lift;
+    const origin = { x: SPOT.x + 3.5, y, z: SPOT.z + 0.5 };
+    const view = { origin, dir: { x: -1, y: 0, z: 0 }, eye: origin };
+    r.controller.update(0.016, view);
+    expect(r.controller.hudState().salvage).toBe(3);
+    // A block between the two, which the view meets first.
+    r.world.setBlock(SPOT.x + 2, Math.floor(y), SPOT.z, packState(SHAPE.cube, MATERIAL.scrap));
+    r.controller.update(0.016, view);
+    expect(r.controller.hudState().salvage).toBe(0);
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+  });
+
+  it('keeps the pace of the hands: one strip, then none until they are ready again', () => {
+    const r = heapAtSpot();
+    r.controller.interact();
+    r.controller.interact();
+    expect(r.sent).toHaveLength(1);
+    r.controller.update(DEBRIS.pace * 0.5, r.view);
+    r.controller.interact();
+    expect(r.sent).toHaveLength(1);
+    r.controller.update(DEBRIS.pace * 0.6, r.view);
+    r.controller.interact();
+    expect(r.sent).toHaveLength(2);
+    // The hands are a little slower than the host, so a patient player is never told they were too quick.
+    expect(DEBRIS.pace).toBeGreaterThan(DEBRIS.cooldown);
+  });
+
+  it('is slowed by low Energy as the other hand work is', () => {
+    const r = heapAtSpot();
+    r.controller.setHandScale(0.5);
+    r.controller.interact();
+    // Half the hands' speed: the time a strip takes is doubled.
+    r.controller.update(DEBRIS.pace * 1.2, r.view);
+    r.controller.interact();
+    expect(r.sent).toHaveLength(1);
+    r.controller.update(DEBRIS.pace * 1.2, r.view);
+    r.controller.interact();
+    expect(r.sent).toHaveLength(2);
+  });
+
+  it('works with the blaster in hand, and strips nothing while the player is down', () => {
+    const r = heapAtSpot();
+    r.controller.selectSlot(BLASTER_SLOT);
+    r.controller.setDown(true);
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().salvage).toBe(0);
+    r.controller.setDown(false);
+    r.controller.interact();
+    expect(r.sent).toHaveLength(1);
+    expect(r.shots).toEqual([]);
+  });
+
+  it('says it is still connecting, and keeps its hands ready, while there is nobody to ask', () => {
+    const r = heapAtSpot();
+    r.session.open = false;
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().refusal).toBe(NOT_READY);
+    r.session.open = true;
+    r.controller.interact();
+    expect(r.sent).toHaveLength(1);
+  });
+
+  it('forgets the heap when the mouse is freed', () => {
+    const r = heapAtSpot();
+    expect(r.controller.hudState().salvage).toBe(3);
+    r.controller.clearAim();
+    expect(r.controller.hudState().salvage).toBe(0);
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
   });
 });

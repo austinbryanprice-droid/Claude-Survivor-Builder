@@ -97,6 +97,8 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           // A bolt stops at the blocks, the hills and the Core, which the ground the cursor aims at already includes.
           rayWorld: () =>
             valley ? { blocks: valley.voxels, ground: valley.collision.ground } : null,
+          // The heap the cursor is on glows.
+          aimedDebris: () => building.controller.salvageTarget.index,
           flags: readNetFlags(search, { secure: window.location.protocol === 'https:' }),
           buildId,
           night: view.night,
@@ -135,6 +137,8 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
         const vitals = multiplayer.lobby.hub.vitals;
         hud.setVitals(vitals);
         stopVitals = followVitals(game, building.controller, vitals);
+        // The pool of materials the crew's strips fill is on the block slots of the hotbar.
+        hud.setEconomy(hub.economy, () => hub.localId);
         if (flags.debug && window.__ashbound) window.__ashbound.mp = multiplayer.debug;
       })
       .catch((error: unknown) => {
@@ -157,6 +161,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
       hud.setSurvival(null);
       hud.setRun(null);
       hud.setVitals(null);
+      hud.setEconomy(null);
       hud.dispose();
       game.dispose();
     },

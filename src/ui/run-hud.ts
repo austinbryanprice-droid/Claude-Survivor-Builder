@@ -1,3 +1,5 @@
+import { MATERIALS } from '../shared/blocks';
+import type { HarvestEvent } from '../shared/economy';
 import { nightsSurvived, type SurvivalEvent, type SurvivalReading } from '../shared/survival-state';
 import { isDown, type VitalsReading } from '../shared/vitals-state';
 import { clamp01, formatClock } from './player-hud/format';
@@ -115,8 +117,8 @@ export interface HudResults {
 
 /**
  * The results of a run that is over: how long the crew held out, how it ended and what it did
- * meanwhile. Null while the run goes on. The spec's materials, upgrades and research join the list
- * when there are any (Phase 5).
+ * meanwhile. Null while the run goes on. The spec's upgrades and research join the list when there
+ * are any (Phase 5).
  */
 export function resultsForHud(reading: SurvivalReading): HudResults | null {
   if (!reading.over) return null;
@@ -131,9 +133,21 @@ export function resultsForHud(reading: SurvivalReading): HudResults | null {
       { label: 'Time held', value: formatClock(reading.elapsed) },
       { label: 'Machines destroyed', value: String(reading.felled) },
       { label: 'Blocks placed', value: String(reading.placed) },
+      { label: 'Materials gathered', value: String(reading.gathered) },
       { label: 'Respawns used', value: String(reading.revived) },
     ],
   };
+}
+
+/**
+ * The message for a strip the player at this screen made: what went into the pool, and why it was
+ * less than the heap offered or why that heap is gone, when it is.
+ */
+export function harvestMessage(event: HarvestEvent): string {
+  const name = MATERIALS.find((material) => material.id === event.material)?.name ?? 'materials';
+  const gained = `+${event.gained} ${name}`;
+  if (event.full) return `${gained} · the pool is full`;
+  return event.left <= 0 ? `${gained} · that heap is stripped bare` : gained;
 }
 
 /** The banner at the top right: where the crew stands and what the hour asks of it. */

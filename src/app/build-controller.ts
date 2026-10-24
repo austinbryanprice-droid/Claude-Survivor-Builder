@@ -1,16 +1,20 @@
 import type { BlockWorld, CellState } from '../shared/block-world';
 import { MATERIALS, SHAPE_KINDS, baseShape, packState, type ShapeKind } from '../shared/blocks';
 import { createAim, updateAim, type Aim } from '../shared/build-aim';
+import type { DebrisView } from '../shared/economy';
 import type { GroundQuery } from '../shared/ground';
 import type { Vec3 } from '../shared/look';
 import { nextTurn, type PieceChoice } from '../shared/placement';
 import type { BlockCommand } from '../shared/protocol';
+import { aimAtDebris, createDebrisAim, type DebrisAim } from '../systems/economy/aim';
+import { DEBRIS } from '../systems/economy/balance';
 import { BLASTER } from '../systems/survival/balance';
 
 /**
  * The player's hands: which hotbar slot is selected, which kind of shape it makes and how that is
- * turned, whether Build Mode is on, what the cursor would do and the clicks that send it, and the
- * pulse blaster in the slot after the blocks. It holds no DOM and no three.js, and reaches the
+ * turned, whether Build Mode is on, what the cursor would do and the clicks that send it, the
+ * pulse blaster in the slot after the blocks, and the interact key that strips a heap of debris
+ * the cursor is on. It holds no DOM and no three.js, and reaches the
  * rest of the game through `BuildPorts`, so the tests can drive it with fakes. Nothing here
  * changes the world: a click becomes a command (or a shot) for the session, the host validates it,
  * and the world changes (or the machine is hurt) when the host's word comes back.
@@ -64,6 +68,8 @@ export interface BuildHudState {
   readonly hits: number;
   /** Whether the latest of those felled its machine. */
   readonly kill: boolean;
+  /** Strips left of the heap of debris the cursor is on and the player can reach (the interact key strips one), or 0 when it is on none. */
+  readonly salvage: number;
 }
 
 /** Where the player is looking from, as the camera has it this frame. */
@@ -89,6 +95,8 @@ export interface BuildPorts {
   warmUp(): void;
   /** Fires the pulse blaster from the camera at `origin` along the unit vector `dir`. False when there is nobody to ask yet. */
   fire(origin: Vec3, dir: Vec3): boolean;
+  /** The heaps of debris lying in the valley being played and what is left of each. A getter: a new run has new heaps. */
+  debris(): Pick<DebrisView, 'nodes' | 'leftOf'>;
 }
 
 export class BuildController {
@@ -109,6 +117,10 @@ export class BuildController {
   private down = false;
   /** Seconds of the hands' time until the blaster is ready again. */
   private cooldown = 0;
+  /** Seconds of the hands' time until they strip another heap. */
+  private salvageCooldown = 0;
+  /** The heap of debris the cursor was on at the last `update`. */
+  private readonly heap: DebrisAim = createDebrisAim();
   /** Where the camera was and which way it looked at the last `update`: what a shot is aimed with. */
   private readonly sight: { origin: Vec3; dir: Vec3 } = {
     origin: { x: 0, y: 0, z: 0 },
@@ -134,6 +146,7 @@ export class BuildController {
     blaster: boolean;
     hits: number;
     kill: boolean;
+    salvage: number;
   } = {
     selected: 0,
     buildMode: false,
@@ -145,6 +158,7 @@ export class BuildController {
     blaster: false,
     hits: 0,
     kill: false,
+    salvage: 0,
   };
 
   constructor(private readonly ports: BuildPorts) {}
@@ -201,6 +215,11 @@ export class BuildController {
   /** What the cursor is on and what a click would do there, as of the last `update`. */
   get target(): Readonly<Aim> {
     return this.aim;
+  }
+
+  /** The heap of debris the cursor was on at the last `update` (`index` is -1 for none). */
+  get salvageTarget(): Readonly<DebrisAim> {
+    return this.heap;
   }
 
   selectSlot(slot: number): void {
@@ -262,9 +281,34 @@ export class BuildController {
     this.held.secondary = -1;
   }
 
+  /** The cursor is not looking at the world any more (the mouse was freed): nothing is aimed at until the next `update`. */
+  clearAim(): void {
+    this.heap.index = -1;
+    this.heap.left = 0;
+    this.heap.distance = 0;
+  }
+
   /** The host refused a command that was sent: show why for a moment. */
   noteRejection(reason: string): void {
     this.setNotice(reason);
+  }
+
+  /**
+   * The interact key: strips the heap of debris the cursor is on, if the player can reach it. The
+   * host has the final word (and says no when the heap is bare, the pool is full or the hands are
+   * too quick); the hands only keep their own pace, a little slower than the host's.
+   */
+  interact(): void {
+    if (this.down || this.heap.index < 0 || this.salvageCooldown > 0) return;
+    const node = this.ports.debris().nodes[this.heap.index];
+    if (!node) return;
+    const sent = this.send({
+      type: 'harvest',
+      x: Math.floor(node.x),
+      y: Math.floor(node.y),
+      z: Math.floor(node.z),
+    });
+    if (sent) this.salvageCooldown = DEBRIS.pace;
   }
 
   /** The host said one of the player's shots hit a machine (and felled it, if `kill`): the HUD marks it. */
@@ -277,6 +321,7 @@ export class BuildController {
   update(dt: number, view: BuildView): void {
     this.clock += dt;
     this.cooldown = Math.max(0, this.cooldown - dt * this.repeatScale);
+    this.salvageCooldown = Math.max(0, this.salvageCooldown - dt * this.repeatScale);
     this.sight.origin.x = view.origin.x;
     this.sight.origin.y = view.origin.y;
     this.sight.origin.z = view.origin.z;
@@ -292,6 +337,14 @@ export class BuildController {
       eye: view.eye,
       piece: this.choice,
       bodies: this.ports.bodies(),
+    });
+    // A heap in front of the first block or hill the view meets can be stripped; one behind it cannot.
+    aimAtDebris(this.heap, {
+      debris: this.ports.debris(),
+      origin: view.origin,
+      dir: view.dir,
+      eye: view.eye,
+      blockedAt: this.aim.on === 'nothing' ? Infinity : this.aim.distance,
     });
     for (const button of ['primary', 'secondary'] as const) {
       if (this.held[button] < 0) continue;
@@ -315,6 +368,7 @@ export class BuildController {
     state.blaster = this.armed;
     state.hits = this.hitCount;
     state.kill = this.lastKill;
+    state.salvage = this.down ? 0 : this.heap.left;
     if (this.armed) state.crosshair = 'blaster';
     else if (!aim.hasPlace) state.crosshair = 'none';
     else if (!aim.placeRefusal) state.crosshair = 'place';
@@ -376,16 +430,18 @@ export class BuildController {
     this.send({ type: 'break', x: aim.target.x, y: aim.target.y, z: aim.target.z });
   }
 
-  private send(command: BlockCommand): void {
+  /** Sends a command unless the same one went a moment ago. True when it went. */
+  private send(command: BlockCommand): boolean {
     const state = command.type === 'place' ? command.state : 0;
     const key = `${command.type} ${command.x} ${command.y} ${command.z} ${state}`;
-    if (key === this.lastKey && this.clock - this.lastSentAt < RESEND_GUARD) return;
+    if (key === this.lastKey && this.clock - this.lastSentAt < RESEND_GUARD) return false;
     if (!this.ports.send(command)) {
       this.setNotice(NOT_READY);
-      return;
+      return false;
     }
     this.lastKey = key;
     this.lastSentAt = this.clock;
+    return true;
   }
 
   private setNotice(text: string): void {
