@@ -83,6 +83,12 @@ export interface AimInput {
   /** The feet of every player who could be standing where a block goes, the local one included. */
   bodies: readonly Vec3[];
   reach?: number;
+  /**
+   * The host's further rules for putting a piece in a cell (what it costs, a heap of debris in the
+   * way), asked last, after the world's own rules and the bodies, as the host asks them. Returns the
+   * reason a placement is refused, or null.
+   */
+  rules?: (x: number, y: number, z: number, state: CellState) => string | null;
 }
 
 const hit: RayHit = createRayHit();
@@ -181,4 +187,5 @@ export function updateAim(aim: Aim, input: AimInput): void {
       return;
     }
   }
+  aim.placeRefusal = input.rules?.(placeX, placeY, placeZ, aim.state) ?? null;
 }
