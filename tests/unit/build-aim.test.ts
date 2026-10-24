@@ -218,6 +218,57 @@ describe('bodies in the way', () => {
   });
 });
 
+describe("the host's further rules", () => {
+  it("are asked about the cell and the piece a click would place, and their reason is the ghost's", () => {
+    const world = newWorld();
+    const input = lookDown(world, 3);
+    const open = aimWith(input);
+    const asked: number[][] = [];
+    const aim = aimWith({
+      ...input,
+      rules: (x, y, z, state) => {
+        asked.push([x, y, z, state]);
+        return 'not enough Scrap';
+      },
+    });
+    expect(asked).toEqual([[open.place.x, open.place.y, open.place.z, open.state]]);
+    expect(aim.placeRefusal).toBe('not enough Scrap');
+    expect(aimWith({ ...input, rules: () => null }).placeRefusal).toBeNull();
+  });
+
+  it('come last, after reach, the world and the bodies, as the host asks them', () => {
+    const world = newWorld();
+    const input = lookDown(world, 3);
+    const { x, y, z } = aimWith(input).place;
+    const rules = () => 'not enough Scrap';
+    // A player in the cell: the body is named first.
+    expect(aimWith({ ...input, bodies: [{ x: x + 0.5, y, z: z + 0.5 }], rules }).placeRefusal).toBe(
+      AIM_REFUSAL.inTheWay,
+    );
+    // Beyond reach: reach is named first.
+    expect(aimWith({ ...lookDown(world, 7), rules }).placeRefusal).toBe(AIM_REFUSAL.outOfReach);
+    // A world that refuses: its reason is named first.
+    const refusing = {
+      ...world,
+      getBlock: world.getBlock.bind(world),
+      checkBreak: world.checkBreak.bind(world),
+      checkPlace: () => 'occupied',
+    };
+    expect(aimWith({ ...input, blocks: refusing, rules }).placeRefusal).toBe('occupied');
+  });
+
+  it('are not asked when there is nothing to place', () => {
+    const world = newWorld();
+    let asked = 0;
+    const rules = () => {
+      asked++;
+      return 'not enough Scrap';
+    };
+    expect(aimWith({ ...lookDown(world, 3), piece: null, rules }).placeRefusal).toBeNull();
+    expect(asked).toBe(0);
+  });
+});
+
 /** Blocks held in a map, with the world's rules out of the way, so a test can set up any shape it likes. */
 function cells(
   entries: readonly (readonly [number, number, number, number])[],

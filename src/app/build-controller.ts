@@ -1,13 +1,14 @@
 import type { BlockWorld, CellState } from '../shared/block-world';
 import { MATERIALS, SHAPE_KINDS, baseShape, packState, type ShapeKind } from '../shared/blocks';
 import { createAim, updateAim, type Aim } from '../shared/build-aim';
-import type { DebrisView } from '../shared/economy';
+import { createEconomyReading } from '../shared/economy';
 import type { GroundQuery } from '../shared/ground';
 import type { Vec3 } from '../shared/look';
 import { nextTurn, type PieceChoice } from '../shared/placement';
 import type { BlockCommand } from '../shared/protocol';
 import { aimAtDebris, createDebrisAim, type DebrisAim } from '../systems/economy/aim';
 import { DEBRIS } from '../systems/economy/balance';
+import { placementRefusal, type PlacementEconomy } from '../systems/economy/build-rules';
 import { BLASTER } from '../systems/survival/balance';
 
 /**
@@ -95,8 +96,12 @@ export interface BuildPorts {
   warmUp(): void;
   /** Fires the pulse blaster from the camera at `origin` along the unit vector `dir`. False when there is nobody to ask yet. */
   fire(origin: Vec3, dir: Vec3): boolean;
-  /** The heaps of debris lying in the valley being played and what is left of each. A getter: a new run has new heaps. */
-  debris(): Pick<DebrisView, 'nodes' | 'leftOf'>;
+  /**
+   * The crew's pool and the heaps of debris lying in the valley being played, as this screen has
+   * them: what the host will check a block against, and what the interact key strips. A getter: a
+   * new run has a new economy.
+   */
+  economy(): PlacementEconomy;
 }
 
 export class BuildController {
@@ -121,6 +126,15 @@ export class BuildController {
   private salvageCooldown = 0;
   /** The heap of debris the cursor was on at the last `update`. */
   private readonly heap: DebrisAim = createDebrisAim();
+  /** The pool as it was read for the last question about a placement. */
+  private readonly pool = createEconomyReading();
+  /** The host's economic rules for a placement, asked of this screen's view of the economy, so the ghost shows what the host would say. */
+  private readonly houseRules = (
+    x: number,
+    y: number,
+    z: number,
+    state: CellState,
+  ): string | null => placementRefusal(this.ports.economy(), this.pool, x, y, z, state);
   /** Where the camera was and which way it looked at the last `update`: what a shot is aimed with. */
   private readonly sight: { origin: Vec3; dir: Vec3 } = {
     origin: { x: 0, y: 0, z: 0 },
@@ -300,7 +314,7 @@ export class BuildController {
    */
   interact(): void {
     if (this.down || this.heap.index < 0 || this.salvageCooldown > 0) return;
-    const node = this.ports.debris().nodes[this.heap.index];
+    const node = this.ports.economy().debris.nodes[this.heap.index];
     if (!node) return;
     const sent = this.send({
       type: 'harvest',
@@ -337,10 +351,11 @@ export class BuildController {
       eye: view.eye,
       piece: this.choice,
       bodies: this.ports.bodies(),
+      rules: this.houseRules,
     });
     // A heap in front of the first block or hill the view meets can be stripped; one behind it cannot.
     aimAtDebris(this.heap, {
-      debris: this.ports.debris(),
+      debris: this.ports.economy().debris,
       origin: view.origin,
       dir: view.dir,
       eye: view.eye,

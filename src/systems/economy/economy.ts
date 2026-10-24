@@ -1,3 +1,5 @@
+import type { CellState } from '../../shared/block-world';
+import { MATERIALS } from '../../shared/blocks';
 import {
   createEconomyReading,
   type DebrisNode,
@@ -6,12 +8,14 @@ import {
 } from '../../shared/economy';
 import { hash3 } from '../../shared/hash';
 import { DEBRIS, POOL } from './balance';
+import { DEBRIS_IN_THE_WAY, heapInTheWay, pieceCost, shortfall } from './build-rules';
 import { Pool } from './pool';
 
 /**
  * The host's economy for one run: the crew's shared pool and the field of debris that fills it.
  * It is pure (no DOM, no three.js, no network) and keeps no clock of its own; the survival
- * simulation tells it when a dawn comes, and the session tells it when a player strips a heap.
+ * simulation tells it when a dawn comes, and the session tells it when a player strips a heap,
+ * places a block (which the pool pays for) or breaks one (which the pool gets back).
  * What a strip yields comes from a hash of the seed, the heap and how many strips it has given,
  * so a run plays the same every time and a test can say what the next strip gives.
  */
@@ -24,6 +28,11 @@ export type HarvestRefusal = 'nothing' | 'depleted' | 'full';
 export type HarvestResult =
   | { readonly ok: true; readonly event: HarvestEvent }
   | { readonly ok: false; readonly reason: HarvestRefusal };
+
+/** An opening stock of `amount` of every material, for the `?stock=` switch and for tests that build a lot. */
+export function evenStock(amount: number): Record<number, number> {
+  return Object.fromEntries(MATERIALS.map((material) => [material.id, amount]));
+}
 
 /** What a cell holds in the lookup of heaps: one number for each cell of the valley, large enough for any height. */
 export function cellKey(x: number, y: number, z: number): number {
@@ -39,16 +48,21 @@ export function stripYield(seed: number, node: number, ordinal: number): number 
 export class Economy {
   readonly pool: Pool;
   private readonly left: number[];
+  /** Whether each heap has come up out of the ground: the heaps of the first batch have, the others wait for a dawn. */
+  private readonly risen: boolean[];
   /** The heap that lies in each cell (by `cellKey`), so a command that names a cell finds it. */
   private readonly byCell = new Map<number, number>();
   private gatheredTotal = 0;
   private versionValue = 0;
 
+  /** `start` is what the pool opens with, by material id; the table's start unless a test or the `?stock=` switch says otherwise. */
   constructor(
     private readonly seed: number,
     readonly nodes: readonly DebrisNode[],
+    start: Readonly<Record<number, number>> = POOL.start,
   ) {
-    this.pool = new Pool(POOL.cap, POOL.start);
+    this.pool = new Pool(POOL.cap, start);
+    this.risen = nodes.map((node) => node.from === 0);
     this.left = nodes.map((node) => (node.from === 0 ? node.harvests : 0));
     for (const node of nodes) {
       this.byCell.set(
@@ -119,16 +133,44 @@ export class Economy {
     };
   }
 
-  /** A dawn: the heaps that night `night` leaves uncovered are there for the day. Returns how many. */
-  dawn(night: number): number {
+  /**
+   * A dawn: the heaps that night `night` and the nights before it leave uncovered come up out of the
+   * ground for the day. Returns how many did. A heap whose ground has a block built on it
+   * (`builtOver` says so) waits for a later dawn, when the block may be gone, rather than rise
+   * through the crew's work or take it down.
+   */
+  dawn(night: number, builtOver?: (node: DebrisNode) => boolean): number {
     let uncovered = 0;
     for (const node of this.nodes) {
-      if (node.from !== night || (this.left[node.index] as number) > 0) continue;
+      if (node.from > night || this.risen[node.index]) continue;
+      if (builtOver?.(node)) continue;
+      this.risen[node.index] = true;
       this.left[node.index] = node.harvests;
       uncovered++;
     }
     if (uncovered > 0) this.versionValue++;
     return uncovered;
+  }
+
+  /**
+   * Why the crew cannot place `state` at a cell, in the host's words, or null when it can: a heap
+   * of debris lying there keeps the cell clear, and the pool must hold what the piece costs.
+   */
+  placementRefusal(x: number, y: number, z: number, state: CellState): string | null {
+    if (heapInTheWay(this, x, y, z)) return DEBRIS_IN_THE_WAY;
+    return shortfall((material) => this.pool.amount(material), state);
+  }
+
+  /** The crew pays for a piece it has placed. False, and nothing taken, when the pool cannot pay. */
+  pay(state: CellState): boolean {
+    const cost = pieceCost(state);
+    return cost === null || this.pool.take(cost.material, cost.amount);
+  }
+
+  /** A piece the crew broke goes back into the pool, as far as the ceiling allows. Returns what went in. */
+  refund(state: CellState): number {
+    const cost = pieceCost(state);
+    return cost === null ? 0 : this.pool.add(cost.material, cost.amount);
   }
 
   /** Fills `out` with the pool as it stands. */

@@ -579,9 +579,45 @@ One instanced mesh of 828 triangles a heap, drawn whole in every pass that draws
 
 ### Known gaps in salvage
 
-- A block built in a heap's cell buries the heap: nothing reserves the cell yet, so the ray stops at the block and the heap cannot be aimed at until the block is taken away. The reservation belongs with the placement rules in 5b.
-- Nothing is charged yet, so the pool only goes up and the hotbar's counts have no use until 5b.
+- A block built in a heap's cell used to bury the heap, because nothing reserved the cell. That is closed in [5b](#phase-5b-costs): the ground round a heap with strips left refuses a block, and a dawn leaves a built-over heap down until the ground is free.
+- Nothing was charged in 5a, so the pool only went up and the hotbar's counts had no use. That is closed in [5b](#phase-5b-costs) too: every block takes its price from the pool.
 - A player walks through a heap, as through a machine. Collision for an odd shape is not worth it for a pile that is gone in a few strips.
 - There is one look of the wreck in three dressings. A wider range, and heaps that give anything other than Scrap, are for 5c and later.
 - A strip has no sound, and neither has a lamp's hum; both are Phase 6 with the rest of the audio.
 - The aim glow, the white-hot flash and the lamps' bloom are judged on software-rendered pictures. How they read on a real display is for the first look on a real GPU.
+
+## Phase 5b: costs
+
+Costs give the pool something to do: every block the crew places takes its price from it, and every block they break puts the price back. Nothing new is drawn. The ghost block, the line under the block's name and the hotbar's counts were all there already, and 5b gives them something to say, in the HUD's own colours. The choices are in [decisions](decisions.md#phase-5b-costs-2026-10-24).
+
+### What the crew sees
+
+- **A block the pool can pay for** looks as it always has: the ghost in cyan, the crosshair's ring cyan, and under the block's name the small line "Cost 1 Scrap".
+- **A block it cannot pay for** is the ghost in the warm red of any refused placement, the ring red, and the line under the block's name turned coral and naming what is short: "Not enough Scrap", and "Not enough Advanced Alloy" for the dearer blocks, whose counts start at none (a count of none is dimmed; research opens them in 5c). A right click on a red ghost sends nothing and shows the same words for a moment, and if the host turns a click down (someone else spent the last Scrap a moment before) it sends the same words back.
+- **A heap's ground.** A block cannot go close to a heap that still has strips left, about one and three-quarter blocks from its middle at the usual size (the pile's size scales it): the ghost is red and the line says "Debris is in the way". Stripping the heap bare with E clears the ground, and the same cursor spot goes cyan again.
+- **The count.** The first four hotbar slots (30 Scrap to begin with, shared by the crew) go down by one for each block placed and up by one for each block broken, whoever placed it.
+- **A guest's screen** reads its copy of the pool, at most 200 milliseconds old, so its ghost goes red and clears as the crew's pool changes, with nothing for the guest to do.
+
+### Screenshots
+
+Headless Chromium on software GL at 1280 by 720, Balanced, `freeze=1`, `?debug&waves=0&time=golden`, driven with the page's debug hooks (`__ashbound.mp.setPool` to set what the pool holds, `placeNear` and `breakBlock` to build and break, `harvest` to strip a heap, `build.aim` to read what the cursor would be refused for). The page's animation clock is replaced by one that moves a set step a frame, which holds the light still for a picture, and the mouse is taken and Build Mode is on, so each picture is a state that was set up. The ghost pictures stand in front of a wall of fourteen Scrap blocks, two rows, with a gap at the crosshair. The heap pair is one camera, 4.2 blocks from the pile and three above the grass, with the player's cursor on the ground beside it (the grass hides the foot of a pile from a player's own eye, and a block in grass is partly hidden too); the second picture is the same camera after the heap was stripped bare, and its clock reads later because stripping took a few seconds. The wide pictures have the hotbar and the line over it enlarged underneath, so the counts and the words can be read.
+
+![What building costs, in six pictures](phase-5/costs-states.jpg)
+
+| Image                                                | What to look at                                                                                                                                                                                                                                                                                                      |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [costs-ghost](phase-5/costs-ghost.jpg)               | Left to right, one cursor spot in the gap of the wall. The pool holds 12 Scrap: a cyan ghost and "Cost 1 Scrap". The Scrap is gone: the ghost is red and the line says "Not enough Scrap", with the first slot at a dimmed 0. Scrap back to 12 and the Advanced Alloy slot chosen: red, "Not enough Advanced Alloy". |
+| [costs-ghost-short](phase-5/costs-ghost-short.jpg)   | The middle picture at full size: the red ghost in the gap, the red ring at the crosshair, "Not enough Scrap" under "Scrap Block", and the four block counts dimmed to 0.                                                                                                                                             |
+| [costs-heap](phase-5/costs-heap.jpg)                 | Left, the cursor on the ground beside a heap that has three strips left: the ghost is red and the line says "Debris is in the way". Right, the same camera after the heap was stripped bare: grass where it stood and the same spot cyan, "Cost 1 Scrap".                                                            |
+| [costs-heap-refused](phase-5/costs-heap-refused.jpg) | The refused picture at full size: the whole pile (a crate with its beacon, the beam, the hull plate), the dirt road at the right, the red ghost at the pile's foot and the line over the hotbar.                                                                                                                     |
+| [costs-pool](phase-5/costs-pool.jpg)                 | The pool counting along: 30 Scrap and nothing built; 18 after twelve blocks (two rows of six) went up; 24 after the top row was broken, which gave six back.                                                                                                                                                         |
+| [costs-states](phase-5/costs-states.jpg)             | Six of the pictures together.                                                                                                                                                                                                                                                                                        |
+
+### Known gaps in costs
+
+- A red ghost is the same red whatever refused it (the pool, a heap, a player in the way, reach), and only the line over the hotbar says which. A price chip on the ghost, or a colour of its own for a pool that is short, is for play-testing to ask for.
+- A heap's column cannot be seen: a player learns how much ground a pile keeps by being refused. A faint ring on the ground while a block is aimed near a heap would show it.
+- The dearer slots (Composite, Alloy, Energy-Infused) show a dimmed 0 and refuse every block until 5c lets the crew get them, so they look broken for now. A lock, or a "needs research" line for them, belongs with 5c.
+- The counts jump when the pool changes: no tick, no small plus or minus beside the number and no sound for a block bought or given back. Those are Phase 6.
+- Every shape of a material costs the same, so a slab and a wedge (half a block each) cost a whole block's price. A price for each is a number for play and for 5i.
+- Seen only in software-rendered pictures. The ghost's colours and the red ring are judged there; how they read on a real display is for the first look on a real GPU.

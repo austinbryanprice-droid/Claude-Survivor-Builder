@@ -50,9 +50,9 @@ export interface MaterialDef {
   /** 1 for Scrap up to 4 for Energy-Infused (spec section 9). */
   readonly tier: number;
   /**
-   * What one block costs, in units of the shared pool's stock of this material. Build Mode shows
-   * it; nothing is charged until the economy (Phase 5) adds the pool, and its balance pass tunes
-   * the numbers.
+   * What one block costs, in units of the shared pool's stock of this material, whatever its shape.
+   * Build Mode shows it, the host takes it from the pool when a block is placed and gives it back
+   * when a player breaks one (Phase 5b), and the balance pass (5i) tunes the numbers.
    */
   readonly cost: number;
 }

@@ -17,13 +17,13 @@ const poll = <T>(read: () => Promise<T>, timeout = STATE_TIMEOUT) => expect.poll
 /** Night 1, from its first second: nothing mends the Core, and the light is the one the machines come in. */
 const QUERY = '?debug&quality=low&freeze=1&stats=0&night=1&waves=0';
 
-async function open(page: Page): Promise<string[]> {
+async function open(page: Page, more = ''): Promise<string[]> {
   const problems: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error') problems.push(`console: ${message.text()}`);
   });
   page.on('pageerror', (error) => problems.push(`page error: ${error.message}`));
-  await page.goto(`./${QUERY}`);
+  await page.goto(`./${QUERY}${more}`);
   await wait(page.locator('html')).toHaveAttribute('data-ready', 'true');
   // Playing together loads after the game is up, and the run lives in it.
   await page.waitForFunction(() => !!window.__ashbound?.mp, null, { timeout: STATE_TIMEOUT });
@@ -174,7 +174,8 @@ test.describe('the crawlers', () => {
   test('chew through a wall of blocks, which the world loses like any block, and then reach the Core', async ({
     page,
   }) => {
-    const problems = await open(page);
+    // The wall is thirty-two blocks, more than a run opens with the Scrap to pay for.
+    const problems = await open(page, '&stock=100');
     const core = await coreOf(page);
     await takeThePointer(page);
 

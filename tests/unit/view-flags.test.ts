@@ -14,6 +14,7 @@ describe('view URL switches', () => {
     expect(v.hud).toBe(true);
     expect(v.stats).toBe(true);
     expect(v.waves).toBe(true);
+    expect(v.stock).toBeNull();
     expect(v.freeze).toBe(false);
     expect(v.terrain).toBe('surface-nets');
     expect(v.scale).toBeNull();
@@ -76,6 +77,17 @@ describe('view URL switches', () => {
     expect(readViewFlags('?waves=1').waves).toBe(true);
     expect(readViewFlags('?waves').waves).toBe(true);
     expect(readViewFlags('?night=3&waves=0')).toMatchObject({ night: 3, waves: false });
+  });
+
+  it('opens the pool with the stock it is asked for, and with the table when it is not', () => {
+    expect(readViewFlags('?stock=200').stock).toBe(200);
+    expect(readViewFlags('?stock=0').stock).toBe(0);
+    expect(readViewFlags('?stock=9999').stock).toBe(9999);
+    for (const bad of ['-1', '1.5', 'many', '', '10000', '1e3', '0x10']) {
+      expect(readViewFlags(`?stock=${bad}`).stock, bad).toBeNull();
+    }
+    expect(readViewFlags('?stock').stock).toBeNull();
+    expect(readViewFlags('?night=3&stock=40')).toMatchObject({ night: 3, stock: 40 });
   });
 
   it('picks the presets the benchmark runs, once each and in the order given', () => {

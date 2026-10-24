@@ -1,4 +1,5 @@
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../shared/daycycle';
+import type { DebrisNode } from '../../shared/economy';
 import type { EnemyPose } from '../../shared/enemy-state';
 import type { Vec3 } from '../../shared/look';
 import type { RayWorld } from '../../shared/raycast';
@@ -13,7 +14,8 @@ import {
 } from '../../shared/survival-state';
 import type { VitalsReading } from '../../shared/vitals-state';
 import type { Outpost } from '../../world/outpost';
-import { Economy } from '../economy/economy';
+import { builtOver } from '../economy/build-rules';
+import { Economy, evenStock } from '../economy/economy';
 import { debrisField } from '../economy/field';
 import { BLASTER, RESPAWN, SURVIVAL, VITALS, hitboxOf } from './balance';
 import { EnemySim, type Target } from './enemies';
@@ -51,6 +53,11 @@ export interface SurvivalOptions {
    * `?waves=0` switch, for pictures and tests that want a quiet night). The waves are on by default.
    */
   waves?: boolean;
+  /**
+   * What the crew's pool opens with, of every material, for the `?stock=` switch and for tests that
+   * build a lot; the table's opening stock (a little Scrap) when absent.
+   */
+  stock?: number | null;
 }
 
 /** How a shot of the blaster ended. One object is filled by every call to `fire`. */
@@ -136,7 +143,11 @@ export class SurvivalSim {
     // The heaps of debris lie on the ground the machines walk, so a run has them where it has machines.
     this.wealth =
       options.nav && this.core
-        ? new Economy(options.seed ?? 0, debrisField(options.seed ?? 0, options.nav, this.core))
+        ? new Economy(
+            options.seed ?? 0,
+            debrisField(options.seed ?? 0, options.nav, this.core),
+            options.stock == null ? undefined : evenStock(options.stock),
+          )
         : null;
     // A run that starts at a later night has had the dawns before it.
     for (let night = 1; night < this.cycle; night++) this.wealth?.dawn(night);
@@ -402,6 +413,12 @@ export class SurvivalSim {
     return out;
   }
 
+  /** True when the crew has built on the ground a heap would come up through: it waits for a dawn when that ground is free. */
+  private builtOverHeap(node: DebrisNode): boolean {
+    const blocks = this.ray?.blocks;
+    return blocks ? builtOver(node, (x, y, z) => blocks.getBlock(x, y, z)) : false;
+  }
+
   /** The number of the day or night the run is in: 1 for the first day and the night after it. */
   private get cycle(): number {
     return Math.floor(this.tickValue / CYCLE_TICKS) + 1;
@@ -416,7 +433,7 @@ export class SurvivalSim {
     else if (inCycle === 0) {
       this.pending.push({ k: 'dawn', n: this.cycle - 1 });
       this.grantDawnCharges();
-      this.wealth?.dawn(this.cycle - 1);
+      this.wealth?.dawn(this.cycle - 1, (node) => this.builtOverHeap(node));
     }
     if (beginsByDay) {
       this.health = Math.min(SURVIVAL.core.maxHealth, this.health + MEND_PER_STEP);

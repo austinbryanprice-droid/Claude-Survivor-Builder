@@ -27,6 +27,7 @@ import {
   refusalText,
   type BuildHudInput,
 } from '../../src/ui/build-hud';
+import { DEBRIS_IN_THE_WAY, notEnough } from '../../src/systems/economy/build-rules';
 import { VITALS } from '../../src/systems/survival/balance';
 import { ICON_IDS, ICON_SPRITE } from '../../src/ui/player-hud/icons';
 
@@ -134,6 +135,13 @@ describe('refusal words', () => {
   it('show the host’s own words, capitalized', () => {
     for (const words of Object.values(REFUSAL)) {
       expect(refusalText(words)).toBe(words.charAt(0).toUpperCase() + words.slice(1));
+    }
+  });
+
+  it('show the economy’s words, naming the material that is short', () => {
+    expect(refusalText(DEBRIS_IN_THE_WAY)).toBe('Debris is in the way');
+    for (const material of MATERIALS) {
+      expect(refusalText(notEnough(material.name))).toBe(`Not enough ${material.name}`);
     }
   });
 });

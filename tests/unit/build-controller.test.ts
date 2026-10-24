@@ -31,6 +31,7 @@ import type { Vec3 } from '../../src/shared/look';
 import { turnCount } from '../../src/shared/placement';
 import type { BlockCommand } from '../../src/shared/protocol';
 import { DEBRIS } from '../../src/systems/economy/balance';
+import { DEBRIS_IN_THE_WAY, notEnough } from '../../src/systems/economy/build-rules';
 import { BLASTER } from '../../src/systems/survival/balance';
 import { createTerrainGround } from '../../src/world/terrain/collision';
 import { createWorld, type VoxelWorld } from '../../src/world/voxels/world';
@@ -51,6 +52,8 @@ interface Rig {
   readonly gun: { ready: boolean };
   /** The heaps of debris in the fake valley, and the strips left of each (a heap not listed has none). */
   readonly heaps: { nodes: DebrisNode[]; left: Record<number, number> };
+  /** The crew's pool in the fake economy: with no ceiling (`cap` 0) there is no pool, and nothing costs anything. */
+  readonly pool: { cap: number; stock: number[] };
   /** The ground height at the spot. */
   readonly surface: number;
   /** A view from `height` above the ground at the spot, looking straight down. */
@@ -67,6 +70,7 @@ function rig(): Rig {
   const shots: { origin: Vec3; dir: Vec3 }[] = [];
   const gun = { ready: true };
   const heaps: Rig['heaps'] = { nodes: [], left: {} };
+  const pool: Rig['pool'] = { cap: 0, stock: [] };
   const ports: BuildPorts = {
     blocks: () => world,
     ground: () => ground,
@@ -92,7 +96,14 @@ function rig(): Rig {
       shots.push({ origin: { ...origin }, dir: { ...dir } });
       return true;
     },
-    debris: () => ({ nodes: heaps.nodes, leftOf: (index) => heaps.left[index] ?? 0 }),
+    economy: () => ({
+      read(out) {
+        for (let i = 0; i < out.stock.length; i++) out.stock[i] = pool.stock[i] ?? 0;
+        out.cap = pool.cap;
+        return out;
+      },
+      debris: { nodes: heaps.nodes, leftOf: (index) => heaps.left[index] ?? 0 },
+    }),
   };
   const surface = world.terrain.grid.groundAt(SPOT.x + 0.5, SPOT.z + 0.5);
   return {
@@ -105,6 +116,7 @@ function rig(): Rig {
     shots,
     gun,
     heaps,
+    pool,
     surface,
     lookDown(height) {
       const origin = { x: SPOT.x + 0.5, y: surface + height, z: SPOT.z + 0.5 };
@@ -857,5 +869,174 @@ describe('the interact key and heaps of debris', () => {
     expect(r.controller.hudState().salvage).toBe(0);
     r.controller.interact();
     expect(r.sent).toEqual([]);
+  });
+});
+
+describe('what the pool says about a placement', () => {
+  /** The pool the fake economy reads: so many of Scrap, Composite, Alloy and Energy-Infused, under a ceiling. */
+  function stocked(...stock: number[]) {
+    const r = rig();
+    r.pool.cap = 400;
+    r.pool.stock.splice(0, r.pool.stock.length, ...stock);
+    return r;
+  }
+
+  it('shows a block the pool cannot pay for as refused, naming what is short, in Build Mode', () => {
+    const r = stocked(0, 9, 9, 9);
+    r.controller.toggleBuildMode();
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBe(notEnough('Scrap'));
+    expect(r.controller.hudState().crosshair).toBe('blocked');
+  });
+
+  it('sends nothing for a click it cannot pay for, and says why for a moment', () => {
+    const r = stocked(0, 9, 9, 9);
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    r.controller.release('secondary');
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().refusal).toBe('not enough Scrap');
+    r.controller.update(NOTICE_SECONDS + 0.1, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBeNull();
+  });
+
+  it('sends the click once the pool holds what the piece costs', () => {
+    const r = stocked(1, 0, 0, 0);
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    expect(r.sent).toHaveLength(1);
+    expect(r.controller.hudState().refusal).toBeNull();
+  });
+
+  it('asks about the material of the slot in hand, not about Scrap alone', () => {
+    const r = stocked(40, 0, 3, 0);
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.selectSlot(1);
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    r.controller.release('secondary');
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().refusal).toBe('not enough Reinforced Composite');
+    r.controller.selectSlot(2);
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    expect(r.sent).toHaveLength(1);
+    expect(r.sent[0]).toMatchObject({
+      type: 'place',
+      state: packState(SHAPE.cube, MATERIAL.alloy),
+    });
+  });
+
+  it('charges every shape of a material the same: a slab or a wedge costs what a block does', () => {
+    const short = stocked(0, 0, 0, 0);
+    const enough = stocked(1, 0, 0, 0);
+    short.controller.toggleBuildMode();
+    enough.controller.toggleBuildMode();
+    for (let i = 0; i < SHAPE_KINDS.length; i++) {
+      short.controller.update(0.016, short.lookDown(3));
+      enough.controller.update(0.016, enough.lookDown(3));
+      expect(short.controller.hudState().refusal, short.controller.kind).toBe(notEnough('Scrap'));
+      expect(enough.controller.hudState().refusal, enough.controller.kind).toBeNull();
+      short.controller.cycleShape();
+      enough.controller.cycleShape();
+    }
+  });
+
+  it('asks about the pool as it stands each frame, so a refusal ends when the pool is filled', () => {
+    const r = stocked(0, 0, 0, 0);
+    r.controller.toggleBuildMode();
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBe('not enough Scrap');
+    r.pool.stock[0] = 5;
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBeNull();
+    expect(r.controller.hudState().crosshair).toBe('place');
+  });
+
+  it('charges nothing where there is no pool to read', () => {
+    const r = rig();
+    expect(r.pool.cap).toBe(0);
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    expect(r.sent).toHaveLength(1);
+  });
+
+  it('answers the reach and the world’s rules before the pool', () => {
+    const r = stocked(0, 0, 0, 0);
+    r.controller.toggleBuildMode();
+    r.controller.update(0.016, r.lookDown(BUILD_REACH + 1));
+    expect(r.controller.hudState().refusal).toBe(AIM_REFUSAL.outOfReach);
+    r.bodies.push({ x: SPOT.x + 0.5, y: Math.floor(r.surface), z: SPOT.z + 0.5 });
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBe(AIM_REFUSAL.inTheWay);
+  });
+
+  it('breaks a block whatever the pool holds, and sends the break', () => {
+    const r = stocked(0, 0, 0, 0);
+    const y = Math.floor(r.surface);
+    r.world.setBlock(SPOT.x, y, SPOT.z, packState(SHAPE.cube, MATERIAL.scrap));
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('primary');
+    expect(r.sent).toEqual([{ type: 'break', x: SPOT.x, y, z: SPOT.z }]);
+  });
+});
+
+describe('a heap of debris in the way of a placement', () => {
+  /** A rig with a heap lying where the cursor points, and a pool that could pay for any block. */
+  function heapUnderCursor(left = 3) {
+    const r = rig();
+    r.heaps.nodes.push({
+      index: 0,
+      x: SPOT.x + 0.5,
+      y: r.surface,
+      z: SPOT.z + 0.5,
+      yaw: 0,
+      scale: 1,
+      harvests: 3,
+      grade: MATERIAL.scrap,
+      from: 0,
+    });
+    r.heaps.left[0] = left;
+    r.pool.cap = 400;
+    r.pool.stock.splice(0, 4, 50, 50, 50, 50);
+    return r;
+  }
+
+  it('refuses a block on the cell the heap lies in, with its own words, before the pool is asked', () => {
+    const r = heapUnderCursor();
+    r.pool.stock[0] = 0;
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    r.controller.release('secondary');
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().refusal).toBe(DEBRIS_IN_THE_WAY);
+  });
+
+  it('shows the ghost as refused in Build Mode', () => {
+    const r = heapUnderCursor();
+    r.controller.toggleBuildMode();
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBe('debris is in the way');
+    expect(r.controller.hudState().crosshair).toBe('blocked');
+  });
+
+  it('lets the block go once the heap is stripped bare, as the host would', () => {
+    const r = heapUnderCursor();
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    r.controller.release('secondary');
+    expect(r.sent).toEqual([]);
+    r.heaps.left[0] = 0;
+    r.controller.update(RESEND_GUARD, r.lookDown(3));
+    r.controller.press('secondary');
+    expect(r.sent).toHaveLength(1);
+  });
+
+  it('does not keep a block off ground away from the heap', () => {
+    const r = heapUnderCursor();
+    r.heaps.nodes[0] = { ...r.heaps.nodes[0]!, x: SPOT.x + 10.5 };
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    expect(r.sent).toHaveLength(1);
   });
 });

@@ -127,7 +127,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
       return bodies;
     },
     warmUp,
-    debris: () => session?.economy.debris ?? IDLE_ECONOMY.debris,
+    economy: () => session?.economy ?? IDLE_ECONOMY,
   });
 
   // The player's eyes are where reach is measured from; the camera is where the cursor looks from.
