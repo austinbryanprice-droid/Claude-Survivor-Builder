@@ -18,7 +18,8 @@ import type { Vec3 } from '../shared/look';
 
 /**
  * The light of the pulse blaster: the flash at the muzzle, the bolt streaking to its mark, the
- * sparks where it lands and the burst of a machine felled. Everything glows (it is drawn additively
+ * sparks where it lands and the burst of a machine felled; and, since it is the same light, the
+ * golden spray of a heap of wreckage stripped. Everything glows (it is drawn additively
  * into the HDR target, above the bloom's threshold), nothing is lit or casts a shadow, and nothing
  * here is an asset: a bolt is a ribbon turned to face the camera, a spark a small square with a soft
  * round (or, for a flash, star-shaped) face.
@@ -67,6 +68,8 @@ export const FX_COLOR = {
   hit: '#ffb347',
   /** The burst of a machine felled. */
   burst: '#ff8a2a',
+  /** The bits flung off a heap of wreckage as it is stripped: warmer and paler than a machine's fire. */
+  strip: '#ffc46b',
 } as const;
 
 /** Ranges are [least, most]; each spark picks its own. Sizes are in blocks, speeds in blocks a second, lives in seconds. */
@@ -113,6 +116,16 @@ const SPRAY = {
     life: [0.4, 0.8],
     size: [0.04, 0.09],
   },
+  /** Scrap flung off a heap that is being torn apart: up and out, falling back heavy. */
+  strip: {
+    push: 0,
+    spread: 1,
+    lift: 1.1,
+    count: 18,
+    speed: [2.5, 7],
+    life: [0.35, 0.75],
+    size: [0.035, 0.08],
+  },
 } as const satisfies Record<string, Spray>;
 
 /** The flash each effect opens with: how long it lasts and how large it swells, in blocks. */
@@ -121,6 +134,8 @@ const FLASH = {
   impact: { life: 0.14, size: 0.6 },
   burst: { life: 0.22, size: 1.6 },
   burstCore: { life: 0.12, size: 0.9 },
+  strip: { life: 0.2, size: 1.1 },
+  stripCore: { life: 0.1, size: 0.6 },
 } as const;
 
 const BOLT_VERTEX = /* glsl */ `
@@ -275,6 +290,8 @@ export interface ShotFx {
   impact(at: Vec3, dir: Vec3, color: string, delay?: number): void;
   /** A machine falling apart at `at`, `delay` seconds from now. */
   burst(at: Vec3, delay?: number): void;
+  /** A heap of wreckage stripped at `at` (the middle of the heap): a gold flash and scrap flung up and out. */
+  strip(at: Vec3): void;
   /** Lets `dt` seconds pass for the effects that are playing. */
   update(dt: number): void;
   /** How many bolts and sparks (flashes included) are playing now or about to, for tests and the debug hook. */
@@ -535,6 +552,13 @@ export function createShotFx({ seed = 0x5107 }: ShotFxOptions = {}): ShotFx {
       spark(at, still, FLASH.burst.life, FLASH.burst.size, true, orange, later);
       spark(at, still, FLASH.burstCore.life, FLASH.burstCore.size, true, white, later);
       spray(at, still, SPRAY.burst, [orange, amber, orange], later);
+    },
+
+    strip(at) {
+      const gold = rgb(FX_COLOR.strip);
+      spark(at, still, FLASH.strip.life, FLASH.strip.size, true, gold, 0);
+      spark(at, still, FLASH.stripCore.life, FLASH.stripCore.size, true, white, 0);
+      spray(at, still, SPRAY.strip, [gold, gold, white], 0);
     },
 
     update(dt) {

@@ -253,6 +253,58 @@ describe('the sparks of the blaster', () => {
   });
 });
 
+describe('the spray of a heap stripped', () => {
+  it('is two flashes and eighteen bits of scrap, in gold', () => {
+    const { fx, spark } = setup();
+    fx.strip({ x: 3, y: 4, z: 5 });
+    expect(fx.live()).toEqual({ bolts: 0, sparks: 20 });
+    // The two flashes come first and stand still; the bits after them are marked as sparks.
+    expect(spark('iLife')[3]).toBe(1);
+    expect(spark('iLife')[7]).toBe(1);
+    expect(spark('iLife')[11]).toBe(0);
+    expect(Array.from(spark('iOrigin').slice(0, 3))).toEqual([3, 4, 5]);
+    const gold = Array.from(spark('iColor').slice(0, 3));
+    expect(gold[0]).toBeGreaterThan(gold[1] as number);
+    expect(gold[1]).toBeGreaterThan(gold[2] as number);
+  });
+
+  it('is flung up and out, every way along the ground and mostly upward', () => {
+    const { fx, spark } = setup();
+    fx.strip(ORIGIN);
+    const velocity = spark('iVelocity');
+    let up = 0;
+    let down = 0;
+    let west = 0;
+    let east = 0;
+    let north = 0;
+    let south = 0;
+    for (let i = 2; i < 20; i++) {
+      const [vx, vy, vz] = [velocity[i * 3], velocity[i * 3 + 1], velocity[i * 3 + 2]] as number[];
+      if ((vy as number) > 0) up++;
+      else down++;
+      if ((vx as number) > 0) east++;
+      else west++;
+      if ((vz as number) > 0) south++;
+      else north++;
+    }
+    expect(up).toBeGreaterThan(down);
+    expect(Math.min(east, west, north, south)).toBeGreaterThan(0);
+  });
+
+  it('is over inside a second, and the draw stops when it is', () => {
+    const { fx, sparkCount } = setup();
+    fx.strip(ORIGIN);
+    fx.update(0.016);
+    expect(sparkCount()).toBe(20);
+    fx.update(0.25);
+    // Both flashes (0.2 and 0.1 seconds) have ended; the bits last at least 0.35.
+    expect(fx.live().sparks).toBe(18);
+    fx.update(0.6);
+    expect(fx.live().sparks).toBe(0);
+    expect(sparkCount()).toBe(0);
+  });
+});
+
 describe('the clock of the blaster’s light', () => {
   it('starts over after a long quiet, so that it never grows large enough to blur', () => {
     const { fx, bolt, spark } = setup();

@@ -8,6 +8,7 @@ export type InputAction =
   | 'toggleBuild'
   | 'cycleShape'
   | 'turnPiece'
+  | 'interact'
   | 'cancel';
 
 /** The two mouse buttons the game uses: left breaks or attacks, right places or interacts. */
@@ -55,6 +56,7 @@ const QUALITY_KEY = 'KeyP';
 const BUILD_KEY = 'KeyB';
 const SHAPE_KEY = 'KeyQ';
 const TURN_KEY = 'KeyR';
+const INTERACT_KEY = 'KeyE';
 const CANCEL_KEY = 'Escape';
 const HOTBAR_KEY = /^Digit([1-9])$/;
 
@@ -68,6 +70,7 @@ const SWALLOWED_KEYS = new Set([
   BUILD_KEY,
   SHAPE_KEY,
   TURN_KEY,
+  INTERACT_KEY,
 ]);
 
 /** Browsers can report one huge movement when the lock starts; no real flick is this large in one event. */
@@ -184,6 +187,10 @@ export function createInput(canvas: HTMLCanvasElement): Input {
     }
     if (code === TURN_KEY) {
       if (!event.repeat) emitAction('turnPiece');
+      return;
+    }
+    if (code === INTERACT_KEY) {
+      if (!event.repeat) emitAction('interact');
       return;
     }
     const digit = HOTBAR_KEY.exec(code);
