@@ -11,7 +11,7 @@ import { MATERIAL } from '../../shared/blocks';
 export const POOL = {
   /** What the pool holds when a run begins, by material id; a material that is not listed starts at 0. */
   start: { [MATERIAL.scrap]: 30 } as Readonly<Record<number, number>>,
-  /** The most the pool holds of any one material, until Storage (Phase 5g) raises it. */
+  /** The most the pool holds of any one material, until Storage (Phase 5h) raises it. */
   cap: 400,
 } as const;
 
@@ -58,7 +58,7 @@ export const DEBRIS = {
    * dawn's batch from the batch `from` on: the heap drawn `slot`th of the batch (counting from 0)
    * is of that grade. A heap of a grade whose tier is not researched yet is not uncovered at its
    * dawn; it waits for a later one. They give less than Scrap, in fewer strips, because a block
-   * costs one of them and the upgrades that spend them are few (Phase 5d on).
+   * costs one of them and the upgrades that spend them are few (Phase 5e on).
    */
   grades: [
     {

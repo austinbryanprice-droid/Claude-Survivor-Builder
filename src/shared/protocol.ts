@@ -25,7 +25,7 @@ export type BlockCommand =
   | { readonly type: 'break'; readonly x: number; readonly y: number; readonly z: number }
   /** Strip the heap of debris whose middle is in this cell (Phase 5a); it changes the pool and the heap, not a block. */
   | { readonly type: 'harvest'; readonly x: number; readonly y: number; readonly z: number };
-// Phase 5d adds { type: 'upgrade'; x; y; z }.
+// Phase 5e adds { type: 'upgrade'; x; y; z }.
 
 /** What happened to the world. State based and idempotent: place, break (state 0) and upgrade are all `set`. */
 export interface BlockSetEvent {

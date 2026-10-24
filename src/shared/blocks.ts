@@ -52,7 +52,7 @@ export interface MaterialDef {
   /**
    * What one block costs, in units of the shared pool's stock of this material, whatever its shape.
    * Build Mode shows it, the host takes it from the pool when a block is placed and gives it back
-   * when a player breaks one (Phase 5b), and the balance pass (5i) tunes the numbers.
+   * when a player breaks one (Phase 5b), and the balance pass (5j) tunes the numbers.
    */
   readonly cost: number;
 }

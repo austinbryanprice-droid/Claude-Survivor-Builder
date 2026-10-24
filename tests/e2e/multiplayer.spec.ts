@@ -1,7 +1,8 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../src/shared/daycycle';
-import { DEBRIS, POOL } from '../../src/systems/economy/balance';
+import { DEBRIS, POOL, RESEARCH } from '../../src/systems/economy/balance';
+import { needsResearch } from '../../src/systems/economy/build-rules';
 import { RESPAWN, VITALS } from '../../src/systems/survival/balance';
 import { recordToasts, toasts } from './support/toasts';
 
@@ -29,6 +30,7 @@ const BROKER = '127.0.0.1:9000';
 const NETWORK = `broker=${BROKER}&ice=none&waves=0`;
 const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
 const ALLOY = packState(SHAPE.cube, MATERIAL.alloy);
+const COMPOSITE = packState(SHAPE.cube, MATERIAL.composite);
 const SMALL = { width: 480, height: 270 };
 const FRAME_GAP_MS = 1500;
 
@@ -132,6 +134,8 @@ async function openPlayer(
     warm?: boolean;
     /** Opens the crew's pool with this much of every material (the host's page decides), where the test builds in the dearer ones. */
     stock?: number;
+    /** Opens the run with this many research points (the host's page decides), where the test builds in a material that has to be researched. */
+    research?: number;
   } = {},
 ): Promise<Player> {
   const context = await browser.newContext({ baseURL, viewport: options.size ?? SMALL });
@@ -143,7 +147,10 @@ async function openPlayer(
   });
   page.on('pageerror', (error) => problems.push(`page error: ${error.message}`));
   const stock = options.stock === undefined ? '' : `&stock=${options.stock}`;
-  await page.goto(`./?debug&quality=low&${options.network ?? NETWORK}&name=${name}${stock}`);
+  const research = options.research === undefined ? '' : `&research=${options.research}`;
+  await page.goto(
+    `./?debug&quality=low&${options.network ?? NETWORK}&name=${name}${stock}${research}`,
+  );
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'true', { timeout: 90_000 });
   await page.waitForFunction(() => Boolean(window.__ashbound?.mp));
   if (options.warm !== false) await warmUpBlocks(page);
@@ -255,8 +262,9 @@ test.describe('multiplayer', () => {
     browser,
     baseURL,
   }, testInfo) => {
-    // Two of them build in Alloy, which a run opens with none of: the crew's pool starts with some.
-    const host = await openPlayer(browser, baseURL, 'Host', { stock: 20 });
+    // Two of them build in Alloy, which a run opens with none of and has to be researched: the crew's
+    // pool starts with some, and the run with the research that opens it.
+    const host = await openPlayer(browser, baseURL, 'Host', { stock: 20, research: 55 });
     const everyone: Player[] = [host];
     try {
       // The start screen offers a room, and the room panel explains what hosting means.
@@ -1239,6 +1247,117 @@ test.describe('multiplayer', () => {
       ] as const);
       await expect.poll(() => aimOf(ada), { ...slow, message: "Ada's aim clears" }).toBeNull();
       await expectPool(2);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
+  test("the crew's research is the host's: a guest's padlocks and toasts follow the host's points, and the host turns away a material the points have not opened", async ({
+    browser,
+    baseURL,
+  }) => {
+    const host = await openPlayer(browser, baseURL, 'Host');
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone: Player[] = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and the picture and the hands only change when one is drawn.
+    const slow = { timeout: 60_000 };
+    const [compositeAt, alloyAt] = RESEARCH.steps.map((step) => step.points) as [number, number];
+    const poolOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.pool());
+    const rejectionsOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.rejections())).map((r) => r.reason);
+    const slotOf = (p: Player, n: number) => p.page.locator('.ph-slot').nth(n);
+    const setResearch = (points: number) =>
+      host.page.evaluate((n) => window.__ashbound!.mp!.setResearch(n), points);
+    // Her seat is on a rise, so the view has to look steeply down to meet ground within reach; what a click
+    // there would be refused for is what the ghost's colour comes from.
+    const aimOf = (p: Player) =>
+      p.page.evaluate(() => {
+        const { game, build } = window.__ashbound!;
+        game.look.pitch = -0.9;
+        const aim = build!.aim();
+        return aim.hasPlace ? aim.placeRefusal : 'no ground to place on';
+      });
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) {
+        await recordToasts(p.page);
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+      }
+
+      // A run opens with no points: both screens have the three padlocks.
+      for (const p of everyone) {
+        await expect
+          .poll(() => poolOf(p), { ...slow, message: `${p.name} sees the points` })
+          .toMatchObject({ research: 0, tier: 1 });
+        for (const n of [1, 2, 3])
+          await expect(slotOf(p, n)).toHaveAttribute('data-locked', '', slow);
+      }
+
+      // The host's points reach the guest, who works out the tier as the host does: Composite opens on
+      // both screens and Alloy does not, and both are told, the points first and then what they opened.
+      await setResearch(compositeAt);
+      for (const p of everyone) {
+        await expect
+          .poll(() => poolOf(p), { ...slow, message: `${p.name} sees the points` })
+          .toMatchObject({ research: compositeAt, tier: 2 });
+        await expect(slotOf(p, 1)).not.toHaveAttribute('data-locked', '', slow);
+        await expect(slotOf(p, 2)).toHaveAttribute('data-locked', '', slow);
+        await expect
+          .poll(
+            async () => (await toasts(p.page)).filter((t) => /^Research \+|unlocked$/.test(t)),
+            {
+              ...slow,
+              message: `${p.name} is told`,
+            },
+          )
+          .toEqual([`Research +${compositeAt}`, 'Reinforced Composite unlocked']);
+      }
+
+      // Both materials are in the pool, so only the points decide. Ada asks past her screen: the host
+      // turns the Alloy away in words, to her alone, and takes the Composite.
+      await host.page.evaluate(
+        ([composite, alloy]) => {
+          const mp = window.__ashbound!.mp!;
+          mp.setPool(composite!, 5);
+          mp.setPool(alloy!, 5);
+        },
+        [MATERIAL.composite, MATERIAL.alloy] as const,
+      );
+      await ada.page.evaluate(([state]) => window.__ashbound!.mp!.placeNear(4, 0, state!), [
+        ALLOY,
+      ] as const);
+      await expect
+        .poll(() => rejectionsOf(ada), { ...slow, message: 'the host turns Ada down' })
+        .toEqual([needsResearch('Advanced Alloy')]);
+      expect(await rejectionsOf(host)).toEqual([]);
+      await expectSameWorld(everyone, 0);
+      await ada.page.evaluate(([state]) => window.__ashbound!.mp!.placeNear(4, 0, state!), [
+        COMPOSITE,
+      ] as const);
+      await expectSameWorld(everyone, 1);
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await poolOf(p)).stock[1], { ...slow, message: p.name })
+          .toBe(4);
+      }
+
+      // Ada's own screen knows before she clicks: her aim with the Alloy in hand is read from her copy
+      // of the points.
+      await ada.page.locator('.play-button').click();
+      await expect(ada.page.locator('#hud')).toHaveAttribute('data-pointer', 'locked', slow);
+      await ada.page.keyboard.press('Digit3');
+      await expect
+        .poll(() => aimOf(ada), { ...slow, message: "Ada's aim is refused for the points" })
+        .toBe(needsResearch('Advanced Alloy'));
+
+      // The host reaches the next row, and her aim clears without her doing a thing.
+      await setResearch(alloyAt);
+      await expect.poll(() => aimOf(ada), { ...slow, message: "Ada's aim clears" }).toBeNull();
+      for (const p of everyone)
+        await expect(slotOf(p, 2)).not.toHaveAttribute('data-locked', '', slow);
       expectNoProblems(everyone);
     } finally {
       await closeAll(everyone);

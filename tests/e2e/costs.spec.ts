@@ -23,13 +23,14 @@ const SCRAP_SLOT = poolSlot(MATERIAL.scrap);
 /** A spot in the crash clearing, where the ground is open and gentle. */
 const SPOT = { x: 8.5, z: -4.5 };
 
-async function open(page: Page): Promise<string[]> {
+/** `extra` adds switches to the page's address, such as `&research=55` for a test that builds in Alloy. */
+async function open(page: Page, extra = ''): Promise<string[]> {
   const problems: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error') problems.push(`console: ${message.text()}`);
   });
   page.on('pageerror', (error) => problems.push(`page error: ${error.message}`));
-  await page.goto(`./${QUERY}`);
+  await page.goto(`./${QUERY}${extra}`);
   await wait(page.locator('html')).toHaveAttribute('data-ready', 'true');
   // Playing together loads after the game is up, and the run lives in it.
   await page.waitForFunction(() => !!window.__ashbound?.mp, null, { timeout: STATE_TIMEOUT });
@@ -180,13 +181,15 @@ test.describe('what building costs', () => {
     const problems = await open(page);
     const start = POOL.start[MATERIAL.scrap] ?? 0;
 
-    await test.step('a run opens with some Scrap and none of the dearer materials, and the hotbar says so', async () => {
+    await test.step('a run opens with some Scrap and none of the dearer materials, which wait behind a padlock until they are researched', async () => {
       expect((await pool(page)).stock).toEqual([start, 0, 0, 0]);
       await wait(countOf(page, 0)).toHaveText(String(start));
       for (const slot of [1, 2, 3]) {
-        await wait(countOf(page, slot)).toHaveText('0');
-        await expect(countOf(page, slot)).toHaveAttribute('data-none', '');
+        // Nothing to count in a slot the crew cannot use yet (research.spec.ts looks at the padlock itself).
+        await wait(page.locator('.ph-slot').nth(slot)).toHaveAttribute('data-locked', '');
+        await expect(countOf(page, slot)).toHaveText('');
       }
+      await expect(page.locator('.ph-slot').nth(0)).not.toHaveAttribute('data-locked', '');
       await expect(countOf(page, 0)).not.toHaveAttribute('data-none', '');
     });
 
@@ -232,7 +235,8 @@ test.describe('what building costs', () => {
   }, testInfo) => {
     // The first look at a ghost bakes the block tiles and compiles the shader, then each step waits for frames.
     test.setTimeout(300_000);
-    const problems = await open(page);
+    // Alloy is asked about below, and has to be researched before it is a matter of the pool.
+    const problems = await open(page, '&research=55');
     await page.evaluate(({ x, z }) => {
       const game = window.__ashbound?.game;
       if (game) game.teleport(x, game.world.groundAt(x, z) + 0.05, z, 0);
