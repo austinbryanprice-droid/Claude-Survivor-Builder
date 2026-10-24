@@ -4,7 +4,7 @@
  */
 export const NET = {
   /** Bumped whenever a message changes shape; a host and a guest on different versions refuse each other. */
-  protocolVersion: 9,
+  protocolVersion: 10,
   maxPlayers: 4,
 
   /** The local player's state is sent about this often (about 20 Hz). */
@@ -26,6 +26,10 @@ export const NET = {
   coreIntervalMs: 200,
   /** A guest hears of a change to its own Health or Energy within this long (and not more often). */
   vitalsIntervalMs: 250,
+  /** ...and of a change to the shared pool within this long. */
+  poolIntervalMs: 200,
+  /** The most heaps of debris one list carries: far more than a run's field holds. */
+  maxDebris: 128,
   /** The host sends where every machine is this often (10 Hz), as one packet. */
   enemyIntervalMs: 100,
   /** With no machines to report it still says so this often, so a guest that lost the news does not keep drawing ghosts. */

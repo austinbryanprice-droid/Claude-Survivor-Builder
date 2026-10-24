@@ -53,6 +53,7 @@ describe('guest control frames', () => {
     { t: 'hello', v: NET.protocolVersion, build: 'abc1234', token: TOKEN, name: 'Ada' },
     { t: 'cmd', id: 7, c: { type: 'place', x: -3, y: 12, z: 40, state: 257 } },
     { t: 'cmd', id: 8, c: { type: 'break', x: 0, y: 0, z: 0 } },
+    { t: 'cmd', id: 9, c: { type: 'harvest', x: 21, y: 11, z: -7 } },
     { t: 'fire', o: [1.5, 11.62, -3.25], d: [0, 0, -1], at: 123456 },
     { t: 'fire', o: [-300.25, 2, 40.5], d: [0.7071, -0.7071, 0], at: 0 },
     { t: 'ping', n: 12, rtt: 34.5 },
@@ -88,6 +89,9 @@ describe('guest control frames', () => {
       { type: 'place', x: 0, y: 0, z: 0 },
       { type: 'break', x: 'a', y: 0, z: 0 },
       { type: 'break', x: null, y: 0, z: 0 },
+      { type: 'harvest', x: 1.5, y: 0, z: 0 },
+      { type: 'harvest', x: 0, y: 'a', z: 0 },
+      { type: 'harvest', x: 0, y: 0 },
       { type: 'dig', x: 0, y: 0, z: 0 },
     ];
     for (const c of bad) {
@@ -188,8 +192,24 @@ describe('host control frames', () => {
     { t: 'rej', id: 4, r: 'occupied' },
     { t: 'fix', epoch: 3, x: 1, y: 0, z: -2 },
     { t: 'pong', n: 9 },
-    { t: 'sv', tick: 14400, run: true, core: [1000, 1000], over: false, rc: [6, 6], st: [0, 0, 0] },
-    { t: 'sv', tick: 0, run: false, core: [1, 1000], over: false, rc: [0, 0], st: [12, 340, 2] },
+    {
+      t: 'sv',
+      tick: 14400,
+      run: true,
+      core: [1000, 1000],
+      over: false,
+      rc: [6, 6],
+      st: [0, 0, 0, 0],
+    },
+    {
+      t: 'sv',
+      tick: 0,
+      run: false,
+      core: [1, 1000],
+      over: false,
+      rc: [0, 0],
+      st: [12, 340, 2, 95],
+    },
     {
       t: 'sv',
       tick: 9600,
@@ -198,7 +218,7 @@ describe('host control frames', () => {
       over: true,
       why: 'core',
       rc: [2, 6],
-      st: [31, 212, 4],
+      st: [31, 212, 4, 130],
     },
     {
       t: 'sv',
@@ -208,10 +228,22 @@ describe('host control frames', () => {
       over: true,
       why: 'crew',
       rc: [0, 9],
-      st: [2_000_000, 900_000, 99],
+      st: [2_000_000, 900_000, 99, 1_500_000],
     },
     { t: 'run', n: 2, seed: 20261020, seq: 17, spawn: { x: 2.5, y: 0, z: 0.5 }, epoch: 1 },
     { t: 'run', n: 12, seed: -7, seq: 0, spawn: { x: -40, y: 12.25, z: 33 }, epoch: 255 },
+    { t: 'ec', pl: [30, 0, 0, 0], cap: 400 },
+    { t: 'ec', pl: [400, 12, 3, 0], cap: 400 },
+    { t: 'nl', n: [] },
+    {
+      t: 'nl',
+      n: [
+        [-18.25, 10.3, -19.5, 3.125, 1.05, 2, 1, 0, 2],
+        [29.5, 12.9, -21, 0.5, 0.85, 4, 1, 3, 0],
+      ],
+    },
+    { t: 'hd', p: 2, i: 0, m: 1, g: 11, l: 1, f: false },
+    { t: 'hd', p: 1, i: 69, m: 1, g: 3, l: 0, f: true },
     { t: 'se', e: { k: 'nightfall', n: 1 } },
     { t: 'se', e: { k: 'wave', n: 1, i: 1, of: 1, c: 6 } },
     { t: 'se', e: { k: 'wave', n: 14, i: 6, of: 6, c: 7 } },
@@ -279,7 +311,7 @@ describe('host control frames', () => {
   const withCharges = (text: string): string => {
     if (!text.startsWith('{"t":"sv"')) return text;
     const rc = text.includes('"rc"') ? '' : ',"rc":[2,3]';
-    const st = text.includes('"st"') ? '' : ',"st":[0,0,0]';
+    const st = text.includes('"st"') ? '' : ',"st":[0,0,0,0]';
     return text.replace(/\}$/, `${rc}${st}}`);
   };
   /** A word about a player's meters with the two countdowns a current host always sends. */
@@ -383,7 +415,7 @@ describe('host control frames', () => {
   });
 
   it('refuses a survival frame whose respawn charges are missing, malformed or more than the crew can hold', () => {
-    const base = '{"t":"sv","tick":9,"run":true,"core":[5,10],"over":false,"st":[0,0,0]';
+    const base = '{"t":"sv","tick":9,"run":true,"core":[5,10],"over":false,"st":[0,0,0,0]';
     expect(decodeHostFrame(`${base},"rc":[2,3]}`)).not.toBeNull();
     for (const rc of [
       '',
@@ -404,24 +436,124 @@ describe('host control frames', () => {
 
   it('refuses a survival frame whose totals are missing, malformed or negative', () => {
     const base = '{"t":"sv","tick":9,"run":false,"core":[0,10],"over":true,"why":"core","rc":[1,3]';
-    expect(decodeHostFrame(`${base},"st":[31,212,4]}`)).toMatchObject({ st: [31, 212, 4] });
+    expect(decodeHostFrame(`${base},"st":[31,212,4,130]}`)).toMatchObject({
+      st: [31, 212, 4, 130],
+    });
     for (const st of [
       '',
       ',"st":null',
       ',"st":5',
       ',"st":[1,2]',
-      ',"st":[1,2,3,4]',
-      ',"st":["1",2,3]',
-      ',"st":[1.5,2,3]',
-      ',"st":[1,2.5,3]',
-      ',"st":[1,2,3.5]',
-      ',"st":[-1,2,3]',
-      ',"st":[1,-2,3]',
-      ',"st":[1,2,-3]',
-      ',"st":[3000000000,2,3]',
-      ',"st":[1,null,3]',
+      ',"st":[1,2,3]',
+      ',"st":[1,2,3,4,5]',
+      ',"st":["1",2,3,4]',
+      ',"st":[1.5,2,3,4]',
+      ',"st":[1,2.5,3,4]',
+      ',"st":[1,2,3.5,4]',
+      ',"st":[1,2,3,4.5]',
+      ',"st":[-1,2,3,4]',
+      ',"st":[1,-2,3,4]',
+      ',"st":[1,2,-3,4]',
+      ',"st":[1,2,3,-4]',
+      ',"st":[3000000000,2,3,4]',
+      ',"st":[1,2,3,3000000000]',
+      ',"st":[1,null,3,4]',
     ]) {
       expect(decodeHostFrame(`${base}${st}}`), st).toBeNull();
+    }
+  });
+
+  it('refuses a pool word with the wrong number of materials, a count that is not a whole number or a ceiling that is missing', () => {
+    const base = { t: 'ec', pl: [30, 0, 0, 0], cap: 400 };
+    expect(decodeHostFrame(JSON.stringify(base))).toEqual(base);
+    for (const bad of [
+      { pl: undefined },
+      { pl: null },
+      { pl: [30, 0, 0] },
+      { pl: [30, 0, 0, 0, 0] },
+      { pl: [30, 0, 0, '0'] },
+      { pl: [30, 0.5, 0, 0] },
+      { pl: [-1, 0, 0, 0] },
+      { pl: [3000000000, 0, 0, 0] },
+      { cap: undefined },
+      { cap: -1 },
+      { cap: 1.5 },
+      { cap: '400' },
+    ]) {
+      const text = JSON.stringify({ ...base, ...bad });
+      expect(decodeHostFrame(text), text).toBeNull();
+    }
+  });
+
+  it('refuses a list of heaps that is too long, has a heap of the wrong shape or one with numbers that make no sense', () => {
+    const heap = [-18.25, 10.3, -19.5, 3.125, 1.05, 3, 1, 0, 2];
+    expect(decodeHostFrame(JSON.stringify({ t: 'nl', n: [heap] }))).toEqual({ t: 'nl', n: [heap] });
+    const long = new Array(NET.maxDebris + 1).fill(heap);
+    expect(decodeHostFrame(JSON.stringify({ t: 'nl', n: long }))).toBeNull();
+    expect(
+      decodeHostFrame(JSON.stringify({ t: 'nl', n: new Array(NET.maxDebris).fill(heap) })),
+    ).not.toBeNull();
+    const edits = (index: number, value: unknown): unknown[] => {
+      const copy: unknown[] = [...heap];
+      copy[index] = value;
+      return copy;
+    };
+    for (const bad of [
+      null,
+      7,
+      [],
+      heap.slice(0, 8),
+      [...heap, 1],
+      edits(0, 'x'),
+      edits(1, null),
+      edits(2, NET.move.limit + 1),
+      edits(3, 1e9),
+      edits(4, 0),
+      edits(4, -1),
+      edits(5, 0),
+      edits(5, 2.5),
+      edits(5, 300),
+      edits(6, 0),
+      edits(6, 5),
+      edits(7, -1),
+      edits(7, 70000),
+      edits(8, 4),
+      edits(8, -1),
+      edits(8, 1.5),
+    ]) {
+      const text = JSON.stringify({ t: 'nl', n: [bad] });
+      expect(decodeHostFrame(text), text).toBeNull();
+    }
+    expect(decodeHostFrame('{"t":"nl"}')).toBeNull();
+    expect(decodeHostFrame('{"t":"nl","n":"x"}')).toBeNull();
+  });
+
+  it('refuses a word that a heap was stripped without saying who, which heap, what went in or what is left', () => {
+    const base = { t: 'hd', p: 2, i: 7, m: 1, g: 11, l: 1, f: false };
+    expect(decodeHostFrame(JSON.stringify(base))).toEqual(base);
+    for (const bad of [
+      { p: undefined },
+      { p: 0 },
+      { p: 1.5 },
+      { i: undefined },
+      { i: -1 },
+      { i: NET.maxDebris },
+      { i: 1.5 },
+      { m: 0 },
+      { m: 5 },
+      { m: '1' },
+      { g: -1 },
+      { g: 1.5 },
+      { g: undefined },
+      { l: -1 },
+      { l: 256 },
+      { l: 0.5 },
+      { f: undefined },
+      { f: 1 },
+      { f: 'no' },
+    ]) {
+      const text = JSON.stringify({ ...base, ...bad });
+      expect(decodeHostFrame(text), text).toBeNull();
     }
   });
 
@@ -467,7 +599,7 @@ describe('host control frames', () => {
   });
 
   it('wants a cause exactly when the run is over, and only the two it knows', () => {
-    const open = '{"t":"sv","tick":9,"run":false,"core":[5,10],"rc":[1,3],"st":[0,0,0]';
+    const open = '{"t":"sv","tick":9,"run":false,"core":[5,10],"rc":[1,3],"st":[0,0,0,0]';
     expect(decodeHostFrame(`${open},"over":true,"why":"crew"}`)).toMatchObject({ why: 'crew' });
     expect(decodeHostFrame(`${open},"over":true,"why":"core"}`)).toMatchObject({ why: 'core' });
     for (const text of [

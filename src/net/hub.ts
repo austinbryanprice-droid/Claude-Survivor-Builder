@@ -1,3 +1,10 @@
+import type {
+  DebrisNode,
+  DebrisView,
+  EconomyReading,
+  EconomyView,
+  HarvestEvent,
+} from '../shared/economy';
 import type { EnemyPose } from '../shared/enemy-state';
 import type { Vec3 } from '../shared/look';
 import type {
@@ -28,6 +35,33 @@ import type {
   Unsubscribe,
 } from './session';
 
+/** Sessions are told apart by the version, which counts the swaps too: a new session's heaps are never taken for the last one's. */
+const SWAP_VERSION_STEP = 1_000_000_000;
+
+/** The heaps of whichever session is current. */
+class HubDebrisView implements DebrisView {
+  swaps = 0;
+  readonly harvests = new Emitter<HarvestEvent>();
+
+  constructor(private readonly current: () => DebrisView) {}
+
+  get nodes(): readonly DebrisNode[] {
+    return this.current().nodes;
+  }
+
+  get version(): number {
+    return this.swaps * SWAP_VERSION_STEP + this.current().version;
+  }
+
+  leftOf(index: number): number {
+    return this.current().leftOf(index);
+  }
+
+  onHarvest(listener: (event: HarvestEvent) => void): Unsubscribe {
+    return this.harvests.on(listener);
+  }
+}
+
 /**
  * The one session object the rest of the game holds on to. Behind it the real session changes: a
  * player starts alone, may open a room (still the same session), may join someone else's (a
@@ -50,6 +84,11 @@ export class SessionHub implements GameSession {
   private readonly swaps = new Emitter<GameSession>();
   private readonly vitalsView: VitalsView = {
     read: (out: VitalsReading) => this.session.vitals.read(out),
+  };
+  private readonly debrisView = new HubDebrisView(() => this.session.economy.debris);
+  private readonly economyView: EconomyView = {
+    read: (out: EconomyReading) => this.session.economy.read(out),
+    debris: this.debrisView,
   };
   private readonly survivalEvents = new Emitter<SurvivalEvent>();
   private readonly survivalView: SurvivalView = {
@@ -77,6 +116,7 @@ export class SessionHub implements GameSession {
     for (const stop of this.unbind) stop();
     this.unbind = [];
     this.session = next;
+    this.debrisView.swaps++;
     next.setLocalActive(this.localActive);
     this.bind();
     this.swaps.emit(next);
@@ -99,6 +139,7 @@ export class SessionHub implements GameSession {
       session.onCorrection((correction) => this.corrections.emit(correction)),
       session.onRun((run) => this.runs.emit(run)),
       session.survival.onEvent((event) => this.survivalEvents.emit(event)),
+      session.economy.debris.onHarvest((event) => this.debrisView.harvests.emit(event)),
     ];
   }
 
@@ -132,6 +173,9 @@ export class SessionHub implements GameSession {
   }
   get vitals(): VitalsView {
     return this.vitalsView;
+  }
+  get economy(): EconomyView {
+    return this.economyView;
   }
   get run(): number {
     return this.session.run;

@@ -13,6 +13,8 @@ import {
 } from '../../shared/survival-state';
 import type { VitalsReading } from '../../shared/vitals-state';
 import type { Outpost } from '../../world/outpost';
+import { Economy } from '../economy/economy';
+import { debrisField } from '../economy/field';
 import { BLASTER, RESPAWN, SURVIVAL, VITALS, hitboxOf } from './balance';
 import { EnemySim, type Target } from './enemies';
 import { NavGrid, type NavCell, type NavWorld } from './nav';
@@ -106,6 +108,7 @@ export class SurvivalSim {
   private readonly pending: SurvivalEvent[] = [];
   private readonly machines: EnemySim | null;
   private readonly waves: WaveDirector | null;
+  private readonly wealth: Economy | null;
   /** The players the machines can go after in this step, kept between steps so a step allocates nothing. */
   private readonly targets: Target[] = [];
   private readonly feet = { x: 0, y: 0, z: 0 };
@@ -130,6 +133,18 @@ export class SurvivalSim {
       this.machines && options.waves !== false
         ? new WaveDirector(this.machines, options.seed ?? 0)
         : null;
+    // The heaps of debris lie on the ground the machines walk, so a run has them where it has machines.
+    this.wealth =
+      options.nav && this.core
+        ? new Economy(options.seed ?? 0, debrisField(options.seed ?? 0, options.nav, this.core))
+        : null;
+    // A run that starts at a later night has had the dawns before it.
+    for (let night = 1; night < this.cycle; night++) this.wealth?.dawn(night);
+  }
+
+  /** The crew's shared pool and the heaps of debris that fill it, or null where the world gave the run no ground. */
+  get economy(): Economy | null {
+    return this.wealth;
   }
 
   /** The machines that come for the Core, or null where the world gave the run no ground for them to walk. */
@@ -182,6 +197,11 @@ export class SurvivalSim {
 
   get revived(): number {
     return this.revivedCount;
+  }
+
+  /** Materials the crew has gathered: what the results screen counts. */
+  get gathered(): number {
+    return this.wealth?.gathered ?? 0;
   }
 
   /**
@@ -378,6 +398,7 @@ export class SurvivalSim {
     out.felled = this.felledCount;
     out.placed = this.placedCount;
     out.revived = this.revivedCount;
+    out.gathered = this.gathered;
     return out;
   }
 
@@ -395,6 +416,7 @@ export class SurvivalSim {
     else if (inCycle === 0) {
       this.pending.push({ k: 'dawn', n: this.cycle - 1 });
       this.grantDawnCharges();
+      this.wealth?.dawn(this.cycle - 1);
     }
     if (beginsByDay) {
       this.health = Math.min(SURVIVAL.core.maxHealth, this.health + MEND_PER_STEP);

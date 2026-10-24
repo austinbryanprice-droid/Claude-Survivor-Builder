@@ -33,6 +33,7 @@ export class SurvivalMirror implements SurvivalView {
   private felled = 0;
   private placed = 0;
   private revived = 0;
+  private gathered = 0;
   private shown = 0;
   private readonly events = new Emitter<SurvivalEvent>();
 
@@ -41,7 +42,7 @@ export class SurvivalMirror implements SurvivalView {
   /**
    * The host's step count, whether its clock runs, the Core's health, whether the run is over and
    * what ended it, the crew's respawn charges and the most it can hold, and what the run has come
-   * to (machines felled, blocks placed, charges spent), as of now.
+   * to (machines felled, blocks placed, charges spent, materials gathered), as of now.
    */
   apply(
     tick: number,
@@ -55,6 +56,7 @@ export class SurvivalMirror implements SurvivalView {
     felled = 0,
     placed = 0,
     revived = 0,
+    gathered = 0,
   ): void {
     this.base = tick / SIM_HZ;
     this.at = this.scheduler.now();
@@ -68,6 +70,7 @@ export class SurvivalMirror implements SurvivalView {
     this.felled = felled;
     this.placed = placed;
     this.revived = revived;
+    this.gathered = gathered;
   }
 
   /** The host started the run over: forget the old one, down to the time that was last shown, so the new clock is not held at the old one. */
@@ -103,6 +106,7 @@ export class SurvivalMirror implements SurvivalView {
     out.felled = this.felled;
     out.placed = this.placed;
     out.revived = this.revived;
+    out.gathered = this.gathered;
     return out;
   }
 
