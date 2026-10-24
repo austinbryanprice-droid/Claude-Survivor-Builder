@@ -151,6 +151,7 @@ const session = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.sess
 const remotes = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.remotes());
 const digest = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.blocks());
 const clockOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.clock());
+const seedOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.game.world.seed);
 
 /**
  * Stops these pages drawing, or lets them draw again (see `slowFrames`). Their frame loop waits;
@@ -486,6 +487,106 @@ test.describe('multiplayer', () => {
         .poll(async () => (await clockOf(bo)).over, { message: 'a newcomer sees the fall' })
         .toBe(true);
       await expect(bo.page.locator('.ph-core')).toHaveAttribute('data-tone', 'fallen');
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
+  test('a lost run waits for the host: the guest sees who it waits for, and follows when the host plays Retry or New Run', async ({
+    browser,
+    baseURL,
+  }) => {
+    // The room card is always open in a room, 330 pixels wide at the right, and the host clicks
+    // the card's buttons for real: in the usual 480-pixel window it would cover the second one.
+    const host = await openPlayer(browser, baseURL, 'Host', { size: { width: 720, height: 270 } });
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone = [host, ada];
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      const first = await seedOf(host);
+      expect(await seedOf(ada)).toBe(first);
+
+      // The crew has built something, and the Core falls. The run counts every block placed in it,
+      // the one each page drew and took away to warm up before the room among them.
+      const placedBefore = (await clockOf(host)).placed;
+      await host.page.evaluate(([state]) => window.__ashbound!.mp!.placeNear(4, 0, state!), [
+        SCRAP,
+      ] as const);
+      await expectSameWorld(everyone, 1);
+      await host.page.evaluate(() => window.__ashbound!.mp!.hurtCore(5000));
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await clockOf(p)).over, { message: `${p.name} sees the fall` })
+          .toBe(true);
+        await expect(p.page.locator('.run-results')).toBeVisible({ timeout: 60_000 });
+        await expect(p.page.locator('.pause')).toBeHidden();
+        await expect(p.page.locator('.run-results .lede')).toContainText('The Outpost Core fell');
+        // Blocks placed: what the host's run counted, one more than before the crew built.
+        expect((await clockOf(p)).placed, `${p.name}'s count`).toBe(placedBefore + 1);
+        await expect(
+          p.page.locator('.run-results .stats .stat').nth(2).locator('strong'),
+        ).toHaveText(String(placedBefore + 1));
+      }
+
+      // The host chooses; the guest is told who it waits for, and has nothing to press.
+      await expect(host.page.getByRole('button', { name: 'Retry' })).toBeEnabled();
+      await expect(host.page.getByRole('button', { name: 'New Run' })).toBeEnabled();
+      await expect(ada.page.locator('.run-results .hint')).toHaveText(
+        'Waiting for Host to start the next run.',
+      );
+      await expect(ada.page.locator('.run-results button')).toHaveCount(0);
+
+      // Retry: the same valley again, for everyone, empty, at the start of a new run.
+      await host.page.getByRole('button', { name: 'Retry' }).click();
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await session(p)).run, {
+            message: `${p.name} is in run 2`,
+            timeout: 90_000,
+          })
+          .toBe(2);
+        await expect
+          .poll(async () => (await clockOf(p)).over, { message: `${p.name}'s run is not over` })
+          .toBe(false);
+      }
+      await expectSameWorld(everyone, 0);
+      for (const p of everyone) {
+        expect(await seedOf(p), `${p.name}'s valley`).toBe(first);
+        expect(await clockOf(p), `${p.name}'s run`).toMatchObject({
+          over: false,
+          coreHealth: 1000,
+          placed: 0,
+          respawns: 2 * RESPAWN.startPerPlayer,
+        });
+        await expect(p.page.locator('.run-results')).toBeHidden({ timeout: 60_000 });
+      }
+      await expectSeeEachOther(everyone);
+
+      // Lost again, and this time the host asks for another valley.
+      await host.page.evaluate(() => window.__ashbound!.mp!.hurtCore(5000));
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await clockOf(p)).over, { message: `${p.name} sees the second fall` })
+          .toBe(true);
+        await expect(p.page.locator('.run-results')).toBeVisible({ timeout: 60_000 });
+      }
+      await host.page.getByRole('button', { name: 'New Run' }).click();
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await session(p)).run, {
+            message: `${p.name} is in run 3`,
+            timeout: 90_000,
+          })
+          .toBe(3);
+      }
+      const second = await seedOf(host);
+      expect(second).not.toBe(first);
+      expect(await seedOf(ada)).toBe(second);
+      await expectSameWorld(everyone, 0);
+      await expectSeeEachOther(everyone);
       expectNoProblems(everyone);
     } finally {
       await closeAll(everyone);
