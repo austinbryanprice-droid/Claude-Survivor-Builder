@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ENEMY_FLAG, createEnemyState, type EnemyState } from '../../src/shared/enemy-state';
+import { createRng } from '../../src/shared/hash';
+import { angleDelta } from '../../src/shared/look';
 import { SIM_STEP_SECONDS } from '../../src/shared/survival-state';
 import { ENEMIES } from '../../src/systems/survival/balance';
 import { EnemySim, type Strikes, type Target } from '../../src/systems/survival/enemies';
@@ -92,6 +94,43 @@ describe('where they come from', () => {
     expect(f.sim.count).toBe(ENEMIES.maxAlive);
     expect(f.sim.spawn(1)).toBe(0);
     expect(new Set(f.where().map((e) => e.id)).size).toBe(ENEMIES.maxAlive);
+  });
+
+  it('can be brought in from one stretch of the ring, with numbers of the caller’s own', () => {
+    const f = fight(11);
+    const bearing = 1.2;
+    const arc = 0.4;
+    expect(f.sim.spawn(12, 1, { rng: createRng(99), bearing, arc })).toBe(12);
+    for (const e of f.where()) {
+      const angle = Math.atan2(e.z - f.flat.core.z, e.x - f.flat.core.x);
+      expect(Math.abs(angleDelta(angle, bearing))).toBeLessThanOrEqual(arc + 1e-9);
+    }
+    // The simulation's own stream was left alone: what it brings next is what a fresh one brings first.
+    f.sim.clear();
+    f.sim.spawn(3);
+    const fresh = fight(11);
+    fresh.sim.spawn(3);
+    expect(f.where().map((e) => [e.x, e.z])).toEqual(fresh.where().map((e) => [e.x, e.z]));
+    // The same numbers bring them to the same places.
+    const twin = fight(5);
+    twin.sim.spawn(12, 1, { rng: createRng(99), bearing, arc });
+    const other = fight(6);
+    other.sim.spawn(12, 1, { rng: createRng(99), bearing, arc });
+    expect(twin.where().map((e) => [e.x, e.z])).toEqual(other.where().map((e) => [e.x, e.z]));
+  });
+
+  it('spread out over the rest of the ring when their stretch of it is deep water', () => {
+    const bearing = 1.2;
+    const lake = (x: number, z: number): number => {
+      const angle = Math.atan2(z + 3.5, x + 1.5);
+      return Math.abs(angleDelta(angle, bearing)) < 0.5 ? -5 : 10;
+    };
+    const f = fight(3, flatWorld({ height: lake }));
+    expect(f.sim.spawn(6, 1, { rng: createRng(4), bearing, arc: 0.3 })).toBe(6);
+    for (const e of f.where()) {
+      const angle = Math.atan2(e.z - f.flat.core.z, e.x - f.flat.core.x);
+      expect(Math.abs(angleDelta(angle, bearing))).toBeGreaterThan(0.3);
+    }
   });
 
   it('do not appear where there is no way to the Core', () => {

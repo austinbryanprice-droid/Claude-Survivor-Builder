@@ -74,11 +74,13 @@ export function runLine(reading: SurvivalReading): string {
   return reading.running ? line : `${line} · the clock waits while you are away`;
 }
 
-/** The message shown when the light changes or the Core falls. */
+/** The message shown when the light changes, a wave is coming or the Core falls. */
 export function messageFor(event: SurvivalEvent): string {
   switch (event.k) {
     case 'nightfall':
       return `Night ${event.n} has fallen`;
+    case 'wave':
+      return `Wave ${event.i} of ${event.of}: ${event.c} ${event.c === 1 ? 'machine' : 'machines'} in ten seconds`;
     case 'dawn':
       return `Dawn breaks on day ${event.n + 1}`;
     case 'overrun':

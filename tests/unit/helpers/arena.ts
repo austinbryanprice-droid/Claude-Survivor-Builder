@@ -46,6 +46,8 @@ export function arena(
       nav,
       seed: 5,
       startAt: DAY_SECONDS + 1,
+      // The tests put the machines where they want them; the nights' waves have tests of their own.
+      waves: false,
       ray: {
         blocks: hostWorld,
         ground: { distance: (x, y, z) => Math.min(y - FLOOR, outpostDistance(core, x, y, z)) },

@@ -45,7 +45,7 @@ test.describe('the day and night clock', () => {
   test('runs while the player plays, waits while they are away, and the light follows it', async ({
     page,
   }) => {
-    const problems = await open(page, '?debug&quality=low');
+    const problems = await open(page, '?debug&quality=low&waves=0');
 
     // The first morning: the pill by the compass, the line on the pause card and a bright sky.
     await expect(page.locator('.ph-clock')).toContainText('Day 1');
@@ -104,7 +104,7 @@ test.describe('the day and night clock', () => {
   test('?night=3 opens at nightfall of the third night, and a fixed moment keeps its sky', async ({
     page,
   }) => {
-    const problems = await open(page, '?debug&quality=low&night=3&time=noon');
+    const problems = await open(page, '?debug&quality=low&night=3&time=noon&waves=0');
     await expect(page.locator('.ph-clock')).toContainText('Night 3');
     expect(await clock(page)).toMatchObject({ cycle: 3, phase: 'night' });
     // The page asked for noon, so the sky stays at noon whatever the clock says.

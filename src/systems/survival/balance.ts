@@ -152,6 +152,66 @@ export const ENEMIES = {
   },
 } as const;
 
+/**
+ * The waves that come on each night. The counts follow the notes of the spec for the first four
+ * nights (6, 8, 10, then 12 drones and one armored) and add two a night after that, with a few
+ * more of the tougher kinds as the nights go on; from the third night the machines are a little
+ * tougher, and from the fifth each night's are 8 percent tougher than the last night's. Every
+ * number is a first guess to be tuned by playing (docs/decisions.md, Phase 4f) and later by the
+ * balance simulator of Phase 5.
+ */
+export const WAVES = {
+  /** Machines on each of the first nights, the specials included. */
+  totals: [6, 8, 10, 13],
+  /** Machines a night adds after the last of those. */
+  perNightAfter: 2,
+
+  /**
+   * The special kinds, which take their places among the night's total. A kind comes from the
+   * night `from` with one machine, and one more every `every` nights.
+   */
+  specials: [
+    { kind: 'armored', from: 4, every: 3 },
+    { kind: 'flyer', from: 5, every: 4 },
+    { kind: 'breacher', from: 9, every: 4 },
+  ] as const,
+
+  /**
+   * What each kind is until Phase 5 gives the new ones bodies of their own: every one of them
+   * walks, is drawn and fights as a crawler, and has this many times a crawler's Health.
+   */
+  kinds: {
+    crawler: { health: 1 },
+    armored: { health: 2 },
+    flyer: { health: 1 },
+    breacher: { health: 1 },
+  },
+
+  /** How much tougher the machines are: from the night `toughFrom` by `tough`, and from `growsFrom` that much again for each night. */
+  health: { toughFrom: 3, tough: 1.1, growsFrom: 5, grows: 1.08 },
+
+  /** A night's machines come in waves of about this many, and in no more than `maxWaves`. */
+  perWave: 6,
+  maxWaves: 6,
+
+  /** Seconds after nightfall, and seconds between machines, for the waves of a night. */
+  timing: {
+    /** The first wave comes out of the ground this long after nightfall. */
+    firstAt: 14,
+    /** The last wave comes at the latest this long after nightfall: the walk to the Core takes it about twenty seconds. */
+    lastAt: 170,
+    /** Two waves of a night are at most this far apart. */
+    maxGap: 70,
+    /** The crew is told this long before a wave comes. */
+    warning: 10,
+    /** One machine of a wave comes out of the ground this long after the one before it. */
+    release: 0.4,
+  },
+
+  /** A wave comes from one side: half the width, in radians, of the arc of the ring that it keeps to. */
+  arc: Math.PI / 5,
+} as const;
+
 /** The target a machine of this kind is for a bolt, or undefined for a kind this table does not know. */
 export function hitboxOf(
   kind: number,

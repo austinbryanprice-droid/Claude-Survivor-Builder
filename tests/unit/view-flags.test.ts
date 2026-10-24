@@ -13,6 +13,7 @@ describe('view URL switches', () => {
     expect(v.demo).toBeNull();
     expect(v.hud).toBe(true);
     expect(v.stats).toBe(true);
+    expect(v.waves).toBe(true);
     expect(v.freeze).toBe(false);
     expect(v.terrain).toBe('surface-nets');
     expect(v.scale).toBeNull();
@@ -68,6 +69,13 @@ describe('view URL switches', () => {
     expect(readViewFlags('?clock=0').clock).toBe(false);
     expect(readViewFlags('?freeze=0').freeze).toBe(false);
     expect(readViewFlags('?freeze').freeze).toBe(true);
+  });
+
+  it('keeps the waves on unless they are asked to stay away', () => {
+    expect(readViewFlags('?waves=0').waves).toBe(false);
+    expect(readViewFlags('?waves=1').waves).toBe(true);
+    expect(readViewFlags('?waves').waves).toBe(true);
+    expect(readViewFlags('?night=3&waves=0')).toMatchObject({ night: 3, waves: false });
   });
 
   it('picks the presets the benchmark runs, once each and in the order given', () => {

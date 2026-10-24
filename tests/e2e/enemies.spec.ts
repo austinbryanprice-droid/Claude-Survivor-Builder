@@ -15,7 +15,7 @@ const wait = expect.configure({ timeout: STATE_TIMEOUT });
 /** `expect.poll` with the patience of a march: the machines only move as fast as the clock. */
 const poll = <T>(read: () => Promise<T>, timeout = STATE_TIMEOUT) => expect.poll(read, { timeout });
 /** Night 1, from its first second: nothing mends the Core, and the light is the one the machines come in. */
-const QUERY = '?debug&quality=low&freeze=1&stats=0&night=1';
+const QUERY = '?debug&quality=low&freeze=1&stats=0&night=1&waves=0';
 
 async function open(page: Page): Promise<string[]> {
   const problems: string[] = [];
@@ -223,6 +223,12 @@ test.describe('the crawlers', () => {
     await frames(page, 3);
 
     await test.step('four crawlers come from outside it, and chew their way in', async () => {
+      // With the mouse free the run is held, so they stand where they are put until the player
+      // takes it again. Put while it ran, they were already through the wall by the time a
+      // software-rendered frame (seconds) let the test look.
+      await page.evaluate(() => document.exitPointerLock());
+      await wait(page.locator('#hud')).toHaveAttribute('data-pointer', 'free');
+      await poll(async () => (await clock(page)).running).toBe(false);
       const outside = 9;
       const ids = await page.evaluate(
         ({ x, z, d }) => {
@@ -238,11 +244,12 @@ test.describe('the crawlers', () => {
       );
       expect(ids.filter((id) => id !== null)).toHaveLength(4);
       await poll(async () => (await machines(page)).length).toBe(4);
-      // The wall holds for a moment: none of them is in yet.
-      const farthest = Math.max(...(await machines(page)).map((m) => awayFrom(core, m)));
-      expect(farthest).toBeGreaterThan(half - 0.5);
-
+      // The wall holds: none of them is in yet.
+      expect(await nearest(page, core)).toBeGreaterThan(half + 1);
       const events = await read<number>(page, 'mp.eventCount()');
+
+      await takeThePointer(page);
+      await poll(async () => (await clock(page)).running).toBe(true);
       // Chewed blocks are the world's own change, announced like any: the count falls, events arrive.
       await poll(() => read<number>(page, 'mp.blocks().count'), MARCH_TIMEOUT).toBeLessThan(
         8 * half,

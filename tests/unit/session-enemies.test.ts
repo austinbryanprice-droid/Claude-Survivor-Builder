@@ -414,7 +414,7 @@ describe('the hub and the machines', () => {
       world: fixedWorld(hostWorld),
       name: 'Solo',
       token: token(60 + seed),
-      survival: new SurvivalSim({ core, nav, seed, startAt: DAY_SECONDS + 1 }),
+      survival: new SurvivalSim({ core, nav, seed, startAt: DAY_SECONDS + 1, waves: false }),
     });
     session.setLocalActive(true);
     return { session, scheduler };

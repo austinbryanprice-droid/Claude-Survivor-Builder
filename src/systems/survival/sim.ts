@@ -16,6 +16,7 @@ import { BLASTER, SURVIVAL, VITALS, hitboxOf } from './balance';
 import { EnemySim, type Target } from './enemies';
 import { NavGrid, type NavCell, type NavWorld } from './nav';
 import { PlayerVitals } from './vitals';
+import { WaveDirector } from './waves';
 
 const CYCLE_TICKS = CYCLE_SECONDS * SIM_HZ;
 const DAY_TICKS = DAY_SECONDS * SIM_HZ;
@@ -42,6 +43,11 @@ export interface SurvivalOptions {
    * included. Without it nothing stops a bolt but the machines it strikes.
    */
   ray?: RayWorld | null;
+  /**
+   * False keeps the nights empty: the machines come only when something puts them there (the
+   * `?waves=0` switch, for pictures and tests that want a quiet night). The waves are on by default.
+   */
+  waves?: boolean;
 }
 
 /** How a shot of the blaster ended. One object is filled by every call to `fire`. */
@@ -81,6 +87,7 @@ export class SurvivalSim {
   private readonly players = new Map<number, PlayerVitals>();
   private readonly pending: SurvivalEvent[] = [];
   private readonly machines: EnemySim | null;
+  private readonly waves: WaveDirector | null;
   /** The players the machines can go after in this step, kept between steps so a step allocates nothing. */
   private readonly targets: Target[] = [];
   private readonly feet = { x: 0, y: 0, z: 0 };
@@ -100,6 +107,10 @@ export class SurvivalSim {
             core: this.core,
             seed: options.seed ?? 0,
           })
+        : null;
+    this.waves =
+      this.machines && options.waves !== false
+        ? new WaveDirector(this.machines, options.seed ?? 0)
         : null;
   }
 
@@ -294,6 +305,8 @@ export class SurvivalSim {
       this.health = Math.min(SURVIVAL.core.maxHealth, this.health + MEND_PER_STEP);
     }
     for (const vitals of this.players.values()) vitals.step(SIM_STEP_SECONDS, this.core);
+    // The night's waves come out of the ground (and at dawn the machines fall back) before the machines move.
+    this.waves?.step(this.tickValue, this.pending);
     if (this.machines) this.stepMachines(this.machines);
   }
 

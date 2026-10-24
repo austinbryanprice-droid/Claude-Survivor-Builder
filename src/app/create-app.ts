@@ -100,6 +100,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           flags: readNetFlags(search, { secure: window.location.protocol === 'https:' }),
           buildId,
           night: view.night,
+          waves: view.waves,
           // A fixed moment (`?time=`, a named `?shot=`) or the demo clock (`?clock`) keeps the sky to itself.
           skyFollowsClock: view.time === null && !view.clock && !shot,
         });

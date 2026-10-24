@@ -22,7 +22,8 @@ import { DAY_SECONDS } from '../../src/shared/daycycle';
  */
 
 const BROKER = '127.0.0.1:9000';
-const NETWORK = `broker=${BROKER}&ice=none`;
+// No waves: these tests cross into the night to watch the clock and the Core, not to be attacked.
+const NETWORK = `broker=${BROKER}&ice=none&waves=0`;
 const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
 const ALLOY = packState(SHAPE.cube, MATERIAL.alloy);
 const SMALL = { width: 480, height: 270 };

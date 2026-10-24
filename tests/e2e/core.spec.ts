@@ -74,7 +74,7 @@ test.describe('the Outpost Core', () => {
   test('stands in the crater, solid to everything but blocks that go against it', async ({
     page,
   }) => {
-    const problems = await open(page, '?debug&quality=low&freeze=1&stats=0');
+    const problems = await open(page, '?debug&quality=low&freeze=1&stats=0&waves=0');
     const core = await read<Core>(
       page,
       `(() => {
@@ -183,7 +183,7 @@ test.describe('the Outpost Core', () => {
   test('its gauge comes up when it is hurt, and the run ends and the clock stops when it falls', async ({
     page,
   }) => {
-    const problems = await open(page, '?debug&quality=low&freeze=1&stats=0');
+    const problems = await open(page, '?debug&quality=low&freeze=1&stats=0&waves=0');
     const gauge = page.locator('.ph-core');
 
     await test.step('by day, whole, there is no gauge', async () => {

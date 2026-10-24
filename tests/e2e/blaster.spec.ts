@@ -14,7 +14,7 @@ const wait = expect.configure({ timeout: STATE_TIMEOUT });
 /** `expect.poll` with the patience of `wait`: the HUD and the light only change when a frame is drawn. */
 const poll = <T>(read: () => Promise<T>) => expect.poll(read, { timeout: STATE_TIMEOUT });
 /** Night 1, from its first second, so that the light is the one the machines come in. */
-const QUERY = '?debug&quality=low&freeze=1&stats=0&night=1';
+const QUERY = '?debug&quality=low&freeze=1&stats=0&night=1&waves=0';
 
 /** A spot in the crash clearing, where the ground is open and gentle. */
 const SPOT = { x: 8.5, z: -4.5 };

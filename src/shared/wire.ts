@@ -57,6 +57,8 @@ const CELL_MIN = -32768;
 const CELL_MAX = 32767;
 const MAX_U16 = 0xffff;
 const MAX_U31 = 0x7fffffff;
+/** A night holds a handful of waves; the frame accepts anything a byte can count. */
+const MAX_WAVES = 255;
 const MAX_SEED = Number.MAX_SAFE_INTEGER;
 
 /** Compares 16-bit counters that wrap: is `a` newer than `b`? */
@@ -111,7 +113,12 @@ function readSurvivalEvent(raw: unknown): SurvivalEvent | null {
   if (!isRecord(raw)) return null;
   const kind = SURVIVAL_EVENT_KINDS.find((candidate) => candidate === raw.k);
   if (!kind || !isInt(raw.n, 1, MAX_U16)) return null;
-  return { k: kind, n: raw.n };
+  if (kind !== 'wave') return { k: kind, n: raw.n };
+  // A wave says which of the night's it is and how many machines it holds.
+  if (!isInt(raw.of, 1, MAX_WAVES) || !isInt(raw.i, 1, raw.of) || !isInt(raw.c, 0, MAX_U16)) {
+    return null;
+  }
+  return { k: 'wave', n: raw.n, i: raw.i, of: raw.of, c: raw.c };
 }
 
 function readPlayerWire(raw: unknown): PlayerWire | null {

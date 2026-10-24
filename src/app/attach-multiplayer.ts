@@ -31,6 +31,8 @@ export interface AttachOptions {
   buildId: string;
   /** Begin the run at the start of this night (the `?night=` switch), or at the first morning when null. */
   night: number | null;
+  /** The nights send their waves. False (the `?waves=0` switch) keeps them empty. */
+  waves: boolean;
   /** The sky follows the run's clock. False when the page holds a moment or runs its own demo clock. */
   skyFollowsClock: boolean;
 }
@@ -51,6 +53,7 @@ export function attachMultiplayer({
   flags,
   buildId,
   night,
+  waves,
   skyFollowsClock,
 }: AttachOptions): Multiplayer {
   const multiplayer = createMultiplayer({
@@ -94,6 +97,7 @@ export function attachMultiplayer({
           nav: navigation(),
           ray: rayWorld(),
           seed: game.world.seed,
+          waves,
         }),
     },
     groundAt: (x, z) => game.world.groundAt(x, z),

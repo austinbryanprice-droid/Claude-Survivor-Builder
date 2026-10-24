@@ -36,6 +36,8 @@ const BITE_CORE = -1;
 const TURN_FIRST = 1.2;
 /** A new enemy is placed by trying this many spots on the ring before giving up. */
 const SPAWN_ATTEMPTS = 24;
+/** The first of those tries stay in the arc a wave comes from, if it has one. */
+const SPAWN_ATTEMPTS_IN_ARC = 16;
 /** Crowding pushes each of two overlapping enemies this part of the way out of each other each step. */
 const CROWD_PUSH = 0.35;
 /** A wind-up this close to nothing is over: the sum of 0.05-second steps does not land exactly on 0.4. */
@@ -63,6 +65,19 @@ export interface EnemySimOptions {
   readonly core: Outpost;
   /** The world's seed. Where enemies appear is drawn from it, so the same seed plays the same spawns. */
   readonly seed: number;
+}
+
+/** Where the machines of one wave come from, and the numbers that decide it. */
+export interface SpawnPlan {
+  /** Draws the numbers for each try. The simulation's own stream when omitted. */
+  readonly rng?: () => number;
+  /**
+   * The middle of the stretch of the ring they come from, as an angle round the Core, and half its
+   * width in radians. Anywhere on the ring when omitted; a wave whose stretch has no ground to
+   * stand on (the lake, a cliff) spreads out to the rest of the ring for its last tries.
+   */
+  readonly bearing?: number;
+  readonly arc?: number;
 }
 
 interface Enemy {
@@ -132,10 +147,10 @@ export class EnemySim {
    * Brings `count` crawlers in from the ring round the Core, or as many as fit under the cap and
    * find a place. Returns how many came.
    */
-  spawn(count: number, healthScale = 1): number {
+  spawn(count: number, healthScale = 1, plan?: SpawnPlan): number {
     let made = 0;
     while (made < count && this.list.length < ENEMIES.maxAlive) {
-      if (!this.spawnOne(healthScale)) break;
+      if (!this.spawnOne(healthScale, plan)) break;
       made++;
     }
     return made;
@@ -495,11 +510,18 @@ export class EnemySim {
   // Coming and going.
   // --------------------------------------------------------------------------------------------
 
-  private spawnOne(healthScale: number): boolean {
+  private spawnOne(healthScale: number, plan?: SpawnPlan): boolean {
     const core = this.options.core;
+    const rng = plan?.rng ?? this.rng;
+    const bearing = plan?.bearing;
+    const arc = plan?.arc ?? 0;
     for (let attempt = 0; attempt < SPAWN_ATTEMPTS; attempt++) {
-      const angle = this.rng() * TWO_PI;
-      const radius = ENEMIES.spawnRadius + (this.rng() * 2 - 1) * ENEMIES.spawnJitter;
+      // The first tries keep to the wave's stretch of the ring; the last few take any of it.
+      const angle =
+        bearing !== undefined && attempt < SPAWN_ATTEMPTS_IN_ARC
+          ? bearing + (rng() * 2 - 1) * arc
+          : rng() * TWO_PI;
+      const radius = ENEMIES.spawnRadius + (rng() * 2 - 1) * ENEMIES.spawnJitter;
       const x = core.x + Math.cos(angle) * radius;
       const z = core.z + Math.sin(angle) * radius;
       const column = this.nav.indexAt(x, z);

@@ -191,6 +191,8 @@ describe('host control frames', () => {
     { t: 'sv', tick: 0, run: false, core: [1, 1000], over: false },
     { t: 'sv', tick: 9600, run: false, core: [0, 1000], over: true },
     { t: 'se', e: { k: 'nightfall', n: 1 } },
+    { t: 'se', e: { k: 'wave', n: 1, i: 1, of: 1, c: 6 } },
+    { t: 'se', e: { k: 'wave', n: 14, i: 6, of: 6, c: 7 } },
     { t: 'se', e: { k: 'dawn', n: 12 } },
     { t: 'se', e: { k: 'overrun', n: 3 } },
     { t: 'vt', hp: [100, 100], en: [100, 100], chg: false },
@@ -265,6 +267,34 @@ describe('host control frames', () => {
     ]) {
       expect(decodeHostFrame(text), text).toBeNull();
     }
+  });
+
+  it('refuses a wave that does not say which of the night it is or how many machines it holds', () => {
+    const base = { k: 'wave', n: 3, i: 2, of: 3, c: 5 };
+    expect(decodeHostFrame(JSON.stringify({ t: 'se', e: base }))).toEqual({ t: 'se', e: base });
+    for (const bad of [
+      { n: undefined },
+      { n: 0 },
+      { i: undefined },
+      { i: 0 },
+      { i: 4 },
+      { i: 1.5 },
+      { i: '2' },
+      { of: undefined },
+      { of: 0 },
+      { of: 256 },
+      { of: 2.5 },
+      { c: undefined },
+      { c: -1 },
+      { c: 1.5 },
+      { c: 70000 },
+      { c: null },
+    ]) {
+      const text = JSON.stringify({ t: 'se', e: { ...base, ...bad } });
+      expect(decodeHostFrame(text), text).toBeNull();
+    }
+    // An empty wave is odd but harmless; it says nothing the crew can be hurt by.
+    expect(decodeHostFrame(JSON.stringify({ t: 'se', e: { ...base, c: 0 } }))).not.toBeNull();
   });
 
   it('refuses a survival frame whose Core is missing, malformed or more than whole', () => {
