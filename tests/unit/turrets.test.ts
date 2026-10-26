@@ -223,6 +223,20 @@ describe('a turret in the simulation', () => {
     expect(play(1)).toHaveLength(1);
   });
 
+  it('cannot see the foot of its own pillar, where the first block under the gun is the one it stands on', () => {
+    for (const [away, fired] of [
+      [2, 0],
+      [4, 1],
+    ] as const) {
+      const { stand, base, machines, play, flat } = field();
+      // A turret on a pillar three blocks high, and a machine on the ground `away` blocks from its middle.
+      for (let dy = 0; dy < 3; dy++) flat.place(base.x, FLOOR + dy, base.z, SCRAP);
+      stand(base.x, base.z, TURRET_STATE, FLOOR + 3);
+      expect(machines.spawnAt(base.x + 0.5 + away, base.z + 0.5)).not.toBeNull();
+      expect(play(2)).toHaveLength(fired);
+    }
+  });
+
   it('is stopped by a block next to it at its own level, as by any wall', () => {
     const { stand, base, crawler, play, flat } = field();
     stand(base.x, base.z);

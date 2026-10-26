@@ -54,7 +54,7 @@ export interface SurvivalReading {
   respawns: number;
   /** The most the crew can hold now (so many for each player). 0 where there is no run to show, which hides the count. */
   respawnMax: number;
-  /** Machines the crew's blasters have felled this run. Counted until the run is over, then final. */
+  /** Machines the crew's blasters and turrets have felled this run. Counted until the run is over, then final. */
   felled: number;
   /** Blocks the crew has placed this run. */
   placed: number;

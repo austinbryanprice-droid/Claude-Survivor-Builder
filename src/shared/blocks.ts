@@ -85,6 +85,12 @@ export interface ModuleDef {
    * inside the cell.
    */
   readonly body: readonly [x0: number, y0: number, z0: number, x1: number, y1: number, z1: number];
+  /**
+   * Which way its front looks when the aim places it, before the turn key: toward the player who aims
+   * it, so that a console's screen is what they see, or the way the player looks, so that a gun points
+   * where they were looking.
+   */
+  readonly facesPlayer: boolean;
 }
 
 export interface MaterialDef {
@@ -113,6 +119,7 @@ export const MODULES: readonly ModuleDef[] = [
     levels: 1,
     cost: { material: MATERIAL.scrap, amount: 40 },
     body: [0.1, 0, 0.1, 0.9, 0.9, 0.9],
+    facesPlayer: true,
   },
   {
     id: MODULE.turret,
@@ -120,6 +127,7 @@ export const MODULES: readonly ModuleDef[] = [
     levels: 1,
     cost: { material: MATERIAL.scrap, amount: 25 },
     body: [0.14, 0, 0.14, 0.86, 0.78, 0.86],
+    facesPlayer: false,
   },
 ];
 
@@ -129,11 +137,15 @@ export function moduleShape(module: number, facing: number): number {
   return SHAPE.module + (module - 1) * MODULE_FACINGS + turn;
 }
 
+/** The module with this id (`MODULE`), or undefined when the table has none. */
+export function moduleDef(module: number): ModuleDef | undefined {
+  return MODULES.find((def) => def.id === module);
+}
+
 /** The module a shape id names, or undefined when the shape is not a module. */
 export function moduleOfShape(shape: number): ModuleDef | undefined {
   if (shape < SHAPE.module) return undefined;
-  const id = Math.floor((shape - SHAPE.module) / MODULE_FACINGS) + 1;
-  return MODULES.find((def) => def.id === id);
+  return moduleDef(Math.floor((shape - SHAPE.module) / MODULE_FACINGS) + 1);
 }
 
 /** The way a module's front looks, 0 to 3, or -1 when the shape is not a module. */
