@@ -2,7 +2,7 @@
 
 A browser co-op survivor-builder for two to four players. By day you scavenge the wreckage of a crashed orbital station and build a shared outpost from refined, beveled blocks and modular machines. By night rogue machines attack in waves that grow every night.
 
-> **Status: early development.** You can run, jump and look around the Ashbound Valley: seeded terrain, a lake, trees and a golden-hour sky. You can build in it: right click places a beveled block, a slab or a wedge, left click breaks one, and the hotbar holds the four materials (Q changes the shape, so a roof is a row of wedges). Up to four players can share the valley (one hosts a room, the others join with a code), see each other move and see every block anyone builds. The nights are in: a day and night clock, the Outpost Core, machines that come for it in waves, a pulse blaster, going down and coming back, and the Outpost Overrun card when a run is lost. The economy has started: heaps of wreckage lie in the valley, E strips them into the crew's shared pool of materials, and building spends from it (a block costs one of its material, breaking it gives that back, and a heap keeps its ground clear). Surviving nights earns research points, and the first functional module, the Research Terminal in hotbar slot 6, reads them: once one stands, the points open the better materials one row at a time (Reinforced Composite, then Advanced Alloy, from a few better heaps), and E on a Terminal shows the ladder. E on a block the crew has built swaps it for the same piece one material better (the better block's price from the pool, once its material is open). The second module, the Basic Turret (slot 6 too, Q chooses between the two), shoots the nearest machine it can see with nobody at the trigger. `/?demo=outpost` raises a finished base to look at. The [roadmap](docs/roadmap.md) lists what comes next.
+> **Status: early development.** You can run, jump and look around the Ashbound Valley: seeded terrain, a lake, trees and a golden-hour sky. You can build in it: right click places a beveled block, a slab or a wedge, left click breaks one, and the hotbar holds the four materials (Q changes the shape, so a roof is a row of wedges). Up to four players can share the valley (one hosts a room, the others join with a code), see each other move and see every block anyone builds. The nights are in: a day and night clock, the Outpost Core, machines that come for it in waves, a pulse blaster, going down and coming back, and the Outpost Overrun card when a run is lost. The economy has started: heaps of wreckage lie in the valley, E strips them into the crew's shared pool of materials, and building spends from it (a block costs one of its material, breaking it gives that back, and a heap keeps its ground clear). Surviving nights earns research points, and the first functional module, the Research Terminal in hotbar slot 6, reads them: once one stands, the points open the better materials one row at a time (Reinforced Composite, then Advanced Alloy, from a few better heaps), and E on a Terminal shows the ladder. E on a block the crew has built swaps it for the same piece one material better (the better block's price from the pool, once its material is open). The second module, the Basic Turret (slot 6 too, Q chooses between the two), shoots the nearest machine it can see with nobody at the trigger, and E on it raises it to the Auto Turret (10 Reinforced Composite) and then the Heavy Turret (10 Advanced Alloy), each quicker or harder-hitting and in the paint of its grade. `/?demo=outpost` raises a finished base to look at. The [roadmap](docs/roadmap.md) lists what comes next.
 
 ## Play
 
@@ -12,22 +12,22 @@ Once the first deploy finishes, the game is served by GitHub Pages at <https://a
 
 Click the page to take the mouse. Esc gives it back.
 
-| Key                 | Action                                                                              |
-| ------------------- | ----------------------------------------------------------------------------------- |
-| W A S D             | Move                                                                                |
-| Space               | Jump (hold it to keep hopping)                                                      |
-| Shift               | Sprint                                                                              |
-| V or F5             | Switch between first and third person (F5 will not reload mid-game)                 |
-| Right click         | Place the selected block where the cursor is (hold it to keep going)                |
-| Left click          | Break the block under the cursor (hold it to keep going)                            |
-| 1 to 8, mouse wheel | Choose a hotbar slot; the first four hold the four materials                        |
-| E                   | Under the cursor: strip a heap of debris, open a Terminal's ladder, upgrade a block |
-| Q                   | Choose block, slab or wedge for every slot                                          |
-| R                   | Turn the slab or wedge (a wedge rises away from you by default)                     |
-| B                   | Build Mode: a ghost of the next block, its name and cost, the keys                  |
-| P                   | Cycle the graphics preset: Low, Balanced, Ultra                                     |
-| F3                  | Show or hide the frame-time overlay                                                 |
-| Esc                 | Free the mouse (and stop a running benchmark)                                       |
+| Key                 | Action                                                                                                |
+| ------------------- | ----------------------------------------------------------------------------------------------------- |
+| W A S D             | Move                                                                                                  |
+| Space               | Jump (hold it to keep hopping)                                                                        |
+| Shift               | Sprint                                                                                                |
+| V or F5             | Switch between first and third person (F5 will not reload mid-game)                                   |
+| Right click         | Place the selected block where the cursor is (hold it to keep going)                                  |
+| Left click          | Break the block under the cursor (hold it to keep going)                                              |
+| 1 to 8, mouse wheel | Choose a hotbar slot; the first four hold the four materials                                          |
+| E                   | Under the cursor: strip a heap of debris, open a Terminal's ladder, upgrade a block or raise a turret |
+| Q                   | Choose block, slab or wedge for every slot                                                            |
+| R                   | Turn the slab or wedge (a wedge rises away from you by default)                                       |
+| B                   | Build Mode: a ghost of the next block, its name and cost, the keys                                    |
+| P                   | Cycle the graphics preset: Low, Balanced, Ultra                                                       |
+| F3                  | Show or hide the frame-time overlay                                                                   |
+| Esc                 | Free the mouse (and stop a running benchmark)                                                         |
 
 A block goes on the ground or on another block, within six blocks of you, and never inside a player. A slab goes in the half of its cell the surface you aim at points to; a wedge rises away from you, so a row of them is a ramp you can walk up, and R turns it. The cursor sees a little farther than a click reaches and says "Out of reach" in red there. Build Mode only adds the ghost, the caption and the key list; the clicks work with or without it.
 
