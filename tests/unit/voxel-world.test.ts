@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { BlockWorld, CellState } from '../../src/shared/block-world';
-import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
+import {
+  MATERIAL,
+  MODULE,
+  MODULE_FOOT,
+  SHAPE,
+  moduleShape,
+  packState,
+  slabShape,
+} from '../../src/shared/blocks';
 import { CHUNK_SIZE, chunkCoords, type ChunkCoords } from '../../src/world/voxels/chunk';
 import {
   BUILD_BOUNDS,
@@ -12,6 +20,7 @@ import { TEST_SEED, terrain } from './helpers/valley';
 
 const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
 const ALLOY = packState(SHAPE.cube, MATERIAL.alloy);
+const TERMINAL = packState(moduleShape(MODULE.terminal, 0), 1);
 
 function newWorld(): VoxelWorld {
   return createWorld(TEST_SEED, terrain());
@@ -22,6 +31,22 @@ function groundCell(world: VoxelWorld): { x: number; y: number; z: number } {
   const x = 8;
   const z = -4;
   return { x, y: Math.floor(world.terrain.grid.groundAt(x + 0.5, z + 0.5)), z };
+}
+
+/** A column in the valley where the ground stands between `from` and `to` of the way up its cell, found by looking. */
+function columnWithGroundAt(
+  world: VoxelWorld,
+  from: number,
+  to: number,
+): { x: number; y: number; z: number } {
+  for (let x = 4; x < 40; x++) {
+    for (let z = -30; z < 30; z++) {
+      const ground = world.terrain.grid.groundAt(x + 0.5, z + 0.5);
+      const part = ground - Math.floor(ground);
+      if (part >= from && part <= to) return { x, y: Math.floor(ground), z };
+    }
+  }
+  throw new Error(`No column has its ground between ${from} and ${to} of a cell`);
 }
 
 function dirtyCoords(world: VoxelWorld): string[] {
@@ -340,5 +365,120 @@ describe('VoxelWorld placement rules', () => {
     const world = newWorld();
     const { x, y, z } = groundCell(world);
     expect(world.checkBreak(x, y - 3, z)).toBe('empty');
+  });
+});
+
+describe('VoxelWorld modules', () => {
+  it('stand on the ground like a block, in any facing', () => {
+    const world = newWorld();
+    const { x, y, z } = groundCell(world);
+    for (let facing = 0; facing < 4; facing++) {
+      expect(
+        world.checkPlace(x, y, z, packState(moduleShape(MODULE.terminal, facing), 1)),
+      ).toBeNull();
+    }
+    expect(world.checkPlace(x, y - 3, z, TERMINAL)).toBe('buried');
+    expect(world.checkPlace(x, y + 3, z, TERMINAL)).toBe('unsupported');
+  });
+
+  it('stand on the ground through their foundation: a cell the ground does not reach is fine while it floats less than MODULE_FOOT over it', () => {
+    const world = newWorld();
+    // The ground stands half way up its cell: the cell above floats half a cell over it.
+    const half = columnWithGroundAt(world, 0.45, 0.55);
+    expect(world.checkPlace(half.x, half.y + 1, half.z, TERMINAL)).toBeNull();
+    expect(world.checkPlace(half.x, half.y + 2, half.z, TERMINAL)).toBe('unsupported');
+    // The ground right at the floor of its cell: the cell above floats a whole cell over it, past the foundation.
+    const flush = columnWithGroundAt(world, 0, 1 - MODULE_FOOT - 0.01);
+    expect(world.checkPlace(flush.x, flush.y + 1, flush.z, TERMINAL)).toBe('unsupported');
+    // The cell the ground cuts is always fine, however high up it the ground reaches.
+    expect(world.checkPlace(flush.x, flush.y, flush.z, TERMINAL)).toBeNull();
+    const deep = columnWithGroundAt(world, 0.9, 0.99);
+    expect(world.checkPlace(deep.x, deep.y, deep.z, TERMINAL)).toBeNull();
+  });
+
+  it('need something under them: a block, or a slab with its flat side up, but not one beside them', () => {
+    const world = newWorld();
+    const { x, y, z } = groundCell(world);
+    world.setBlock(x, y, z, SCRAP);
+    expect(world.checkPlace(x, y + 1, z, TERMINAL)).toBeNull();
+    // A block can be hung on the side of a tower; a module would float there.
+    world.setBlock(x, y + 1, z, SCRAP);
+    world.setBlock(x, y + 2, z, SCRAP);
+    expect(world.checkPlace(x + 1, y + 2, z, SCRAP)).toBeNull();
+    expect(world.checkPlace(x + 1, y + 2, z, TERMINAL)).toBe('unsupported');
+    expect(world.checkPlace(x, y + 3, z, TERMINAL)).toBeNull();
+    // The top of a lower slab is half a cell down, and a module would hang in the air there.
+    world.setBlock(x, y + 2, z, packState(slabShape(false), MATERIAL.scrap));
+    expect(world.checkPlace(x, y + 3, z, TERMINAL)).toBe('unsupported');
+    world.setBlock(x, y + 2, z, packState(slabShape(true), MATERIAL.scrap));
+    expect(world.checkPlace(x, y + 3, z, TERMINAL)).toBeNull();
+  });
+
+  it('keep the other rules of a block: occupied cells, unknown levels, the edge of the build area', () => {
+    const world = newWorld();
+    const { x, y, z } = groundCell(world);
+    world.setBlock(x, y, z, TERMINAL);
+    expect(world.checkPlace(x, y, z, TERMINAL)).toBe('occupied');
+    expect(world.checkPlace(x + 1, y, z, packState(moduleShape(MODULE.terminal, 0), 2))).toBe(
+      'unknown-block',
+    );
+    expect(world.checkPlace(BUILD_BOUNDS.maxX + 1, y, z, TERMINAL)).toBe('out-of-bounds');
+  });
+
+  it('are counted and listed with where they stand and what state they are in', () => {
+    const world = newWorld();
+    const { x, y, z } = groundCell(world);
+    expect(world.moduleCount).toBe(0);
+    world.setBlock(x, y, z, TERMINAL);
+    world.setBlock(x + 1, y, z, SCRAP);
+    expect(world.moduleCount).toBe(1);
+    const seen: { x: number; y: number; z: number; state: number }[] = [];
+    world.forEachModule((module) => seen.push({ ...module }));
+    expect(seen).toEqual([{ x, y, z, state: TERMINAL }]);
+    // A module turned to face another way is still one module, with its new state.
+    const turned = packState(moduleShape(MODULE.terminal, 2), 1);
+    world.setBlock(x, y, z, turned);
+    expect(world.moduleCount).toBe(1);
+    world.forEachModule((module) => expect(module.state).toBe(turned));
+    world.setBlock(x, y, z, 0);
+    expect(world.moduleCount).toBe(0);
+  });
+
+  it('tell a listener when one comes, turns or goes, and not when a block does', () => {
+    const world = newWorld();
+    const { x, y, z } = groundCell(world);
+    const calls: string[] = [];
+    const stop = world.onModuleChange((cx, cy, cz, previous, state) =>
+      calls.push(`${cx},${cy},${cz}:${previous}>${state}`),
+    );
+    world.setBlock(x + 2, y, z, SCRAP);
+    expect(calls).toEqual([]);
+    world.setBlock(x, y, z, TERMINAL);
+    const turned = packState(moduleShape(MODULE.terminal, 1), 1);
+    world.setBlock(x, y, z, turned);
+    world.setBlock(x, y, z, turned);
+    world.setBlock(x, y, z, 0);
+    expect(calls).toEqual([
+      `${x},${y},${z}:0>${TERMINAL}`,
+      `${x},${y},${z}:${TERMINAL}>${turned}`,
+      `${x},${y},${z}:${turned}>0`,
+    ]);
+    stop();
+    world.setBlock(x, y, z, TERMINAL);
+    expect(calls).toHaveLength(3);
+  });
+
+  it('ride the edit list like any block, so a late joiner is told of them', () => {
+    const host = newWorld();
+    const { x, y, z } = groundCell(host);
+    host.setBlock(x, y, z, TERMINAL);
+    host.setBlock(x - 1, y, z, SCRAP);
+    const joiner = newWorld();
+    const heard: string[] = [];
+    joiner.onModuleChange((cx, cy, cz) => heard.push(`${cx},${cy},${cz}`));
+    host.forEachEdit((ex, ey, ez, state) => joiner.setBlock(ex, ey, ez, state));
+    expect(joiner.moduleCount).toBe(1);
+    expect(heard).toEqual([`${x},${y},${z}`]);
+    expect(edits(joiner)).toEqual(edits(host));
   });
 });

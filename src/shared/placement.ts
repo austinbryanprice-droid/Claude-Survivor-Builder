@@ -1,4 +1,11 @@
-import { baseShape, slabShape, wedgeShape, WEDGE_FACINGS } from './blocks';
+import {
+  MODULE_FACINGS,
+  baseShape,
+  moduleShape,
+  slabShape,
+  wedgeShape,
+  WEDGE_FACINGS,
+} from './blocks';
 import type { ShapeKind } from './blocks';
 
 /**
@@ -11,11 +18,13 @@ import type { ShapeKind } from './blocks';
 
 /** What the player holds: a material and a kind of shape, turned by `turn` steps from the automatic orientation. */
 export interface PieceChoice {
-  /** Material id (`MATERIAL`); 0 when the selected item is not a block. */
+  /** Material id (`MATERIAL`); 0 when the selected item is not a block. For a module, its level. */
   readonly material: number;
   readonly kind: ShapeKind;
   /** How many times the turn key has been pressed since the kind was chosen, below `turnCount(kind)`. */
   readonly turn: number;
+  /** For `kind` 'module': which module (`MODULE`). Absent, or 0, for a block. */
+  readonly module?: number;
 }
 
 /** The face the cursor is on, as far as orientation cares. */
@@ -29,11 +38,12 @@ export interface Surface {
 /**
  * How many different positions the turn key cycles through for a kind. A block looks the same
  * every way. A slab has two, low and high. A wedge turns through the four directions it can rise
- * toward, and then does so again upside down.
+ * toward, and then does so again upside down. A module turns through the four ways its front can look.
  */
 export function turnCount(kind: ShapeKind): number {
   if (kind === 'slab') return 2;
   if (kind === 'wedge') return 2 * WEDGE_FACINGS;
+  if (kind === 'module') return MODULE_FACINGS;
   return 1;
 }
 
@@ -57,9 +67,10 @@ export function facingOf(dx: number, dz: number): number {
  *    ground cuts through its cell at any height, and a slab in the half under it would not show.
  *  - A wedge rises away from the player, so that a row of them is a ramp to walk up. It is turned
  *    upside down under a ceiling, where the flat side goes against it.
+ *  - A module faces the player, so that its screen and its front are what they see.
  *
- * Each turn step then moves the wedge a quarter turn (and flips it every fourth step), or flips a
- * slab.
+ * Each turn step then moves the wedge a quarter turn (and flips it every fourth step), flips a
+ * slab, or turns a module a quarter turn.
  */
 export function orientShape(
   kind: ShapeKind,
@@ -67,7 +78,11 @@ export function orientShape(
   surface: Surface,
   lookX: number,
   lookZ: number,
+  module = 0,
 ): number {
+  if (kind === 'module') {
+    return moduleShape(module, facingOf(lookX, lookZ) + 2 + (turn % MODULE_FACINGS));
+  }
   if (kind === 'slab') {
     const upper = surface.ny < 0 || (surface.ny === 0 && surface.height >= 0.5);
     return slabShape(upper !== ((turn & 1) === 1));

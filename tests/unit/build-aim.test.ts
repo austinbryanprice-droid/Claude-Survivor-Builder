@@ -11,8 +11,12 @@ import {
 } from '../../src/shared/build-aim';
 import {
   MATERIAL,
+  MODULE,
+  MODULE_SINK,
   SHAPE,
   isUpsideDown,
+  moduleFacing,
+  moduleShape,
   packState,
   slabShape,
   stateMaterial,
@@ -469,5 +473,92 @@ describe('aiming at a wedge', () => {
     };
     aimIn(blocks, { x: 4.5, y: 4, z: 4.5 }, DOWN, { ...SLAB, turn: 1 });
     expect(seen).toEqual([packState(slabShape(true), MATERIAL.scrap)]);
+  });
+});
+
+describe('aiming with a module in hand', () => {
+  const HELD: PieceChoice = { material: 1, kind: 'module', turn: 0, module: MODULE.terminal };
+  const wall = packState(SHAPE.cube, MATERIAL.scrap);
+  const terminal = (facing: number) => packState(moduleShape(MODULE.terminal, facing), 1);
+
+  it('puts the module on a block facing the player, at level 1', () => {
+    const blocks = cells([[4, 0, 4, wall]]);
+    // Looking along +x and down onto the block's top: the module's front looks back at the player, along -x.
+    const aim = aimIn(blocks, { x: 3.2, y: 4, z: 4.5 }, { x: 1, y: -3, z: 0 }, HELD);
+    expect(aim.place).toEqual({ x: 4, y: 1, z: 4 });
+    expect(aim.state).toBe(terminal(2));
+    expect(stateMaterial(aim.state)).toBe(1);
+    expect(moduleFacing(stateShape(aim.state))).toBe(2);
+    // Turning the piece moves its front a quarter turn.
+    const turned = aimIn(
+      blocks,
+      { x: 3.2, y: 4, z: 4.5 },
+      { x: 1, y: -3, z: 0 },
+      { ...HELD, turn: 1 },
+    );
+    expect(moduleFacing(stateShape(turned.state))).toBe(3);
+  });
+
+  it('asks the world about the module as it will stand, not about a base shape', () => {
+    const seen: number[] = [];
+    const blocks = {
+      ...cells([[4, 0, 4, wall]]),
+      checkPlace: (_x: number, _y: number, _z: number, state: number) => {
+        seen.push(state);
+        return null;
+      },
+    };
+    aimIn(blocks, { x: 4.5, y: 4, z: 5.5 }, { x: 0, y: -3, z: -1 }, HELD);
+    expect(seen).toEqual([terminal(1)]);
+  });
+
+  it('passes the world’s refusal of a module through, such as nothing to stand on', () => {
+    const blocks = {
+      ...cells([[4, 0, 4, wall]]),
+      checkPlace: () => 'unsupported',
+    };
+    const aim = aimIn(blocks, { x: 3.2, y: 4, z: 4.5 }, { x: 1, y: -3, z: 0 }, HELD);
+    expect(aim.placeRefusal).toBe('unsupported');
+  });
+
+  it('stands the module on the ground, not in it: in the cell above where the ground cuts high up', () => {
+    const flat = (height: number): AimInput['ground'] => ({ distance: (_x, y) => y - height });
+    const from = { x: 4.5, y: 6, z: 4.5 };
+    // The ground low in its cell: the module goes in it, and sinks a little.
+    expect(aimIn(cells([]), from, DOWN, HELD, flat(2 + MODULE_SINK - 0.05)).place).toEqual({
+      x: 4,
+      y: 2,
+      z: 4,
+    });
+    // Higher up the cell than MODULE_SINK: the cell above, so that it is not buried.
+    const high = aimIn(cells([]), from, DOWN, HELD, flat(2 + MODULE_SINK + 0.05));
+    expect(high.on).toBe('terrain');
+    expect(high.place).toEqual({ x: 4, y: 3, z: 4 });
+    expect(high.state).toBe(terminal(2));
+    // A block is where the ground cuts, at any height, and a slab picks its half.
+    expect(aimIn(cells([]), from, DOWN, BLOCK, flat(2 + MODULE_SINK + 0.05)).place.y).toBe(2);
+  });
+
+  it('puts a module on the face of a block as it always does, and does not lift it under a ceiling of ground', () => {
+    const blocks = cells([[4, 0, 4, wall]]);
+    expect(aimIn(blocks, { x: 4.5, y: 4, z: 4.5 }, DOWN, HELD).place).toEqual({ x: 4, y: 1, z: 4 });
+    const ceiling: AimInput['ground'] = { distance: (_x, y) => 5.5 - y };
+    const under = aimIn(cells([]), { x: 4.5, y: 2, z: 4.5 }, { x: 0, y: 1, z: 0 }, HELD, ceiling);
+    expect(under.on).toBe('terrain');
+    expect(under.place).toEqual({ x: 4, y: 5, z: 4 });
+  });
+
+  it('aims at a module by its body: the cursor passes through the gap between body and cell edge', () => {
+    const blocks = cells([
+      [4, 0, 4, wall],
+      [4, 1, 4, terminal(0)],
+      [4, 0, 5, wall],
+    ]);
+    // Through the middle of the cell the body fills (0.1 to 0.9 of it): a hit, and it is the module.
+    const hit = aimIn(blocks, { x: 4.5, y: 1.5, z: 6.5 }, { x: 0, y: 0, z: -1 }, null);
+    expect(hit.target).toEqual({ x: 4, y: 1, z: 4 });
+    // At 0.05 of the cell the ray is in the gap beside the body, and passes on to what is behind.
+    const miss = aimIn(blocks, { x: 4.05, y: 1.5, z: 6.5 }, { x: 0, y: 0, z: -1 }, null);
+    expect(miss.on).toBe('nothing');
   });
 });

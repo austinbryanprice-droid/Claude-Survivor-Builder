@@ -2,17 +2,20 @@ import type { CellState } from '../shared/block-world';
 import {
   MATERIAL,
   MATERIALS,
+  MODULE,
   SHAPE_KINDS,
   baseShape,
+  isKnownState,
   materialOf,
+  moduleOfShape,
   packState,
   pieceName,
   shapeKind,
   stateShape,
-  type ShapeKind,
+  type BlockKind,
 } from '../shared/blocks';
 import { AIM_REFUSAL } from '../shared/build-aim';
-import { needsResearch } from '../systems/economy/build-rules';
+import { needsResearch, pieceCost } from '../systems/economy/build-rules';
 import { VITALS } from '../systems/survival/balance';
 import type { HotbarSlot, HudInteract, HudPrompt } from './player-hud/player-hud';
 import type { IconId } from './player-hud/icons';
@@ -29,8 +32,10 @@ export interface BuildHudInput {
   readonly selected: number;
   readonly buildMode: boolean;
   /** The kind of shape the block slots make: a block, a slab or a wedge. */
-  readonly kind: ShapeKind;
-  /** The piece the selected slot makes in that kind, or 0 when the slot holds no block. */
+  readonly kind: BlockKind;
+  /** The module the module slot holds (`MODULE`), which the slot's icon follows. */
+  readonly module: number;
+  /** The piece the selected slot makes in that kind, or 0 when the slot holds no piece. */
   readonly piece: CellState;
   readonly crosshair: 'none' | 'place' | 'blocked' | 'blaster';
   /** Why a click would do nothing right now, as a code or as the host's words, or null. */
@@ -50,7 +55,7 @@ export interface BuildHudSource {
   hudState(): BuildHudInput;
 }
 
-const BLOCK_ICONS: Readonly<Record<ShapeKind, Readonly<Record<number, IconId>>>> = {
+const BLOCK_ICONS: Readonly<Record<BlockKind, Readonly<Record<number, IconId>>>> = {
   cube: {
     [MATERIAL.scrap]: 'block-scrap',
     [MATERIAL.composite]: 'block-composite',
@@ -71,11 +76,21 @@ const BLOCK_ICONS: Readonly<Record<ShapeKind, Readonly<Record<number, IconId>>>>
   },
 };
 
-/** The icon of a piece: its material's, drawn in its shape. Null for a state the HUD has no picture of. */
+/** The icon of each module, by its `MODULE` id: the picture is the same whatever its level or facing. */
+const MODULE_ICONS: Readonly<Record<number, IconId>> = {
+  [MODULE.terminal]: 'terminal',
+};
+
+/**
+ * The icon of a piece: its material's, drawn in its shape, or a module's own. Null for a state the
+ * HUD has no picture of.
+ */
 export function blockIcon(piece: CellState): IconId | null {
+  const module = moduleOfShape(stateShape(piece));
+  if (module) return isKnownState(piece) ? (MODULE_ICONS[module.id] ?? null) : null;
   const material = materialOf(piece);
   const kind = shapeKind(stateShape(piece));
-  return (material && kind && BLOCK_ICONS[kind][material.id]) || null;
+  return (material && kind && kind !== 'module' && BLOCK_ICONS[kind][material.id]) || null;
 }
 
 /** The hotbar slot that holds a piece: its icon on the cyan grid of placeable items. */
@@ -84,19 +99,27 @@ export function blockSlot(piece: CellState): HotbarSlot {
 }
 
 /** The four block slots of the hotbar as they look while the block slots make this kind of shape. */
-export function blockSlots(kind: ShapeKind): readonly HotbarSlot[] {
+export function blockSlots(kind: BlockKind): readonly HotbarSlot[] {
   return MATERIALS.map((material) => blockSlot(packState(baseShape(kind), material.id)));
 }
 
 /** `blockSlots` for every kind, built once. */
-export function blockSlotsByKind(): ReadonlyMap<ShapeKind, readonly HotbarSlot[]> {
+export function blockSlotsByKind(): ReadonlyMap<BlockKind, readonly HotbarSlot[]> {
   return new Map(SHAPE_KINDS.map((kind) => [kind, blockSlots(kind)]));
 }
 
-/** What a piece costs, such as "1 Scrap"; the number comes from the material table. */
+/** The module slot as it looks while it holds this module: the module's icon on the cyan grid. */
+export function moduleSlot(module: number): HotbarSlot {
+  return { icon: MODULE_ICONS[module] ?? null, blueprint: true };
+}
+
+/** Where the module slot sits on the hotbar: after the block slots and the blaster (the building hands' `MODULE_SLOT` is the same number). */
+export const MODULE_SLOT_INDEX = MATERIALS.length + 1;
+
+/** What a piece costs, such as "1 Scrap" or "40 Scrap"; the number comes from the material and module tables. */
 export function costText(piece: CellState): string {
-  const material = materialOf(piece);
-  return material ? `${material.cost} ${material.name}` : '';
+  const cost = pieceCost(piece);
+  return cost ? `${cost.amount} ${cost.name}` : '';
 }
 
 /** Why a click does nothing, in a short sentence. The world's and the aim's codes are listed; the host's words pass through. */

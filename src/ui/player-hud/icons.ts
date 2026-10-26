@@ -28,6 +28,7 @@ export type IconId =
   | 'bolt'
   | 'lock'
   | 'research'
+  | 'terminal'
   | 'block-scrap'
   | 'block-composite'
   | 'block-alloy'
@@ -62,6 +63,7 @@ export const ICON_IDS: readonly IconId[] = [
   'bolt',
   'lock',
   'research',
+  'terminal',
   'block-scrap',
   'block-composite',
   'block-alloy',
@@ -423,6 +425,20 @@ const SPRITE_BODY = /* html */ `
   </g>
   <circle cx="24" cy="24" r="6.6" fill="url(#ph-core)" stroke="${INK}" stroke-width="1.8"/>
   <path d="M20.6 21.4 C21.4 20 22.8 19.2 24.4 19.1" stroke="#ffffff" stroke-opacity="0.85" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+</symbol>
+
+<symbol id="ph-i-terminal" viewBox="0 0 48 48">
+  <path d="M33.5 14.5 V7" stroke="${INK}" stroke-width="4.2" stroke-linecap="round"/>
+  <path d="M33.5 14.5 V7" stroke="url(#ph-steel)" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="33.5" cy="5.8" r="2.4" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="1.3"/>
+  <path d="M8.4 43.2 H39.6 Q41.4 43.2 41 41.6 L40.2 38.2 H7.8 L7 41.6 Q6.6 43.2 8.4 43.2 Z" fill="url(#ph-steel-dark)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M9.6 38.2 V19 Q9.6 14.8 13.8 14.8 H34.2 Q38.4 14.8 38.4 19 V38.2 Z" fill="url(#ph-steel)" stroke="${INK}" stroke-width="1.7" stroke-linejoin="round"/>
+  <rect x="13.4" y="18.4" width="21.2" height="13.8" rx="2.6" fill="#1b2a36" stroke="${INK}" stroke-width="1.4"/>
+  <rect x="15" y="20" width="18" height="10.6" rx="1.8" fill="url(#ph-core)"/>
+  <path d="M17.6 23.6 H27.4 M17.6 26.8 H23.6" stroke="#0e2f36" stroke-opacity="0.65" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M16.8 21.8 H25" stroke="#ffffff" stroke-opacity="0.85" stroke-width="1.1" stroke-linecap="round"/>
+  <rect x="13.4" y="34" width="21.2" height="2.6" rx="1.3" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="1.1"/>
+  <path d="M12.2 17 H35.8" stroke="#f6faff" stroke-opacity="0.7" stroke-width="1" stroke-linecap="round"/>
 </symbol>
 ${BLOCK_SYMBOLS}
 ${SHAPE_SYMBOLS}

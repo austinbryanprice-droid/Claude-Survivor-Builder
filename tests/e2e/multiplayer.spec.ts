@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
+import { MATERIAL, MODULE, MODULES, SHAPE, moduleShape, packState } from '../../src/shared/blocks';
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../src/shared/daycycle';
 import { DEBRIS, POOL, RESEARCH } from '../../src/systems/economy/balance';
 import { needsResearch } from '../../src/systems/economy/build-rules';
@@ -31,6 +31,8 @@ const NETWORK = `broker=${BROKER}&ice=none&waves=0`;
 const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
 const ALLOY = packState(SHAPE.cube, MATERIAL.alloy);
 const COMPOSITE = packState(SHAPE.cube, MATERIAL.composite);
+const TERMINAL = packState(moduleShape(MODULE.terminal, 0), 1);
+const TERMINAL_PRICE = MODULES.find((module) => module.id === MODULE.terminal)!.cost.amount;
 const SMALL = { width: 480, height: 270 };
 const FRAME_GAP_MS = 1500;
 
@@ -1247,6 +1249,94 @@ test.describe('multiplayer', () => {
       ] as const);
       await expect.poll(() => aimOf(ada), { ...slow, message: "Ada's aim clears" }).toBeNull();
       await expectPool(2);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
+  test("a Research Terminal stands on every screen: a guest's build and the host's break reach everyone, the price follows the one pool, and a player who joins later is shown it", async ({
+    browser,
+    baseURL,
+  }) => {
+    // The crew's pool is the host's, and opens with more than the Terminal's price.
+    const host = await openPlayer(browser, baseURL, 'Host', { stock: 200 });
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone: Player[] = [host, ada];
+    const slow = { timeout: 60_000 };
+    const scrapOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.pool())).stock[0] as number;
+    const rejectionsOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.rejections())).map((r) => r.reason);
+    // What this page draws of the modules: the valley view's renderer, which the typed hook does not name.
+    const drawnOf = (p: Player) =>
+      p.page.evaluate(
+        () =>
+          (
+            window.__ashbound!.game.world as unknown as {
+              view: { modules: { count: number } };
+            }
+          ).view.modules.count,
+      );
+    const cellOf = (p: Player, at: { x: number; y: number; z: number }) =>
+      p.page.evaluate(([x, y, z]) => window.__ashbound!.mp!.block(x!, y!, z!), [
+        at.x,
+        at.y,
+        at.z,
+      ] as const);
+    const expectEverywhere = async (
+      drawn: number,
+      scrap: number,
+      state: number,
+      at: typeof cell,
+    ) => {
+      for (const p of everyone) {
+        await expect
+          .poll(() => drawnOf(p), { ...slow, message: `${p.name} draws ${drawn} modules` })
+          .toBe(drawn);
+        await expect
+          .poll(() => scrapOf(p), { ...slow, message: `${p.name} sees the pool` })
+          .toBe(scrap);
+        await expect
+          .poll(() => cellOf(p, at), { ...slow, message: `${p.name} sees the cell` })
+          .toBe(state);
+      }
+    };
+    let cell = { x: 0, y: 0, z: 0 };
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) {
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+        await expect
+          .poll(() => scrapOf(p), { ...slow, message: `${p.name} sees the pool` })
+          .toBe(200);
+      }
+
+      // Ada builds a Terminal: one more cell in everyone's world, drawn on both screens, paid from the one pool.
+      cell = await ada.page.evaluate(([state]) => window.__ashbound!.mp!.placeNear(4, 0, state!), [
+        TERMINAL,
+      ] as const);
+      await expectSameWorld(everyone, 1);
+      await expectEverywhere(1, 200 - TERMINAL_PRICE, TERMINAL, cell);
+
+      // A player who joins now is shown it with the rest of the world, and told the pool.
+      const bo = await openPlayer(browser, baseURL, 'Bo');
+      everyone.push(bo);
+      await joinRoom(bo, code);
+      await expectSameWorld(everyone, 1);
+      await expectEverywhere(1, 200 - TERMINAL_PRICE, TERMINAL, cell);
+
+      // The host breaks it: gone from every screen, and the price is back in the pool.
+      await host.page.evaluate(([x, y, z]) => window.__ashbound!.mp!.breakBlock(x!, y!, z!), [
+        cell.x,
+        cell.y,
+        cell.z,
+      ] as const);
+      await expectSameWorld(everyone, 0);
+      await expectEverywhere(0, 200, 0, cell);
+      for (const p of everyone) expect(await rejectionsOf(p), p.name).toEqual([]);
       expectNoProblems(everyone);
     } finally {
       await closeAll(everyone);

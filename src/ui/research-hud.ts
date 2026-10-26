@@ -1,5 +1,5 @@
 import type { CellState } from '../shared/block-world';
-import { materialOf } from '../shared/blocks';
+import { materialOf, moduleOfShape, stateShape } from '../shared/blocks';
 import type { EconomyReading } from '../shared/economy';
 import { nextStep, researchLock, tierName } from '../systems/economy/research';
 import { clamp01 } from './player-hud/format';
@@ -98,7 +98,7 @@ export interface HudLock {
 
 /** The lock on a piece's material, or null when it is open, the slot holds no piece or there is no pool to be locked out of. */
 export function lockForPiece(piece: CellState, reading: EconomyReading): HudLock | null {
-  if (reading.cap <= 0) return null;
+  if (reading.cap <= 0 || moduleOfShape(stateShape(piece))) return null;
   const material = materialOf(piece);
   if (!material) return null;
   const lock = researchLock(material.id, reading.research);

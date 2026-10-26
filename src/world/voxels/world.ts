@@ -1,6 +1,15 @@
 import type { BlockWorld, CellState } from '../../shared/block-world';
-import { isCellState, isKnownState, stateShape } from '../../shared/blocks';
+import {
+  MODULE_FOOT,
+  SHAPE,
+  isCellState,
+  isKnownState,
+  moduleOfShape,
+  slabShape,
+  stateShape,
+} from '../../shared/blocks';
 import { shapeBoxes, type CellBox } from '../../shared/shapes';
+import { cellKey } from '../../shared/solid';
 import { outpostFor, type Outpost } from '../outpost';
 import { WORLD_HALF } from '../terrain/field';
 import { bakeTerrain, type Terrain } from '../terrain/terrain';
@@ -65,6 +74,28 @@ export type BreakRefusal = 'out-of-bounds' | 'empty';
 
 export type ChunkDirtyListener = (cx: number, cy: number, cz: number) => void;
 
+/** A module standing in a cell: where, and its state (its shape says which module and which way it faces, its material byte is its level). */
+export interface ModuleCell {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly state: CellState;
+}
+
+/** Called each time a cell that held a module, or holds one now, changes. `previous` and `state` are the cell's states before and after. */
+export type ModuleChangeListener = (
+  x: number,
+  y: number,
+  z: number,
+  previous: CellState,
+  state: CellState,
+) => void;
+
+/** True when the cell state is a module. */
+function isModule(state: CellState): boolean {
+  return state !== 0 && moduleOfShape(stateShape(state)) !== undefined;
+}
+
 /**
  * The voxel world: every block players have built on top of the seeded valley. Terrain is static
  * in version 1 and never travels over the wire, so the cells held here are exactly the edits.
@@ -72,6 +103,10 @@ export type ChunkDirtyListener = (cx: number, cy: number, cz: number) => void;
  * Edits go through `setBlock`, which is idempotent and cheap. It marks the chunk and any chunk
  * whose mesh can see the cell as dirty and does nothing else; the renderer drains the dirty
  * list once per frame and re-meshes what it can afford.
+ *
+ * A functional module (Phase 5d) is a cell like any other, with a shape of its own and its level in
+ * the material byte. The mesher leaves it to its model; the world keeps a list of them and tells
+ * the renderer when one comes or goes.
  *
  * The Outpost Core stands in the valley but is not made of blocks: it is part of the ground the
  * world is built on. Its cells are solid (movement, the camera and plants treat them like a
@@ -82,6 +117,8 @@ export class VoxelWorld implements BlockWorld {
   private readonly chunks = new Map<number, Chunk>();
   private readonly dirty = new Set<number>();
   private readonly dirtyListeners = new Set<ChunkDirtyListener>();
+  private readonly modules = new Map<number, ModuleCell>();
+  private readonly moduleListeners = new Set<ModuleChangeListener>();
   private lastChunk: Chunk | null = null;
   private cellCount = 0;
   private editCount = 0;
@@ -96,6 +133,11 @@ export class VoxelWorld implements BlockWorld {
   /** How many cells hold a block. */
   get blockCount(): number {
     return this.cellCount;
+  }
+
+  /** How many modules stand in the world. */
+  get moduleCount(): number {
+    return this.modules.size;
   }
 
   /** Counts every change to a cell, so a reader can tell cheaply that something moved. */
@@ -163,6 +205,7 @@ export class VoxelWorld implements BlockWorld {
       if (this.lastChunk === chunk) this.lastChunk = null;
     }
     this.markDirty(cx, cy, cz, lx, ly, lz);
+    if (isModule(previous) || isModule(state)) this.moduleChanged(x, y, z, previous, state);
     return true;
   }
 
@@ -185,6 +228,8 @@ export class VoxelWorld implements BlockWorld {
     // themselves into the hill.
     if (highest < 0) return 'buried';
     if (lowest <= TOUCH_DISTANCE) return null;
+    // A module stands on something, as a console does: a block hung on a wall would float.
+    if (moduleOfShape(stateShape(state))) return this.stands(x, y, z) ? null : 'unsupported';
     return this.touchesBlock(x, y, z) ? null : 'unsupported';
   }
 
@@ -212,6 +257,20 @@ export class VoxelWorld implements BlockWorld {
         );
       }
     });
+  }
+
+  /** Calls `visit` for each module standing in the world, in no particular order. */
+  forEachModule(visit: (module: ModuleCell) => void): void {
+    for (const module of this.modules.values()) visit(module);
+  }
+
+  /**
+   * Calls `listener` each time a module comes, goes or changes in a cell: a placed one, a broken one,
+   * one the machines chewed, and an upgrade. Returns a function that removes the listener.
+   */
+  onModuleChange(listener: ModuleChangeListener): () => void {
+    this.moduleListeners.add(listener);
+    return () => this.moduleListeners.delete(listener);
   }
 
   /** The chunk at chunk coordinates, or undefined when it holds no block. */
@@ -254,6 +313,35 @@ export class VoxelWorld implements BlockWorld {
     const taken = limit >= keys.length ? keys : keys.slice(0, limit);
     for (const key of taken) this.dirty.delete(key);
     return taken;
+  }
+
+  /** True when the cell holds something whole on its top, which a module can stand on: a block, or a slab in its upper half. */
+  private carries(x: number, y: number, z: number): boolean {
+    const shape = stateShape(this.getBlock(x, y, z));
+    return shape === SHAPE.cube || shape === slabShape(true);
+  }
+
+  /**
+   * True when a module can stand in a cell the ground does not cut: on a block under it, or on the
+   * ground, which its foundation reaches when the floor of the cell is no more than `MODULE_FOOT` over it.
+   */
+  private stands(x: number, y: number, z: number): boolean {
+    return (
+      this.carries(x, y - 1, z) || y - this.terrain.grid.groundAt(x + 0.5, z + 0.5) <= MODULE_FOOT
+    );
+  }
+
+  private moduleChanged(
+    x: number,
+    y: number,
+    z: number,
+    previous: CellState,
+    state: CellState,
+  ): void {
+    const key = cellKey(x, y, z);
+    if (isModule(state)) this.modules.set(key, { x, y, z, state });
+    else this.modules.delete(key);
+    for (const listener of this.moduleListeners) listener(x, y, z, previous, state);
   }
 
   /** True when a block, or the Core, fills a cell that shares a face with this one. */

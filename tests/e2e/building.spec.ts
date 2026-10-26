@@ -126,8 +126,10 @@ test.describe('building by hand', () => {
       timeout: STATE_TIMEOUT,
     });
 
-    await test.step('the hotbar holds a block of each tier, the first one selected', async () => {
-      await wait(page.locator('.ph-slot[data-blueprint]')).toHaveCount(4);
+    await test.step('the hotbar holds a block of each tier and a module, the first one selected', async () => {
+      // The four block slots and the module slot are what a click places, drawn on the cyan grid.
+      await wait(page.locator('.ph-slot[data-blueprint]')).toHaveCount(5);
+      await wait(page.locator('.ph-slot').nth(5)).toHaveAttribute('data-blueprint', '');
       await wait(page.locator('.ph-slot[data-selected]')).toHaveCount(1);
       await wait(page.locator('.ph-slot').first()).toHaveAttribute('data-selected', '');
     });

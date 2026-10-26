@@ -14,13 +14,15 @@ import type { Stage } from '../../engine/stage';
 import { MATERIAL, SHAPE, packState } from '../../shared/blocks';
 import { shapeGeometry } from '../../shared/shapes';
 import { meshChunk } from '../voxels/mesher';
+import { moduleGhostGeometry } from './module-models';
 
 /**
  * What the player aims with: a ghost block at the cell a click would fill, tinted by whether the
  * click would work, and an outline around the block a click would break. The ghost is the very
  * beveled piece the mesher makes (so it shows the shape that will appear, a slab or a wedge turned
- * the way it will be), drawn translucent with a bright rim; the outline follows the shape of the
- * block it marks. Both sit exactly on the grid cell, which is what makes the snap readable.
+ * the way it will be, or a module's model facing the way it will), drawn translucent with a bright
+ * rim; the outline follows the shape of the block it marks (a module's, its body). Both sit exactly
+ * on the grid cell, which is what makes the snap readable.
  */
 
 /** Linear colors (they go into a bloom threshold of 1, so the outline glows a little). */
@@ -70,8 +72,13 @@ interface ShapeParts {
   readonly lines: BufferGeometry;
 }
 
-/** The mesher's own skin for a shape in a cell at the origin, so the ghost and the outline are moved by position alone. */
+/**
+ * The mesher's own skin for a shape in a cell at the origin, so the ghost and the outline are moved by
+ * position alone. A module has no skin in the mesher: its ghost is its model, turned to its facing.
+ */
 function meshGeometry(shape: number): BufferGeometry {
+  const model = moduleGhostGeometry(shape);
+  if (model) return model;
   const piece = packState(shape, MATERIAL.scrap);
   const data = meshChunk(
     { getBlock: (x, y, z) => (x === 0 && y === 0 && z === 0 ? piece : 0) },

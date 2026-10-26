@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
+import { MATERIAL, MODULE, SHAPE, moduleShape, packState } from '../../src/shared/blocks';
 import { CYCLE_SECONDS } from '../../src/shared/daycycle';
 import { createEconomyReading, type DebrisNode, type EconomyView } from '../../src/shared/economy';
 import type { HostFrame } from '../../src/shared/protocol';
@@ -14,6 +14,7 @@ import { at, helloText, makeRoom, rawGuest } from './helpers/net';
 
 const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
 const COMPOSITE = packState(SHAPE.cube, MATERIAL.composite);
+const TERMINAL = packState(moduleShape(MODULE.terminal, 2), 1);
 const START = POOL.start[MATERIAL.scrap] as number;
 
 /** The cell at the Core's side where the tests build: clear of every heap, which lie 16 blocks and more out. */
@@ -97,6 +98,31 @@ describe('the host placing and breaking blocks', () => {
     expect(stock(room.host.economy)).toEqual([9, 8, 10, 10]);
     room.host.sendCommand(breakAt(0));
     expect(stock(room.host.economy)).toEqual([9, 9, 10, 10]);
+  });
+
+  it('charges a module its own price, whichever way it faces, and gives it back when it is broken', () => {
+    const { room, hostWorld } = arena({}, { stock: 100 });
+    const seen = reasons(room.host);
+    room.host.sendCommand(place(0, TERMINAL));
+    room.host.sendCommand(place(1, packState(moduleShape(MODULE.terminal, 3), 1)));
+    expect(seen).toEqual([]);
+    expect(hostWorld.cells.size).toBe(2);
+    expect(stock(room.host.economy)).toEqual([20, 100, 100, 100]);
+    room.host.sendCommand(breakAt(0));
+    expect(stock(room.host.economy)).toEqual([60, 100, 100, 100]);
+    room.host.sendCommand(breakAt(1));
+    expect(stock(room.host.economy)).toEqual([100, 100, 100, 100]);
+  });
+
+  it('refuses a module the pool cannot pay for, though it holds enough for a block, and takes nothing', () => {
+    const { room, hostWorld } = arena({}, { stock: 39 });
+    const seen = reasons(room.host);
+    room.host.sendCommand(place(0, TERMINAL));
+    expect(seen).toEqual(['not enough Scrap']);
+    expect(hostWorld.cells.size).toBe(0);
+    expect(stock(room.host.economy)).toEqual([39, 39, 39, 39]);
+    room.host.sendCommand(place(0));
+    expect(hostWorld.cells.size).toBe(1);
   });
 
   it('refuses a block the pool cannot pay for, in words that name what is short, and takes nothing', () => {

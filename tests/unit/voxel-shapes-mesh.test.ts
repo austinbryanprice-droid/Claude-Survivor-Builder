@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { MATERIAL, SHAPES, SHAPE, packState, slabShape, wedgeShape } from '../../src/shared/blocks';
+import {
+  MATERIAL,
+  MODULE,
+  SHAPES,
+  SHAPE,
+  moduleShape,
+  packState,
+  slabShape,
+  wedgeShape,
+} from '../../src/shared/blocks';
 import { shapeGeometry } from '../../src/shared/shapes';
 import {
   AO_BRIGHTNESS,
@@ -18,6 +27,9 @@ const piece = (shape: number, material: number = MATERIAL.scrap): number =>
 
 const mesh = (cells: Cells): ChunkMeshData => meshChunk(cells, 0, 0, 0);
 
+/** The shapes the mesher draws: every shape but the modules, which are drawn from their own models. */
+const SOLIDS = SHAPES.filter((shape) => shape.kind !== 'module');
+
 const kindOf = (m: ChunkMeshData, i: number): number => (m.aux[i * 4 + 2] as number) & 3;
 
 /** The panel vertices that lie on the plane `axis = value`, facing along `sign`. */
@@ -32,7 +44,7 @@ function panelVerticesOn(m: ChunkMeshData, axis: number, value: number, sign: nu
 }
 
 describe('one slab or wedge alone', () => {
-  for (const shape of SHAPES) {
+  for (const shape of SOLIDS) {
     const geometry = shapeGeometry(shape.id)!;
     describe(`${shape.name} ${shape.id}`, () => {
       const cells = new Cells().set(3, 4, 5, piece(shape.id));
@@ -122,7 +134,7 @@ describe('one slab or wedge alone', () => {
   }
 
   it('shades nothing and grooves nothing when the shape has the cell to itself', () => {
-    for (const shape of SHAPES) {
+    for (const shape of SOLIDS) {
       const m = mesh(new Cells().set(0, 0, 0, piece(shape.id)));
       for (let i = 0; i < m.vertexCount; i++) expect(m.aux[i * 4]).toBe(255);
     }
@@ -276,5 +288,26 @@ describe('shapes beside blocks and each other', () => {
     expect(panelVerticesOn(left, 0, 16, 1)).toBe(4);
     // The slab's -x face is hidden behind the block in the other chunk.
     expect(panelVerticesOn(right, 0, 16, -1)).toBe(0);
+  });
+});
+
+describe('modules beside blocks', () => {
+  it('draw nothing of their own: the model is drawn by the module renderer', () => {
+    for (let facing = 0; facing < 4; facing++) {
+      const cells = new Cells().set(3, 4, 5, piece(moduleShape(MODULE.terminal, facing), 1));
+      expect(mesh(cells).vertexCount, `facing ${facing}`).toBe(0);
+    }
+  });
+
+  it('leave the block under them whole, top included, since they cover none of it', () => {
+    const alone = mesh(new Cells().set(0, 0, 0, CUBE));
+    const cells = new Cells()
+      .set(0, 0, 0, CUBE)
+      .set(0, 1, 0, piece(moduleShape(MODULE.terminal, 0), 1));
+    const m = mesh(cells);
+    expectClosed([m], 'a block with a module on it');
+    expect(m.vertexCount).toBe(alone.vertexCount);
+    expect(m.triangleCount).toBe(alone.triangleCount);
+    expect(panelVerticesOn(m, 1, 1, 1)).toBe(4);
   });
 });

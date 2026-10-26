@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   MATERIAL,
+  MODULE,
+  MODULES,
+  MODULE_FACINGS,
   SHAPE,
   SHAPES,
   WEDGE_FACINGS,
   isKnownState,
   isUpsideDown,
+  moduleShape,
   packState,
   pieceName,
   shapeKind,
@@ -29,6 +33,14 @@ const geometryOf = (id: number) => {
   return g;
 };
 
+/** Checks a box against the numbers it should hold, a hair apart at most: turning a box leaves rounding noise. */
+function expectBox(actual: CellBox | undefined, expected: readonly number[]): void {
+  expect(actual).toBeDefined();
+  expected.forEach((value, k) =>
+    expect((actual as CellBox)[k], `component ${k}`).toBeCloseTo(value, 9),
+  );
+}
+
 /** The height of the shape's solid above the floor of the cell at (x, z), by the boxes, or 0 where there is none. */
 function topAt(boxes: readonly CellBox[], x: number, z: number): number {
   let top = 0;
@@ -40,8 +52,12 @@ function topAt(boxes: readonly CellBox[], x: number, z: number): number {
 
 describe('the shape table', () => {
   it('names a slab, a wedge and a block, in every orientation', () => {
-    expect(SHAPES.map((s) => s.id)).toEqual([1, 8, 9, 16, 17, 18, 19, 20, 21, 22, 23]);
-    expect(new Set(SHAPES.map((s) => s.name))).toEqual(new Set(['Block', 'Slab', 'Wedge']));
+    expect(SHAPES.map((s) => s.id)).toEqual([
+      1, 8, 9, 16, 17, 18, 19, 20, 21, 22, 23, 32, 33, 34, 35,
+    ]);
+    expect(new Set(SHAPES.map((s) => s.name))).toEqual(
+      new Set(['Block', 'Slab', 'Wedge', 'Research Terminal']),
+    );
     expect(pieceName(packState(slabShape(false), MATERIAL.alloy))).toBe('Advanced Alloy Slab');
     expect(pieceName(packState(wedgeShape(2), MATERIAL.scrap))).toBe('Scrap Wedge');
   });
@@ -51,14 +67,16 @@ describe('the shape table', () => {
     expect(SHAPE.cube).toBe(1);
     expect(SHAPE.slab).toBe(8);
     expect(SHAPE.wedge).toBe(16);
+    expect(SHAPE.module).toBe(32);
     expect(new Set(SHAPES.map((s) => s.id)).size).toBe(SHAPES.length);
   });
 
   it('accepts a slab or a wedge in any material and refuses ids between the groups', () => {
     for (const shape of SHAPES) {
+      if (shape.kind === 'module') continue;
       expect(isKnownState(packState(shape.id, MATERIAL.energy))).toBe(true);
     }
-    for (const id of [2, 7, 10, 15, 24, 31, 255]) {
+    for (const id of [2, 7, 10, 15, 24, 31, 36, 255]) {
       expect(isKnownState(packState(id, MATERIAL.scrap))).toBe(false);
     }
   });
@@ -253,5 +271,49 @@ describe('shape geometry', () => {
     expect(rectContains([0, 0.5, 0, 1], [0, 1, 0, 1])).toBe(false);
     expect(rectContains([0, 1, 0, 1], [0, 1, 0, 1])).toBe(true);
     expect(rectContains([0.25, 0.75, 0, 1], [0, 0.5, 0, 1])).toBe(false);
+  });
+});
+
+describe('module geometry', () => {
+  const terminal = MODULES.find((def) => def.id === MODULE.terminal)!;
+
+  it('is the body of the module alone, one box, whichever way the module faces', () => {
+    for (let facing = 0; facing < MODULE_FACINGS; facing++) {
+      const id = moduleShape(MODULE.terminal, facing);
+      const g = geometryOf(id);
+      expect(g.kind).toBe('module');
+      expect(shapeKind(id)).toBe('module');
+      // The Terminal's body is the same turned any way: it is square in the cell.
+      expect(g.boxes).toHaveLength(1);
+      expectBox(g.boxes?.[0], terminal.body);
+      const [x0, y0, z0, x1, y1, z1] = terminal.body;
+      expect(g.volume).toBeCloseTo((x1 - x0) * (y1 - y0) * (z1 - z0), 9);
+    }
+  });
+
+  it('stands on the floor of its cell and fills no whole side of it', () => {
+    const g = geometryOf(moduleShape(MODULE.terminal, 0));
+    // The floor of the body lies on the floor of the cell, but short of its edges: a block under a
+    // module keeps its whole top, and a neighbor beside a module keeps its whole side.
+    expect(g.cover[SIDE.ny]).toEqual([0.1, 0.9, 0.1, 0.9]);
+    for (const side of [SIDE.py, SIDE.px, SIDE.nx, SIDE.pz, SIDE.nz]) {
+      expect(g.cover[side], `side ${side}`).toBeNull();
+      expect(g.reach[side], `side ${side}`).toBeNull();
+    }
+    for (const side of [SIDE.ny]) expect(rectContains([0, 1, 0, 1], g.cover[side]!)).toBe(true);
+    expect(rectContains(g.cover[SIDE.ny]!, [0, 1, 0, 1])).toBe(false);
+  });
+
+  it('is a solid for movement to stand against and the cursor to aim at', () => {
+    const g = geometryOf(moduleShape(MODULE.terminal, 1));
+    expect(g.faces).toHaveLength(6);
+    expect(g.planes).toHaveLength(6);
+    expectBox(shapeBoxes(moduleShape(MODULE.terminal, 1))?.[0], terminal.body);
+  });
+
+  it('is named by the module and nothing about its facing', () => {
+    for (let facing = 0; facing < MODULE_FACINGS; facing++) {
+      expect(pieceName(packState(moduleShape(MODULE.terminal, facing), 1))).toBe(terminal.name);
+    }
   });
 });

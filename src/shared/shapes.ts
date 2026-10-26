@@ -1,4 +1,11 @@
-import { SHAPES, isUpsideDown, shapeKind, wedgeFacing } from './blocks';
+import {
+  SHAPES,
+  isUpsideDown,
+  moduleFacing,
+  moduleOfShape,
+  shapeKind,
+  wedgeFacing,
+} from './blocks';
 import type { ShapeKind } from './blocks';
 
 /**
@@ -6,7 +13,7 @@ import type { ShapeKind } from './blocks';
  * movement collides with, and which faces of a cell the shape fills so a neighbor can hide behind
  * it. Everything is in cell coordinates, 0 to 1 on each axis with y up, and is built once from
  * the shape ids in `blocks.ts`. Pure data: the renderer and the physics both read it and neither
- * owns it.
+ * owns it. A module's geometry is its body alone, one box: the mesher skips it and its model draws it.
  */
 
 export type Point = readonly [number, number, number];
@@ -311,6 +318,14 @@ function build(id: number): ShapeGeometry | undefined {
     const turns = wedgeFacing(id);
     const boxes = wedgeBoxes().map((b) => turnBox(flip ? flipBox(b) : b, turns));
     return describe(id, kind, turnSolid(WEDGE, turns, flip), boxes);
+  }
+  if (kind === 'module') {
+    // A module is drawn from its model, not from faces, so its geometry is only the body the cursor aims
+    // at and movement stands against: one box, turned to the way the module faces.
+    const module = moduleOfShape(id);
+    if (!module) return undefined;
+    const box = turnBox(module.body, moduleFacing(id));
+    return describe(id, kind, boxSolid(...box), [box]);
   }
   return undefined;
 }
