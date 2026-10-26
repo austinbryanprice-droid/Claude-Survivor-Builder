@@ -37,7 +37,7 @@ export function createStatusPanel(game: Game): StatusPanel {
   };
   const cameraHint = hint('V', '');
   const qualityHint = hint('P', '');
-  hint('E', 'Strip debris');
+  hint('E', 'Strip debris, upgrade');
   hint('F3', 'Frame times');
   hint('Esc', 'Free the mouse');
   root.append(hints);

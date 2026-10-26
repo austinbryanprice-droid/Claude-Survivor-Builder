@@ -497,6 +497,12 @@
   grid-template-columns: repeat(3, 1fr);
 }
 
+/* With the upgrades tile as well there are seven: four above and three below. */
+
+.overrun-card .stats[data-tiles='7'] {
+  grid-template-columns: repeat(4, 1fr);
+}
+
 .overrun-card .button-row {
   margin-top: 20px;
 }
