@@ -44,7 +44,8 @@ import { BLASTER } from '../systems/survival/balance';
  * turned, whether Build Mode is on, what the cursor would do and the clicks that send it, the
  * pulse blaster in the slot after the blocks, the module slot after the blaster, and the interact
  * key that strips a heap of debris the cursor is on, opens the research ladder of the Research
- * Terminal it is on, or upgrades the block it is on to the next material. It holds no DOM and no
+ * Terminal it is on, or upgrades the piece it is on (a block to the next material, a turret to its
+ * next level). It holds no DOM and no
  * three.js, and reaches the rest of the game through `BuildPorts`, so the tests can drive it with
  * fakes. Nothing here changes the world: a click becomes a command (or a shot) for the session, the
  * host validates it, and the world changes (or the machine is hurt) when the host's word comes back.
@@ -425,8 +426,8 @@ export class BuildController {
    * own pace, a little slower than the host's), or, with the cursor on a Research Terminal in
    * reach and no heap in front of it, opens the Terminal's ladder, which only shows what the
    * crew's research has opened and asks the host for nothing, or, with the cursor on any other
-   * block in reach, upgrades that block to the next material (Build Mode or not: it only shows
-   * more there, as it does for a click).
+   * block in reach, upgrades that block to the next material, or a module that has a ladder (the
+   * turret) to its next level (Build Mode or not: it only shows more there, as it does for a click).
    */
   interact(): void {
     if (this.down) return;
@@ -449,7 +450,8 @@ export class BuildController {
   }
 
   /**
-   * Upgrades the block the cursor is on: the better piece is sent as the piece this screen showed
+   * Upgrades the piece the cursor is on, a block or a module with a ladder: the better piece (the
+   * next material, or the module at its next level) is sent as the piece this screen showed
    * (the host checks the cell still holds what the player saw). What this screen can tell is
    * refused is shown instead of sent, as for a click; the host has the final word.
    */
@@ -480,9 +482,10 @@ export class BuildController {
   }
 
   /**
-   * What the interact key would upgrade the block under the cursor to, or null when it offers
+   * What the interact key would upgrade the piece under the cursor to, or null when it offers
    * nothing: the player is down, a ladder is open, a heap of debris is in front (the key strips
-   * it), or the cursor is not on a block in reach that has a better material.
+   * it), or the cursor is not on a piece in reach that has a better self (a block with a better
+   * material, a turret below the top of its ladder).
    */
   private upgradeOffer(): UpgradeStep | null {
     const aim = this.aim;

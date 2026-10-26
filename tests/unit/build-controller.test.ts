@@ -1661,3 +1661,121 @@ describe('upgrading the block under the cursor with E', () => {
     expect(r.shots).toEqual([]);
   });
 });
+
+describe('raising a turret with E', () => {
+  /** A turret facing west at `level`: its cell's material byte is its level. */
+  const turret = (level: number) => packState(moduleShape(MODULE.turret, 2), level);
+
+  /**
+   * A rig in Build Mode with a turret at `level` standing at the spot, a pool of 99 of everything and
+   * the cursor on it from `height` above. It stands a cell up, clear of the hill: the turret is lower
+   * than a block, so the cursor would meet the hill first if the turret stood in it.
+   */
+  function turretAtSpot(level = 1, height = 3) {
+    const r = rig();
+    r.pool.cap = 400;
+    r.pool.stock.splice(0, r.pool.stock.length, 99, 99, 99, 99);
+    const y = Math.floor(r.surface) + 1;
+    r.world.setBlock(SPOT.x, y, SPOT.z, turret(level));
+    r.controller.toggleBuildMode();
+    r.controller.update(0.016, r.lookDown(height));
+    return { ...r, y };
+  }
+
+  it('offers the next level under the cursor, and E sends it as the piece the player saw, facing as it did', () => {
+    const r = turretAtSpot();
+    expect(r.controller.target.on).toBe('block');
+    expect(r.controller.hudState().terminal).toBe('none');
+    expect(r.controller.hudState().upgrade).toBe(turret(2));
+    expect(r.controller.hudState().upgradeRefusal).toBeNull();
+    r.controller.interact();
+    expect(r.sent).toEqual([{ type: 'upgrade', x: SPOT.x, y: r.y, z: SPOT.z, state: turret(2) }]);
+    // The world changes only when the host's event comes back, never here.
+    expect(r.world.getBlock(SPOT.x, r.y, SPOT.z)).toBe(turret(1));
+    expect(moduleFacing(stateShape(turret(2)))).toBe(moduleFacing(stateShape(turret(1))));
+  });
+
+  it('climbs one level a press, up to the top of the ladder, and then says so', () => {
+    const r = turretAtSpot();
+    r.session.apply = true;
+    for (const level of [2, 3]) {
+      r.controller.interact();
+      expect(r.world.getBlock(SPOT.x, r.y, SPOT.z)).toBe(turret(level));
+      r.controller.update(RESEND_GUARD, r.lookDown(3));
+    }
+    expect(r.sent.map((c) => c.type)).toEqual(['upgrade', 'upgrade']);
+    // The Heavy Turret is the top: the card goes away and E says so.
+    expect(r.controller.hudState().upgrade).toBe(0);
+    r.controller.interact();
+    expect(r.sent).toHaveLength(2);
+    expect(r.controller.hudState().refusal).toBe(FULLY_UPGRADED);
+  });
+
+  it('shows a level whose material is short as refused, naming it, and sends nothing', () => {
+    const r = turretAtSpot();
+    r.pool.stock[1] = 9;
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().upgradeRefusal).toBe(notEnough('Reinforced Composite'));
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().refusal).toBe(notEnough('Reinforced Composite'));
+    // The next step up is paid in Alloy, which the pool is short of instead.
+    const heavy = turretAtSpot(2);
+    heavy.pool.stock[2] = 0;
+    heavy.controller.update(0.016, heavy.lookDown(3));
+    expect(heavy.controller.hudState().upgrade).toBe(turret(3));
+    expect(heavy.controller.hudState().upgradeRefusal).toBe(notEnough('Advanced Alloy'));
+  });
+
+  it('shows a level whose material the crew has not researched as refused, in the host’s words', () => {
+    const r = turretAtSpot();
+    r.pool.tier = 1;
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().upgradeRefusal).toBe(needsResearch('Reinforced Composite'));
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+    // Composite is open at tier 2, but the Heavy Turret's Alloy waits for tier 3.
+    r.pool.tier = 2;
+    r.controller.update(NOTICE_SECONDS + 0.1, r.lookDown(3));
+    expect(r.controller.hudState().upgradeRefusal).toBeNull();
+    const heavy = turretAtSpot(2);
+    heavy.pool.tier = 2;
+    heavy.controller.update(0.016, heavy.lookDown(3));
+    expect(heavy.controller.hudState().upgradeRefusal).toBe(needsResearch('Advanced Alloy'));
+    heavy.pool.tier = 3;
+    heavy.controller.update(NOTICE_SECONDS + 0.1, heavy.lookDown(3));
+    expect(heavy.controller.hudState().upgradeRefusal).toBeNull();
+  });
+
+  it('keeps the card off the screen outside Build Mode while the upgrade would be refused', () => {
+    const r = turretAtSpot();
+    r.pool.stock[1] = 0;
+    r.controller.toggleBuildMode();
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().upgrade).toBe(0);
+    r.pool.stock[1] = 99;
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().upgrade).toBe(turret(2));
+  });
+
+  it('is not offered for a turret out of reach, and E says so', () => {
+    const r = turretAtSpot(1, BUILD_REACH + 1);
+    expect(r.controller.target.breakRefusal).toBe(AIM_REFUSAL.outOfReach);
+    expect(r.controller.hudState().upgrade).toBe(0);
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().refusal).toBe(AIM_REFUSAL.outOfReach);
+  });
+
+  it('charges and locks nothing where there is no pool to read, as the host does', () => {
+    const r = turretAtSpot();
+    r.pool.cap = 0;
+    r.pool.tier = 1;
+    r.pool.stock.fill(0);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().upgrade).toBe(turret(2));
+    expect(r.controller.hudState().upgradeRefusal).toBeNull();
+    r.controller.interact();
+    expect(r.sent).toHaveLength(1);
+  });
+});

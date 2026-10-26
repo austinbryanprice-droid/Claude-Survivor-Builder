@@ -296,6 +296,45 @@ describe('the upgrade prompt under the crosshair', () => {
     );
   });
 
+  it('names the module at its next level for a turret, and what that costs', () => {
+    const auto = packState(moduleShape(MODULE.turret, 0), 2);
+    const heavy = packState(moduleShape(MODULE.turret, 3), 3);
+    expect(upgradePrompt(auto, null)).toEqual({
+      key: INTERACT_KEY,
+      label: 'Upgrade to Auto Turret',
+      detail: `Cost ${costText(auto)}`,
+    });
+    expect(upgradePrompt(heavy, null)).toEqual({
+      key: INTERACT_KEY,
+      label: 'Upgrade to Heavy Turret',
+      detail: `Cost ${costText(heavy)}`,
+    });
+    // Each step is paid in the better material, named as the cost.
+    expect(costText(auto)).toMatch(/Reinforced Composite$/);
+    expect(costText(heavy)).toMatch(/Advanced Alloy$/);
+  });
+
+  it('says why in red for a turret as for a block, and tells a closed material as the lock does', () => {
+    const auto = packState(moduleShape(MODULE.turret, 0), 2);
+    expect(upgradePrompt(auto, notEnough('Reinforced Composite'))).toMatchObject({
+      label: 'Upgrade to Auto Turret',
+      detail: 'Not enough Reinforced Composite',
+      tone: 'warn',
+    });
+    const refusal = needsResearch('Reinforced Composite');
+    const behind = { name: 'Reinforced Composite', have: 5, need: 20, terminal: false };
+    expect(upgradePrompt(auto, refusal, behind)).toMatchObject({
+      label: 'Upgrade to Auto Turret',
+      detail: 'Needs research · 5 of 20',
+      tone: 'warn',
+    });
+    expect(upgradePrompt(auto, refusal)?.detail).toBe('Reinforced Composite needs research');
+  });
+
+  it('is nothing for a module at a level it does not have', () => {
+    expect(upgradePrompt(packState(moduleShape(MODULE.turret, 0), 9), null)).toBeNull();
+  });
+
   it('is nothing for a state that names no material', () => {
     expect(upgradePrompt(0, null)).toBeNull();
   });

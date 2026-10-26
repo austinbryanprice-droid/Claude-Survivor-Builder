@@ -167,20 +167,27 @@ export function interactPrompt(strips: number, grade: number = MATERIAL.scrap): 
   };
 }
 
+/** What an upgrade is called on the card: the better material for a block, the module at its next level (the Auto Turret) for a module. Empty for a state the tables do not know. */
+function upgradeName(to: CellState): string {
+  if (moduleOfShape(stateShape(to))) return pieceName(to);
+  return materialOf(to)?.name ?? '';
+}
+
 /**
- * What the interact key would do for a block the cursor is on that has a better material: the key,
- * the material the block would become and what that costs, or, when the host would refuse, why, in
- * red. A material the crew has not researched says how many points it has and how many open it
- * (`lock`), in place of the host's words for the same thing. Null when `to` names no material.
+ * What the interact key would do for a piece the cursor is on that has a better self: the key, what
+ * it would become (a block's better material, a module's next level) and what that costs, or, when
+ * the host would refuse, why, in red. A material the crew has not researched says how many points it
+ * has and how many open it (`lock`), in place of the host's words for the same thing. Null when `to`
+ * names nothing the tables know.
  */
 export function upgradePrompt(
   to: CellState,
   refusal: string | null,
   lock: HudLock | null = null,
 ): HudInteract | null {
-  const material = materialOf(to);
-  if (!material) return null;
-  const label = `Upgrade to ${material.name}`;
+  const name = upgradeName(to);
+  if (!name) return null;
+  const label = `Upgrade to ${name}`;
   if (refusal === null) return { key: INTERACT_KEY, label, detail: `Cost ${costText(to)}` };
   const closed = lock !== null && refusal === needsResearch(lock.name);
   return {

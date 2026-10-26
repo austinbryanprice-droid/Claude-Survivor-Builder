@@ -1,6 +1,7 @@
 import type { CellState } from '../shared/block-world';
-import { materialOf, moduleOfShape, stateShape } from '../shared/blocks';
+import { MATERIALS } from '../shared/blocks';
 import type { EconomyReading } from '../shared/economy';
+import { pieceCost } from '../systems/economy/build-rules';
 import { nextStep, researchLock, tierAt, tierName } from '../systems/economy/research';
 import { clamp01 } from './player-hud/format';
 import type { HudResearch } from './player-hud/player-hud';
@@ -132,10 +133,16 @@ export interface HudLock {
   readonly terminal: boolean;
 }
 
-/** The lock on a piece's material, or null when it is open, the slot holds no piece or there is no pool to be locked out of. */
+/**
+ * The lock on the material that pays for a piece, or null when it is open, the slot holds no piece or
+ * there is no pool to be locked out of. A module's cell byte is its level, not a material, so for one
+ * this is the material its level is paid in: a raise to the Auto Turret is closed while Reinforced
+ * Composite is, and a Terminal or a Basic Turret, paid in Scrap, never is.
+ */
 export function lockForPiece(piece: CellState, reading: EconomyReading): HudLock | null {
-  if (reading.cap <= 0 || moduleOfShape(stateShape(piece))) return null;
-  const material = materialOf(piece);
+  if (reading.cap <= 0) return null;
+  const cost = pieceCost(piece);
+  const material = cost && MATERIALS.find((m) => m.id === cost.material);
   if (!material) return null;
   const lock = researchLock(material.id, reading.claimed);
   if (!lock) return null;
