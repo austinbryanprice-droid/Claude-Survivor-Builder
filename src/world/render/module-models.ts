@@ -1,7 +1,15 @@
-import { BoxGeometry, ExtrudeGeometry, Shape, Vector2, type BufferGeometry } from 'three';
+import {
+  BoxGeometry,
+  CylinderGeometry,
+  ExtrudeGeometry,
+  Shape,
+  Vector2,
+  type BufferGeometry,
+} from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MODULE, moduleFacing, moduleOfShape } from '../../shared/blocks';
+import { TURRET_GUN } from '../../shared/turret';
 
 /**
  * The functional modules as models, drawn in code like the Core and the machines: no assets, so
@@ -15,6 +23,9 @@ import { MODULE, moduleFacing, moduleOfShape } from '../../shared/blocks';
  * Each model is a few merged parts, one for each look (a material and what it glows): the whole
  * module costs a handful of draw calls. Placed modules turn by the group they sit in, and the build
  * ghost has the model turned to its facing and moved to the cell's corner (`moduleGhostGeometry`).
+ *
+ * A module with a part that moves by itself, such as a turret's gun, has that part as a second model,
+ * its head, built around the point it turns on so that the renderer can turn it with one rotation.
  */
 
 /** What a part of a model is made of; each look is one material and so one draw call. */
@@ -48,12 +59,34 @@ export const MODULE_LOOK_NAMES = Object.keys(MODULE_LOOKS) as readonly ModuleLoo
 export type ModuleModel = Readonly<Partial<Record<ModuleLook, BufferGeometry>>>;
 
 /**
+ * The part of a module that turns on its own, in a space of its own: its origin is the point it turns
+ * about, `pivot` above the floor of the cell on its middle line, and its front looks toward +x as the
+ * module's does when the part is at rest.
+ */
+export interface ModuleHead {
+  readonly pivot: number;
+  readonly model: ModuleModel;
+}
+
+/** What draws a module: the body that stands still, and for a turret and the like the head that turns. */
+export interface ModuleKit {
+  readonly model: ModuleModel;
+  readonly head?: ModuleHead;
+}
+
+/**
  * How far below the floor of its cell a model reaches: a little less than a cell, so that on a block
  * it stays inside it, and more than the world lets a module float over the ground (`MODULE_FOOT`).
  */
 export const MODULE_SKIRT = 0.98;
 
 type Parts = Partial<Record<ModuleLook, BufferGeometry[]>>;
+
+/** What a module is built from: the parts that stand still, and the parts that turn about `pivot`. */
+interface Build {
+  readonly body: Parts;
+  readonly head?: { readonly pivot: number; readonly parts: Parts };
+}
 
 /**
  * A box of the given size, centered at (x, y, z), ready to be merged with its neighbors. `rounding` is
@@ -74,6 +107,31 @@ function box(
     rounding > 0
       ? new RoundedBoxGeometry(w, h, d, thin >= 0.2 ? 2 : 1, thin * rounding)
       : new BoxGeometry(w, h, d);
+  geometry.translate(x, y, z);
+  return geometry;
+}
+
+/**
+ * A round bar lying along x, `length` long and `radius` thick, centered at (x, y, z): a barrel, a
+ * sleeve or a ring. It is drawn with `sides` flats, which at this size read as round.
+ */
+function tube(
+  length: number,
+  radius: number,
+  x: number,
+  y: number,
+  z: number,
+  sides = 12,
+): BufferGeometry {
+  const geometry = new CylinderGeometry(radius, radius, length, sides);
+  geometry.rotateZ(-Math.PI / 2);
+  geometry.translate(x, y, z);
+  return geometry;
+}
+
+/** A round post standing upright, `height` tall and `radius` thick, centered at (x, y, z): a stem or an axle. */
+function post(height: number, radius: number, x: number, y: number, z: number): BufferGeometry {
+  const geometry = new CylinderGeometry(radius, radius, height, 12);
   geometry.translate(x, y, z);
   return geometry;
 }
@@ -192,19 +250,65 @@ function terminal(): Parts {
   };
 }
 
+/**
+ * The Basic Turret: a gun on a short column on a steel pad. The pad and the column stand still, with a
+ * cyan strip down the front of the column so that the way the turret faces reads; the head (a housing
+ * with a sleeve and a barrel, an amber ring at its tip and a cyan eye above it) turns about
+ * `TURRET_GUN.pivot` to point where it shoots, and the tip of the barrel is `TURRET_GUN.reach` from the
+ * pivot, which is where a bolt leaves (`turretMuzzle`). The head's swing stays above the column and
+ * inside the cell.
+ */
+function turret(): Build {
+  const { pivot, reach } = TURRET_GUN;
+  const corners = [-1, 1].flatMap((sx) => [-1, 1].map((sz) => [sx, sz] as const));
+  return {
+    body: {
+      plate: [
+        // The foundation under the pad: it meets the ground where the module floats over it.
+        box(0.5, 0.78, 0.5, 0, -0.59, 0, 0),
+        box(0.72, 0.36, 0.72, 0, -0.12, 0),
+        box(0.62, 0.12, 0.62, 0, 0.12, 0),
+        box(0.26, 0.17, 0.26, 0, 0.265, 0, 0.25),
+        post(0.15, 0.07, 0, 0.435, 0),
+      ],
+      trim: [
+        box(0.66, 0.03, 0.66, 0, 0.18, 0, 0.4),
+        box(0.34, 0.03, 0.34, 0, 0.35, 0, 0.4),
+        ...corners.map(([sx, sz]) => box(0.07, 0.04, 0.07, sx * 0.27, 0.2, sz * 0.27, 0)),
+      ],
+      lights: [box(0.68, 0.02, 0.68, 0, 0.07, 0, 0), box(0.012, 0.1, 0.1, 0.133, 0.265, 0, 0)],
+    },
+    head: {
+      pivot,
+      parts: {
+        plate: [
+          box(0.37, 0.24, 0.34, -0.015, 0, 0, 0.25),
+          tube(0.12, 0.065, 0.19, 0, 0),
+          tube(reach - 0.2, 0.032, (reach + 0.2) / 2, 0, 0, 10),
+        ],
+        trim: [
+          box(0.3, 0.035, 0.26, -0.03, 0.1375, 0, 0.4),
+          box(0.2, 0.1, 0.02, -0.04, 0, 0.18, 0),
+          box(0.2, 0.1, 0.02, -0.04, 0, -0.18, 0),
+        ],
+        amber: [
+          tube(0.04, 0.05, reach - 0.02, 0, 0, 10),
+          box(0.05, 0.02, 0.05, -0.1, 0.165, 0.08, 0),
+        ],
+        lights: [box(0.012, 0.03, 0.22, 0.176, 0.1, 0, 0), box(0.012, 0.06, 0.2, -0.206, 0, 0, 0)],
+      },
+    },
+  };
+}
+
 /** The models, by module id. */
-const BUILDERS: Readonly<Record<number, () => Parts>> = {
-  [MODULE.terminal]: terminal,
+const BUILDERS: Readonly<Record<number, () => Build>> = {
+  [MODULE.terminal]: () => ({ body: terminal() }),
+  [MODULE.turret]: turret,
 };
 
-/**
- * Builds the model of a module (`MODULE`), one merged geometry for each look it uses, or undefined for
- * a module the table has no picture of. The caller owns the geometries and disposes them.
- */
-export function buildModuleModel(module: number): ModuleModel | undefined {
-  const build = BUILDERS[module];
-  if (!build) return undefined;
-  const parts = build();
+/** One merged geometry for each look the parts use. */
+function mergeLooks(parts: Parts): ModuleModel {
   const model: Partial<Record<ModuleLook, BufferGeometry>> = {};
   for (const look of MODULE_LOOK_NAMES) {
     const geometry = parts[look];
@@ -214,15 +318,34 @@ export function buildModuleModel(module: number): ModuleModel | undefined {
 }
 
 /**
+ * Builds the model of a module (`MODULE`): one merged geometry for each look its body uses, and the same
+ * for its head if it has one. Undefined for a module the table has no picture of. The caller owns the
+ * geometries and disposes them.
+ */
+export function buildModuleKit(module: number): ModuleKit | undefined {
+  const build = BUILDERS[module];
+  if (!build) return undefined;
+  const { body, head } = build();
+  const kit: ModuleKit = { model: mergeLooks(body) };
+  return head ? { ...kit, head: { pivot: head.pivot, model: mergeLooks(head.parts) } } : kit;
+}
+
+/**
  * The whole model of a module shape as one geometry in cell coordinates: turned to the way the shape
  * faces and moved so the cell's corner is the origin, as the build ghost and the break outline have
- * every shape. Undefined for a shape that is not a module.
+ * every shape, with the head at rest. Undefined for a shape that is not a module.
  */
 export function moduleGhostGeometry(shape: number): BufferGeometry | undefined {
   const module = moduleOfShape(shape);
-  const model = module ? buildModuleModel(module.id) : undefined;
-  if (!model) return undefined;
-  const parts = MODULE_LOOK_NAMES.flatMap((look) => model[look] ?? []);
+  const kit = module ? buildModuleKit(module.id) : undefined;
+  if (!kit) return undefined;
+  const parts = MODULE_LOOK_NAMES.flatMap((look) => kit.model[look] ?? []);
+  if (kit.head) {
+    for (const look of MODULE_LOOK_NAMES) {
+      const part = kit.head.model[look];
+      if (part) parts.push(part.translate(0, kit.head.pivot, 0));
+    }
+  }
   const geometry = merge(parts);
   geometry.rotateY((-moduleFacing(shape) * Math.PI) / 2);
   geometry.translate(0.5, 0, 0.5);

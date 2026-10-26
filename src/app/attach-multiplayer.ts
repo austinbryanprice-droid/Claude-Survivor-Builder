@@ -7,6 +7,7 @@ import { createReading, nightStart } from '../shared/survival-state';
 import { moduleStands } from '../systems/economy/build-rules';
 import type { NavWorld } from '../systems/survival/nav';
 import { SurvivalSim } from '../systems/survival/sim';
+import type { ModuleSource } from '../systems/survival/turrets';
 import type { Outpost } from '../world/outpost';
 import { createMultiplayer, type Multiplayer } from './multiplayer';
 import { seatSpawn } from './seat-spawn';
@@ -30,6 +31,10 @@ export interface AttachOptions {
   rayWorld(): RayWorld | null;
   /** The heap of debris the player's cursor is on, by its place in the run's list, or -1. */
   aimedDebris(): number;
+  /** Visits the functional modules standing in the world being played now: the host's turrets are found among them. */
+  forEachModule: ModuleSource;
+  /** Turns the head of the turret standing in a cell toward a point (where its shot ended), on this screen. */
+  aimTurret(x: number, y: number, z: number, tx: number, ty: number, tz: number): void;
   flags: NetFlags;
   buildId: string;
   /** Begin the run at the start of this night (the `?night=` switch), or at the first morning when null. */
@@ -58,6 +63,8 @@ export function attachMultiplayer({
   navigation,
   rayWorld,
   aimedDebris,
+  forEachModule,
+  aimTurret,
   flags,
   buildId,
   night,
@@ -111,11 +118,13 @@ export function attachMultiplayer({
           stock,
           research,
           standing: (module) => moduleStands(voxels(), module),
+          modules: forEachModule,
         }),
     },
     groundAt: (x, z) => game.world.groundAt(x, z),
     rayWorld,
     aimedDebris,
+    aimTurret,
     scene: game.stage.world,
     registry: game.stage.registry,
     input: game.input,

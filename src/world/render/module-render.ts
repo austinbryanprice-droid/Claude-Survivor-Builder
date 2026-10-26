@@ -13,7 +13,8 @@ import type { VoxelWorld } from '../voxels/world';
 import {
   MODULE_LOOKS,
   MODULE_LOOK_NAMES,
-  buildModuleModel,
+  buildModuleKit,
+  type ModuleKit,
   type ModuleLook,
   type ModuleModel,
 } from './module-models';
@@ -29,6 +30,9 @@ import {
  * model matrix), so a group of meshes stands for each one; the turret of 5f is where a crowd of
  * them would first be, and where instancing would be looked at.
  *
+ * A turret has a head that turns, a group of its own inside the module's, which `aim` points at the end
+ * of a shot and which stays pointing there until the next one.
+ *
  * The screens breathe, the light strips beat slowly and the beacon blinks, all from the stage's
  * animation clock, so a frozen page shows the same module twice.
  */
@@ -38,14 +42,13 @@ const BLINK_PERIOD = 2.2;
 const BLINK_ON = 0.28;
 const BLINK_OFF_GLOW = 0.15;
 
-/** A kind of module as the renderer holds it: its model, shared by every module of the kind. */
-interface Kit {
-  readonly model: ModuleModel;
-}
+/** The name of the group a turning head hangs in, inside the group of the module it belongs to. */
+const HEAD = 'head';
 
 export class ModuleRenderer {
   readonly object = new Group();
-  private readonly kits = new Map<number, Kit>();
+  /** The models of the kinds of module that have been drawn, each shared by every module of its kind. */
+  private readonly kits = new Map<number, ModuleKit>();
   private readonly placed = new Map<number, Group>();
   private readonly materials = new Map<ModuleLook, ShaderMaterial>();
   private readonly glows = new Map<ModuleLook, { readonly now: Color; readonly base: Color }>();
@@ -80,6 +83,27 @@ export class ModuleRenderer {
     return this.placed.get(cellKey(x, y, z));
   }
 
+  /**
+   * Turns the head of the module in a cell to look at a point, the way a turret points at where its shot
+   * ended: about the vertical for the heading and about the head's own side for the lift. It stays there
+   * until it is aimed again or the cell is drawn again. False when the cell has no head to turn.
+   */
+  aim(x: number, y: number, z: number, tx: number, ty: number, tz: number): boolean {
+    const group = this.placed.get(cellKey(x, y, z));
+    const head = group?.getObjectByName(HEAD);
+    if (!group || !head) return false;
+    const dx = tx - (x + 0.5);
+    const dy = ty - (y + head.position.y);
+    const dz = tz - (z + 0.5);
+    const flat = Math.hypot(dx, dz);
+    if (flat < 1e-9 && Math.abs(dy) < 1e-9) return false;
+    // The group already turns the model to the way the module faces, and the head's front is +x: the
+    // heading that points it at the target is the world's, less the group's.
+    const yaw = flat < 1e-9 ? head.rotation.y : Math.atan2(-dz, dx) - group.rotation.y;
+    head.rotation.set(0, yaw, Math.atan2(dy, flat), 'YZX');
+    return true;
+  }
+
   /** Moves the lights for the stage's animation clock, in seconds. */
   update(time: number): void {
     const shimmer = 1 + 0.08 * Math.sin(time * 2.3) + 0.04 * Math.sin(time * 7.1 + 1.3);
@@ -97,7 +121,9 @@ export class ModuleRenderer {
     for (const group of this.placed.values()) group.removeFromParent();
     this.placed.clear();
     for (const kit of this.kits.values()) {
-      for (const geometry of Object.values(kit.model)) geometry?.dispose();
+      for (const model of [kit.model, kit.head?.model]) {
+        for (const geometry of Object.values(model ?? {})) geometry.dispose();
+      }
     }
     this.kits.clear();
     this.materials.forEach((material) => this.registry.release(material));
@@ -126,26 +152,39 @@ export class ModuleRenderer {
     group.userData = { module: module.id, level: stateMaterial(state) };
     group.position.set(x + 0.5, y, z + 0.5);
     group.rotation.y = (-moduleFacing(shape) * Math.PI) / 2;
-    for (const look of MODULE_LOOK_NAMES) {
-      const geometry: BufferGeometry | undefined = kit.model[look];
-      const material = this.materials.get(look);
-      if (!geometry || !material) continue;
-      const mesh = new Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      group.add(mesh);
+    this.mesh(group, kit.model);
+    if (kit.head) {
+      // Yaw first, then the lift about the head's own side, then no roll: the order the turn is built in.
+      const head = new Group();
+      head.name = HEAD;
+      head.position.y = kit.head.pivot;
+      head.rotation.order = 'YZX';
+      this.mesh(head, kit.head.model);
+      group.add(head);
     }
     this.object.add(group);
     this.placed.set(key, group);
   }
 
+  /** Hangs a mesh for each look of a model in a group. */
+  private mesh(parent: Group, model: ModuleModel): void {
+    for (const look of MODULE_LOOK_NAMES) {
+      const geometry: BufferGeometry | undefined = model[look];
+      const material = this.materials.get(look);
+      if (!geometry || !material) continue;
+      const mesh = new Mesh(geometry, material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      parent.add(mesh);
+    }
+  }
+
   /** The model of a module, built the first time one is drawn. */
-  private kit(module: ModuleDef): Kit | undefined {
+  private kit(module: ModuleDef): ModuleKit | undefined {
     let kit = this.kits.get(module.id);
     if (!kit) {
-      const model = buildModuleModel(module.id);
-      if (!model) return undefined;
-      kit = { model };
+      kit = buildModuleKit(module.id);
+      if (!kit) return undefined;
       this.kits.set(module.id, kit);
     }
     return kit;
