@@ -7,13 +7,15 @@ import {
   moduleFacing,
   moduleShape,
   packState,
+  pieceName,
   stateShape,
 } from '../../src/shared/blocks';
 import { poolSlot } from '../../src/shared/economy';
 import { PLAYER } from '../../src/shared/movement';
 import { NO_PLAYER } from '../../src/shared/protocol';
 import { SHOT_FLAG } from '../../src/shared/shot';
-import { notEnough } from '../../src/systems/economy/build-rules';
+import { RESEARCH } from '../../src/systems/economy/balance';
+import { needsResearch, notEnough, pieceCost } from '../../src/systems/economy/build-rules';
 import { ENEMIES, TURRET } from '../../src/systems/survival/balance';
 import { barrelOf, sendCrawlerNear, type Cell } from './support/turrets';
 
@@ -36,6 +38,10 @@ const SCRAP_SLOT = poolSlot(MATERIAL.scrap);
 const MODULE_SLOT = 5;
 const TURRET_DEF = MODULES.find((module) => module.id === MODULE.turret)!;
 const PRICE = TURRET_DEF.cost.amount;
+/** The points that open Reinforced Composite, which pays for the Auto Turret, and Advanced Alloy, which pays for the Heavy Turret. */
+const [COMPOSITE_AT, ALLOY_AT] = RESEARCH.steps.map((step) => step.points) as [number, number];
+/** The turret at a level of its ladder, facing +x. */
+const turretAt = (level: number): number => packState(moduleShape(MODULE.turret, 0), level);
 
 async function open(page: Page): Promise<string[]> {
   const problems: string[] = [];
@@ -97,6 +103,7 @@ interface Aim {
   hasPlace: boolean;
   place: Cell;
   state: number;
+  targetState: number;
   placeRefusal: string | null;
 }
 
@@ -115,6 +122,15 @@ interface Shot {
   z: number;
   predicted: boolean;
   turret?: [number, number, number];
+  /** How heavy this screen drew the bolt of a turret's shot, by the level it sees the turret at. */
+  heft?: number;
+}
+
+interface Pool {
+  stock: number[];
+  research: number;
+  claimed: number;
+  tier: number;
 }
 
 interface Machine {
@@ -133,11 +149,27 @@ const rejections = async (page: Page): Promise<string[]> =>
   (await read<{ reason: string }[]>(page, 'mp.rejections()')).map((r) => r.reason);
 const shotsOf = (page: Page): Promise<Shot[]> => read<Shot[]>(page, 'mp.shots().shots');
 const machines = (page: Page): Promise<Machine[]> => read<Machine[]>(page, 'mp.enemies()');
-const setScrap = (page: Page, amount: number): Promise<void> =>
-  page.evaluate(([material, count]) => window.__ashbound!.mp!.setPool(material!, count!), [
-    MATERIAL.scrap,
+const setPool = (page: Page, material: number, amount: number): Promise<void> =>
+  page.evaluate(([m, count]) => window.__ashbound!.mp!.setPool(m!, count!), [
+    material,
     amount,
   ] as const);
+const setScrap = (page: Page, amount: number): Promise<void> =>
+  setPool(page, MATERIAL.scrap, amount);
+const pool = (page: Page): Promise<Pool> => read<Pool>(page, 'mp.pool()');
+const stockOf = async (page: Page, material: number): Promise<number> =>
+  (await pool(page)).stock[poolSlot(material)] ?? -1;
+const setResearch = (page: Page, points: number): Promise<void> =>
+  page.evaluate((n) => window.__ashbound!.mp!.setResearch(n, true), points);
+const blockAt = (page: Page, cell: Cell): Promise<number> =>
+  read<number>(page, `mp.block(${cell.x}, ${cell.y}, ${cell.z})`);
+const upgraded = (page: Page): Promise<number> => read<number>(page, 'mp.clock().upgraded');
+/** The level the module drawn in a cell says it is, or null where none is drawn. */
+const levelDrawn = (page: Page, cell: Cell): Promise<number | null> =>
+  read<number | null>(
+    page,
+    `game.world.view.modules.at(${cell.x}, ${cell.y}, ${cell.z})?.userData.level ?? null`,
+  );
 
 /** Looks along the given pitch (radians, negative is down) and returns what the cursor is on a frame later. */
 async function aimAt(page: Page, pitch: number): Promise<Aim> {
@@ -149,6 +181,49 @@ async function aimAt(page: Page, pitch: number): Promise<Aim> {
   }, pitch);
   await frames(page);
   return read<Aim>(page, 'build.aim()');
+}
+
+/** Looks at the middle of a cell's body, a little above its floor, and returns what the cursor is on a frame later. */
+async function aimAtCell(page: Page, cell: Cell): Promise<Aim> {
+  await page.evaluate(
+    ({ cell, eyeHeight }) => {
+      const game = window.__ashbound!.game;
+      const dx = cell.x + 0.5 - game.player.x;
+      const dz = cell.z + 0.5 - game.player.z;
+      game.look.yaw = Math.atan2(-dx, -dz);
+      game.look.pitch = Math.atan2(cell.y + 0.45 - (game.player.y + eyeHeight), Math.hypot(dx, dz));
+    },
+    { cell, eyeHeight: PLAYER.eyeHeight },
+  );
+  await frames(page);
+  return read<Aim>(page, 'build.aim()');
+}
+
+/**
+ * Where, near the player, a turret shows above the ground: a cell stands at the floor of the ground's
+ * height and a turret's body is 0.78 tall, so on a rise the cursor would meet the ground before the
+ * turret. Returns the offset in cells from the player's own, for `placeNear`.
+ */
+async function openGround(page: Page): Promise<{ dx: number; dz: number }> {
+  const found = await page.evaluate(() => {
+    const { game, mp } = window.__ashbound!;
+    const me = mp!.position();
+    for (const [dx, dz] of [
+      [3, 0],
+      [3, 1],
+      [3, -1],
+      [-3, 0],
+      [-3, 1],
+      [4, 0],
+      [-4, 0],
+    ] as const) {
+      const ground = game.world.groundAt(Math.floor(me.x) + dx + 0.5, Math.floor(me.z) + dz + 0.5);
+      if (ground - Math.floor(ground) < 0.3) return { dx, dz };
+    }
+    return null;
+  });
+  expect(found, 'a cell near the player whose ground is low in it').not.toBeNull();
+  return found!;
 }
 
 /** Goes into Build Mode and waits for the first block's tiles and shader, which the first look at a ghost costs seconds of. */
@@ -338,7 +413,7 @@ test.describe('the Basic Turret', () => {
     expect(problems).toEqual([]);
   });
 
-  test('breaking the turret stops its fire, and the host turns a turret down that the table has no level for', async ({
+  test('breaking the turret stops its fire, and the host turns a turret down that is built above its first level or past the top of its ladder', async ({
     page,
   }) => {
     const problems = await open(page);
@@ -350,12 +425,17 @@ test.describe('the Basic Turret', () => {
     await setScrap(page, 100);
     await poll(() => scrap(page)).toBe(100);
 
-    // A level the table has no turret for is not a piece.
-    await page.evaluate(([s]) => window.__ashbound!.mp!.placeNear(-3, 0, s!), [
-      packState(moduleShape(MODULE.turret, 0), 2),
-    ] as const);
-    await poll(() => rejections(page)).toEqual(['unknown-block']);
+    // A turret is built at its first level and raised from there, so the other levels are not pieces
+    // to place, and a level the table has no turret for is not a piece at all.
+    const levels = TURRET.levels.length;
+    for (const level of [2, levels, levels + 1]) {
+      await page.evaluate(([s]) => window.__ashbound!.mp!.placeNear(-3, 0, s!), [
+        turretAt(level),
+      ] as const);
+    }
+    await poll(() => rejections(page)).toEqual(['unknown-block', 'unknown-block', 'unknown-block']);
     expect(await scrap(page)).toBe(100);
+    expect(await drawn(page)).toBe(0);
 
     const state = packState(moduleShape(MODULE.turret, 0), 1);
     const cell = await page.evaluate(([s]) => window.__ashbound!.mp!.placeNear(3, 0, s!), [
@@ -379,6 +459,210 @@ test.describe('the Basic Turret', () => {
     const fired = (await shotsOf(page)).filter((shot) => shot.turret).length;
     await frames(page, 6);
     expect((await shotsOf(page)).filter((shot) => shot.turret)).toHaveLength(fired);
+    expect(problems).toEqual([]);
+  });
+});
+
+test.describe('raising the Basic Turret', () => {
+  test('E raises the turret under the cursor a level at a time: the card says what it becomes and at what price, the host charges the one pool, and the top of the ladder offers nothing', async ({
+    page,
+  }, testInfo) => {
+    // The first look at a ghost bakes the block tiles and compiles the shader, then each step waits for frames.
+    test.setTimeout(420_000);
+    const problems = await open(page);
+    await page.evaluate(({ x, z }) => {
+      const game = window.__ashbound?.game;
+      if (game) game.teleport(x, game.world.groundAt(x, z) + 0.05, z, 0);
+    }, SPOT);
+    await takeThePointer(page);
+    await setScrap(page, 100);
+    await setPool(page, MATERIAL.composite, 40);
+    await setPool(page, MATERIAL.alloy, 40);
+    await poll(() => stockOf(page, MATERIAL.alloy)).toBe(40);
+
+    // The turret stands by the host's rules, where it shows above the ground, and the player looks at it.
+    const { dx, dz } = await openGround(page);
+    const cell = await page.evaluate(([x, z, s]) => window.__ashbound!.mp!.placeNear(x!, z!, s!), [
+      dx,
+      dz,
+      turretAt(1),
+    ] as const);
+    await poll(() => blockAt(page, cell)).toBe(turretAt(1));
+    await poll(() => drawn(page)).toBe(1);
+    await enterBuildMode(page);
+    const start = await pool(page);
+    expect(start.tier).toBe(1);
+    const autoCost = pieceCost(turretAt(2))!;
+    const heavyCost = pieceCost(turretAt(3))!;
+
+    await test.step('a raise the crew has not researched shows in red with the points it asks for, and E turns it down without asking the host', async () => {
+      await poll(async () => (await aimAtCell(page, cell)).on).toBe('block');
+      expect((await aimAtCell(page, cell)).targetState).toBe(turretAt(1));
+      await wait(page.locator('.ph-interact')).toBeVisible();
+      await expect(page.locator('.ph-interact-label')).toHaveText(
+        `Upgrade to ${pieceName(turretAt(2))}`,
+      );
+      await expect(page.locator('.ph-interact-detail')).toHaveText(
+        `Needs research · 0 of ${COMPOSITE_AT}`,
+      );
+      await expect(page.locator('.ph-interact')).toHaveAttribute('data-tone', 'warn');
+      await page.screenshot({ path: testInfo.outputPath('raise-locked.png') });
+
+      await page.keyboard.press('KeyE');
+      await wait(page.locator('.ph-prompt-detail')).toHaveText(needsResearch(autoCost.name));
+      // This screen knew: nothing went to the host, nothing changed, nothing was charged.
+      await frames(page, 3);
+      expect(await rejections(page)).toEqual([]);
+      expect(await blockAt(page, cell)).toBe(turretAt(1));
+      expect((await pool(page)).stock).toEqual(start.stock);
+      expect(await upgraded(page)).toBe(0);
+    });
+
+    await test.step('with the research read, a pool that cannot pay shows what is short, and E sends nothing', async () => {
+      await setResearch(page, COMPOSITE_AT);
+      await poll(async () => (await pool(page)).tier).toBe(2);
+      await setPool(page, autoCost.material, autoCost.amount - 1);
+      await wait(page.locator('.ph-interact-detail')).toHaveText(notEnough(autoCost.name), {
+        ignoreCase: true,
+      });
+      await expect(page.locator('.ph-interact')).toHaveAttribute('data-tone', 'warn');
+      await page.keyboard.press('KeyE');
+      await wait(page.locator('.ph-prompt-detail')).toHaveText(notEnough(autoCost.name), {
+        ignoreCase: true,
+      });
+      await frames(page, 3);
+      expect(await rejections(page)).toEqual([]);
+      expect(await blockAt(page, cell)).toBe(turretAt(1));
+      expect(await upgraded(page)).toBe(0);
+    });
+
+    await test.step('with the price in the pool the card gives it, and E raises the turret in its cell, charging the better level and giving nothing back for the old', async () => {
+      await setPool(page, autoCost.material, 40);
+      await wait(page.locator('.ph-interact-detail')).toHaveText(
+        `Cost ${autoCost.amount} ${autoCost.name}`,
+      );
+      await expect(page.locator('.ph-interact')).toHaveAttribute('data-tone', 'info');
+      await page.screenshot({ path: testInfo.outputPath('raise-card.png') });
+
+      await page.keyboard.press('KeyE');
+      await poll(() => blockAt(page, cell)).toBe(turretAt(2));
+      expect(await stockOf(page, autoCost.material)).toBe(40 - autoCost.amount);
+      // The Basic Turret that was used up is not paid back, and nothing else was touched.
+      expect(await stockOf(page, MATERIAL.scrap)).toBe(100 - PRICE);
+      expect(await stockOf(page, MATERIAL.alloy)).toBe(40);
+      await poll(() => upgraded(page)).toBe(1);
+      await poll(() => levelDrawn(page, cell)).toBe(2);
+      // One module in the cell still, with its one turning head.
+      expect(await drawn(page)).toBe(1);
+      expect(await rejections(page)).toEqual([]);
+      await page.screenshot({ path: testInfo.outputPath('raise-level-2.png') });
+    });
+
+    await test.step('the next level is Heavy: shut until the Alloy is researched, then the card gives its price and E raises it', async () => {
+      await wait(page.locator('.ph-interact-label')).toHaveText(
+        `Upgrade to ${pieceName(turretAt(3))}`,
+      );
+      await expect(page.locator('.ph-interact-detail')).toHaveText(
+        `Needs research · ${COMPOSITE_AT} of ${ALLOY_AT}`,
+      );
+      await setResearch(page, ALLOY_AT);
+      await wait(page.locator('.ph-interact-detail')).toHaveText(
+        `Cost ${heavyCost.amount} ${heavyCost.name}`,
+      );
+      await page.keyboard.press('KeyE');
+      await poll(() => blockAt(page, cell)).toBe(turretAt(3));
+      expect(await stockOf(page, heavyCost.material)).toBe(40 - heavyCost.amount);
+      // The Auto Turret's price is not paid back either: Composite stays where the first raise left it.
+      expect(await stockOf(page, autoCost.material)).toBe(40 - autoCost.amount);
+      await poll(() => upgraded(page)).toBe(2);
+      await poll(() => levelDrawn(page, cell)).toBe(3);
+      expect(await drawn(page)).toBe(1);
+      expect(await rejections(page)).toEqual([]);
+      await page.screenshot({ path: testInfo.outputPath('raise-level-3.png') });
+    });
+
+    await test.step('at the top of the ladder there is no card, and E says so', async () => {
+      await wait(page.locator('.ph-interact')).toBeHidden();
+      await page.keyboard.press('KeyE');
+      await wait(page.locator('.ph-prompt-detail')).toHaveText('Already fully upgraded');
+      await frames(page, 3);
+      expect(await upgraded(page)).toBe(2);
+      expect(await blockAt(page, cell)).toBe(turretAt(3));
+      expect(await rejections(page)).toEqual([]);
+    });
+    expect(problems).toEqual([]);
+  });
+
+  test('a raised turret fires the bolt of its level, felling a machine in fewer shots, and breaking it gives back only the price of the level it stands at', async ({
+    page,
+  }) => {
+    const problems = await open(page);
+    await page.evaluate(({ x, z }) => {
+      const game = window.__ashbound?.game;
+      if (game) game.teleport(x, game.world.groundAt(x, z) + 0.05, z, 0);
+    }, SPOT);
+    await takeThePointer(page);
+    await setScrap(page, 100);
+    await setPool(page, MATERIAL.composite, 40);
+    await setPool(page, MATERIAL.alloy, 40);
+    await setResearch(page, ALLOY_AT);
+    await poll(() => stockOf(page, MATERIAL.alloy)).toBe(40);
+    await poll(async () => (await pool(page)).tier).toBe(3);
+
+    const cell = await page.evaluate(([s]) => window.__ashbound!.mp!.placeNear(3, 0, s!), [
+      turretAt(1),
+    ] as const);
+    await poll(() => blockAt(page, cell)).toBe(turretAt(1));
+    // The raise is asked of the host as E asks it; the host's rules are the same.
+    for (const level of [2, 3]) {
+      await page.evaluate(([x, y, z]) => window.__ashbound!.mp!.upgrade(x!, y!, z!), [
+        cell.x,
+        cell.y,
+        cell.z,
+      ] as const);
+      await poll(() => blockAt(page, cell)).toBe(turretAt(level));
+    }
+    await poll(() => levelDrawn(page, cell)).toBe(3);
+    expect(await rejections(page)).toEqual([]);
+
+    await test.step('it fires the bolt of the Heavy Turret, which the first level could not fell the machine with so soon', async () => {
+      expect(await sendCrawlerNear(page, cell)).not.toBeNull();
+      // The machine is on screen a frame after the host sends it: wait for the first shot at it, then for it to fall.
+      await poll(
+        async () => (await shotsOf(page)).filter((shot) => shot.turret).length,
+      ).toBeGreaterThan(0);
+      await poll(async () => (await machines(page)).length).toBe(0);
+      const shots = (await shotsOf(page)).filter((shot) => shot.turret);
+      const heavy = TURRET.levels[2]!;
+      expect(TURRET.levels[0]!.heft).toBeLessThan(heavy.heft);
+      // The screen drew every bolt at the weight of the level it saw the turret at.
+      expect(shots.map((shot) => shot.heft)).toEqual(shots.map(() => heavy.heft));
+      const wanted = Math.ceil(ENEMIES.crawler.health / heavy.damage);
+      expect(shots.length).toBeGreaterThanOrEqual(wanted);
+      expect(shots.length).toBeLessThan(
+        Math.ceil(ENEMIES.crawler.health / TURRET.levels[0]!.damage),
+      );
+      expect(shots.filter((shot) => shot.flags & SHOT_FLAG.kill)).toHaveLength(1);
+    });
+
+    await test.step('breaking it gives back what the Heavy Turret cost and nothing more: the first level and the second were used up', async () => {
+      const heavyCost = pieceCost(turretAt(3))!;
+      const autoCost = pieceCost(turretAt(2))!;
+      const before = await pool(page);
+      await page.evaluate(([x, y, z]) => window.__ashbound!.mp!.breakBlock(x!, y!, z!), [
+        cell.x,
+        cell.y,
+        cell.z,
+      ] as const);
+      await poll(() => drawn(page)).toBe(0);
+      await poll(() => stockOf(page, heavyCost.material)).toBe(
+        before.stock[poolSlot(heavyCost.material)]! + heavyCost.amount,
+      );
+      // Scrap and Composite are where the raises left them.
+      expect(await stockOf(page, MATERIAL.scrap)).toBe(100 - PRICE);
+      expect(await stockOf(page, autoCost.material)).toBe(40 - autoCost.amount);
+      expect(await rejections(page)).toEqual([]);
+    });
     expect(problems).toEqual([]);
   });
 });
