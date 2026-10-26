@@ -11,8 +11,11 @@ import {
 } from '../../src/shared/build-aim';
 import {
   MATERIAL,
+  MODULE,
   SHAPE,
   isUpsideDown,
+  moduleFacing,
+  moduleShape,
   packState,
   slabShape,
   stateMaterial,
@@ -469,5 +472,65 @@ describe('aiming at a wedge', () => {
     };
     aimIn(blocks, { x: 4.5, y: 4, z: 4.5 }, DOWN, { ...SLAB, turn: 1 });
     expect(seen).toEqual([packState(slabShape(true), MATERIAL.scrap)]);
+  });
+});
+
+describe('aiming with a module in hand', () => {
+  const HELD: PieceChoice = { material: 1, kind: 'module', turn: 0, module: MODULE.terminal };
+  const wall = packState(SHAPE.cube, MATERIAL.scrap);
+  const terminal = (facing: number) => packState(moduleShape(MODULE.terminal, facing), 1);
+
+  it('puts the module on a block facing the player, at level 1', () => {
+    const blocks = cells([[4, 0, 4, wall]]);
+    // Looking along +x and down onto the block's top: the module's front looks back at the player, along -x.
+    const aim = aimIn(blocks, { x: 3.2, y: 4, z: 4.5 }, { x: 1, y: -3, z: 0 }, HELD);
+    expect(aim.place).toEqual({ x: 4, y: 1, z: 4 });
+    expect(aim.state).toBe(terminal(2));
+    expect(stateMaterial(aim.state)).toBe(1);
+    expect(moduleFacing(stateShape(aim.state))).toBe(2);
+    // Turning the piece moves its front a quarter turn.
+    const turned = aimIn(
+      blocks,
+      { x: 3.2, y: 4, z: 4.5 },
+      { x: 1, y: -3, z: 0 },
+      { ...HELD, turn: 1 },
+    );
+    expect(moduleFacing(stateShape(turned.state))).toBe(3);
+  });
+
+  it('asks the world about the module as it will stand, not about a base shape', () => {
+    const seen: number[] = [];
+    const blocks = {
+      ...cells([[4, 0, 4, wall]]),
+      checkPlace: (_x: number, _y: number, _z: number, state: number) => {
+        seen.push(state);
+        return null;
+      },
+    };
+    aimIn(blocks, { x: 4.5, y: 4, z: 5.5 }, { x: 0, y: -3, z: -1 }, HELD);
+    expect(seen).toEqual([terminal(1)]);
+  });
+
+  it('passes the world’s refusal of a module through, such as nothing to stand on', () => {
+    const blocks = {
+      ...cells([[4, 0, 4, wall]]),
+      checkPlace: () => 'unsupported',
+    };
+    const aim = aimIn(blocks, { x: 3.2, y: 4, z: 4.5 }, { x: 1, y: -3, z: 0 }, HELD);
+    expect(aim.placeRefusal).toBe('unsupported');
+  });
+
+  it('aims at a module by its body: the cursor passes through the gap between body and cell edge', () => {
+    const blocks = cells([
+      [4, 0, 4, wall],
+      [4, 1, 4, terminal(0)],
+      [4, 0, 5, wall],
+    ]);
+    // Through the middle of the cell the body fills (0.1 to 0.9 of it): a hit, and it is the module.
+    const hit = aimIn(blocks, { x: 4.5, y: 1.5, z: 6.5 }, { x: 0, y: 0, z: -1 }, null);
+    expect(hit.target).toEqual({ x: 4, y: 1, z: 4 });
+    // At 0.05 of the cell the ray is in the gap beside the body, and passes on to what is behind.
+    const miss = aimIn(blocks, { x: 4.05, y: 1.5, z: 6.5 }, { x: 0, y: 0, z: -1 }, null);
+    expect(miss.on).toBe('nothing');
   });
 });

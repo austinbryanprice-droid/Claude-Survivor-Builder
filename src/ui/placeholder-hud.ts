@@ -1,13 +1,15 @@
 import type { Game } from '../engine/game';
-import { MATERIALS, type ShapeKind } from '../shared/blocks';
+import { MATERIALS, MODULES, type BlockKind } from '../shared/blocks';
 import { createEconomyReading, type EconomyView } from '../shared/economy';
 import { createReading, type SurvivalView } from '../shared/survival-state';
 import { createVitalsReading, type VitalsView } from '../shared/vitals-state';
 import { CRASH } from '../world/terrain/field';
 import {
   BuildPromptTracker,
+  MODULE_SLOT_INDEX,
   blockSlotsByKind,
   interactPrompt,
+  moduleSlot,
   type BuildHudSource,
 } from './build-hud';
 import { wrapBearing } from './player-hud/format';
@@ -17,12 +19,12 @@ import { ResearchPill, lockForPiece, slotLocked } from './research-hud';
 import { FULL_VITALS, vitalsForHud } from './vitals-hud';
 
 /**
- * The slots after the building blocks: the pulse blaster, which is real, and placeholder tools
- * for the rest until the inventory comes.
+ * The slots after the building blocks: the pulse blaster and the module slot, which are real, and
+ * placeholder tools for the rest until the inventory comes. The module slot shows the module in hand.
  */
 const TOOLS: readonly HotbarSlot[] = [
   { icon: 'blaster' },
-  { icon: 'pick', durability: 0.8 },
+  moduleSlot(MODULES[0]?.id ?? 0),
   { icon: 'torch', durability: 0.6 },
   { icon: 'charge', count: 15 },
 ];
@@ -67,7 +69,7 @@ export function createPlaceholderHud(
   // The block slots look like the shape they make, so a row is kept for each kind.
   // Each row is a copy the pool's counts are written into, one frame after another: the HUD reads
   // the state as it is handed over and keeps nothing of it.
-  const slotRows = new Map<ShapeKind, StockSlot[]>();
+  const slotRows = new Map<BlockKind, StockSlot[]>();
   for (const [kind, blocks] of blockSlotsByKind()) {
     slotRows.set(
       kind,
@@ -121,6 +123,9 @@ export function createPlaceholderHud(
           slot.locked = pool !== null && slotLocked(material.id, pool);
         }
       });
+      // The module slot draws the module the shape key has chosen.
+      const modules = row[MODULE_SLOT_INDEX];
+      if (modules) modules.icon = moduleSlot(hands.module).icon;
       const state: PlayerHudState = {
         health: own.health,
         healthTone: own.healthTone,

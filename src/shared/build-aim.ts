@@ -171,7 +171,10 @@ export function updateAim(aim: Aim, input: AimInput): void {
   // The ground cuts through its cell at any height, so on ground that faces up a slab goes in the half the ground leaves open, as it does against a wall.
   surface.ny = hit.kind === 'terrain' && hit.ny > 0 ? 0 : hit.ny;
   surface.height = Math.min(1, Math.max(0, start.y + dir.y * hit.distance - placeY));
-  aim.state = packState(orientShape(piece.kind, piece.turn, surface, dir.x, dir.z), piece.material);
+  aim.state = packState(
+    orientShape(piece.kind, piece.turn, surface, dir.x, dir.z, piece.module),
+    piece.material,
+  );
   if (distanceToCell(eye, placeX, placeY, placeZ) > reach) {
     aim.placeRefusal = AIM_REFUSAL.outOfReach;
     return;

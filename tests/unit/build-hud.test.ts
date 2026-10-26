@@ -3,20 +3,24 @@ import { REFUSAL } from '../../src/net/host-session';
 import {
   MATERIAL,
   MATERIALS,
+  MODULE,
   SHAPE,
   SHAPE_KINDS,
   baseShape,
+  moduleShape,
   packState,
   slabShape,
   wedgeShape,
 } from '../../src/shared/blocks';
 import { AIM_REFUSAL } from '../../src/shared/build-aim';
+import { MODULE_SLOT } from '../../src/app/build-controller';
 import {
   BLASTER_COST,
   BLASTER_NAME,
   BUILD_KEYS,
   BuildPromptTracker,
   INTERACT_KEY,
+  MODULE_SLOT_INDEX,
   NAME_SECONDS,
   blockIcon,
   blockSlot,
@@ -24,6 +28,7 @@ import {
   blockSlotsByKind,
   costText,
   interactPrompt,
+  moduleSlot,
   refusalText,
   type BuildHudInput,
 } from '../../src/ui/build-hud';
@@ -39,6 +44,7 @@ function hands(overrides: Partial<BuildHudInput> = {}): BuildHudInput {
     selected: 0,
     buildMode: false,
     kind: 'cube',
+    module: MODULE.terminal,
     piece: SCRAP,
     crosshair: 'none',
     refusal: null,
@@ -101,6 +107,33 @@ describe('the hotbar blocks', () => {
     expect(costText(SCRAP)).toBe('1 Scrap');
     expect(costText(packState(SHAPE.cube, MATERIAL.energy))).toBe('1 Energy-Infused');
     expect(costText(0)).toBe('');
+  });
+});
+
+describe('the module slot', () => {
+  const TERMINAL = packState(moduleShape(MODULE.terminal, 2), 1);
+
+  it('sits where the building hands put it', () => {
+    expect(MODULE_SLOT_INDEX).toBe(MODULE_SLOT);
+  });
+
+  it('draws the module’s own icon, the same whichever way it faces, on the grid of placeable items', () => {
+    expect(blockIcon(TERMINAL)).toBe('terminal');
+    for (let facing = 0; facing < 4; facing++) {
+      expect(blockIcon(packState(moduleShape(MODULE.terminal, facing), 1))).toBe('terminal');
+    }
+    expect(moduleSlot(MODULE.terminal)).toEqual({ icon: 'terminal', blueprint: true });
+    expect(blockSlot(TERMINAL)).toEqual({ icon: 'terminal', blueprint: true });
+  });
+
+  it('has no icon for a module the HUD has no picture of, or a level the module does not have', () => {
+    expect(moduleSlot(99).icon).toBeNull();
+    expect(blockIcon(packState(moduleShape(MODULE.terminal, 0), 9))).toBeNull();
+  });
+
+  it('says what a module costs from the module table', () => {
+    expect(costText(TERMINAL)).toBe('40 Scrap');
+    expect(costText(packState(moduleShape(MODULE.terminal, 0), 9))).toBe('');
   });
 });
 
@@ -228,6 +261,28 @@ describe('the caption above the hotbar', () => {
     const wedge = packState(SHAPE.wedge, MATERIAL.alloy);
     expect(tracker.update(0.016, hands({ kind: 'wedge', piece: wedge }))).toMatchObject({
       title: 'Advanced Alloy Wedge',
+    });
+  });
+
+  it('names a module and what it costs, as it names a block', () => {
+    const tracker = new BuildPromptTracker();
+    const terminal = packState(moduleShape(MODULE.terminal, 1), 1);
+    expect(
+      tracker.update(0.016, hands({ selected: MODULE_SLOT, buildMode: true, piece: terminal })),
+    ).toEqual({
+      title: 'Research Terminal',
+      detail: 'Cost 40 Scrap',
+      tone: 'info',
+    });
+    expect(
+      tracker.update(
+        0.016,
+        hands({ selected: MODULE_SLOT, piece: terminal, refusal: 'unsupported' }),
+      ),
+    ).toEqual({
+      title: 'Research Terminal',
+      detail: 'Needs ground or a block to rest on',
+      tone: 'warn',
     });
   });
 

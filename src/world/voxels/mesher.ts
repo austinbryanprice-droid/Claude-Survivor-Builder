@@ -479,7 +479,8 @@ export class ChunkMesher {
           if (state === 0) continue;
           const shape = state & 0xff;
           const geometry = shapeGeometry(shape);
-          if (!geometry) continue;
+          // A module is drawn from its model, not from faces of the chunk.
+          if (!geometry || geometry.kind === 'module') continue;
           const mask = this.neighbourhood(at);
           const whole = shape === SHAPE.cube;
           // A block with whole cubes all round it has nothing to show.

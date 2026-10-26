@@ -1,5 +1,11 @@
 import type { CellState } from '../../shared/block-world';
-import { materialOf } from '../../shared/blocks';
+import {
+  MATERIALS,
+  isKnownState,
+  materialOf,
+  moduleOfShape,
+  stateShape,
+} from '../../shared/blocks';
 import {
   poolSlot,
   type DebrisNode,
@@ -23,8 +29,19 @@ export interface PieceCost {
   readonly amount: number;
 }
 
-/** What placing `state` costs, or null for a state the tables do not know (the world refuses it anyway). */
+/**
+ * What placing `state` costs, or null for a state the tables do not know (the world refuses it
+ * anyway). A block costs its material's price, whatever its shape; a module costs what its own
+ * table says, in the material that names.
+ */
 export function pieceCost(state: CellState): PieceCost | null {
+  const module = moduleOfShape(stateShape(state));
+  if (module) {
+    const paid = MATERIALS.find((m) => m.id === module.cost.material);
+    return paid && isKnownState(state)
+      ? { material: paid.id, name: paid.name, amount: module.cost.amount }
+      : null;
+  }
   const material = materialOf(state);
   return material ? { material: material.id, name: material.name, amount: material.cost } : null;
 }
@@ -42,8 +59,13 @@ export function needsResearch(name: string): string {
   return `${name} needs research`;
 }
 
-/** Why `state` may not be placed by a crew that has researched up to `tier`, or null when its material is open to them. */
+/**
+ * Why `state` may not be placed by a crew that has researched up to `tier`, or null when its material
+ * is open to them. A module's material byte is its level, not a material, so a module is never locked
+ * by a tier; the research that opens the other modules comes with them (5g, 5h).
+ */
 export function lockedRefusal(tier: number, state: CellState): string | null {
+  if (moduleOfShape(stateShape(state))) return null;
   const material = materialOf(state);
   return material && material.tier > tier ? needsResearch(material.name) : null;
 }

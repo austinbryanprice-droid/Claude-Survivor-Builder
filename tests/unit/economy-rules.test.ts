@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { MATERIAL, MATERIALS, SHAPE, packState } from '../../src/shared/blocks';
+import {
+  MATERIAL,
+  MATERIALS,
+  MODULE,
+  MODULES,
+  SHAPE,
+  moduleShape,
+  packState,
+} from '../../src/shared/blocks';
 import { createEconomyReading, type DebrisNode } from '../../src/shared/economy';
 import { DEBRIS } from '../../src/systems/economy/balance';
 import {
@@ -51,6 +59,20 @@ describe('what a piece costs', () => {
   it('is nothing for a cell state the tables do not know', () => {
     expect(pieceCost(0)).toBeNull();
     expect(pieceCost(packState(SHAPE.cube, 99))).toBeNull();
+    expect(pieceCost(packState(moduleShape(MODULE.terminal, 0), 9))).toBeNull();
+  });
+
+  it('is what the module table says for a module, whichever way it faces, in the material it names', () => {
+    const terminal = MODULES.find((def) => def.id === MODULE.terminal)!;
+    const scrap = MATERIALS.find((material) => material.id === terminal.cost.material)!;
+    for (let facing = 0; facing < 4; facing++) {
+      expect(pieceCost(packState(moduleShape(MODULE.terminal, facing), 1))).toEqual({
+        material: scrap.id,
+        name: scrap.name,
+        amount: terminal.cost.amount,
+      });
+    }
+    expect(pieceCost(packState(moduleShape(MODULE.terminal, 0), 1))?.amount).toBe(40);
   });
 
   it('tells which material is short, by name', () => {
@@ -197,6 +219,20 @@ describe('what a screen asks before it shows a block as placeable', () => {
     );
   });
 
+  it('charges a module its own price in Scrap, and names what is short', () => {
+    const terminal = packState(moduleShape(MODULE.terminal, 0), 1);
+    expect(placementRefusal(view([39, 0, 0, 0], 400, {}), scratch, 30, 10, -7, terminal)).toBe(
+      'not enough Scrap',
+    );
+    expect(
+      placementRefusal(view([40, 0, 0, 0], 400, {}), scratch, 30, 10, -7, terminal),
+    ).toBeNull();
+    // Researched tiers do not matter to it.
+    expect(
+      placementRefusal(view([40, 0, 0, 0], 400, {}, 1), scratch, 30, 10, -7, terminal),
+    ).toBeNull();
+  });
+
   it('refuses a block on a heap before it asks about the pool', () => {
     const empty = view([0, 0, 0, 0], 400, { 0: 3 });
     expect(placementRefusal(empty, scratch, 20, 10, -7, SCRAP)).toBe(DEBRIS_IN_THE_WAY);
@@ -255,5 +291,11 @@ describe('the words for a material that is not researched', () => {
   it('say nothing of a state the tables do not know', () => {
     expect(lockedRefusal(1, 0)).toBeNull();
     expect(lockedRefusal(1, packState(SHAPE.cube, 99))).toBeNull();
+  });
+
+  it('lock no module: its material byte is a level, not a material', () => {
+    for (let tier = 1; tier <= 4; tier++) {
+      expect(lockedRefusal(tier, packState(moduleShape(MODULE.terminal, 0), 1))).toBeNull();
+    }
   });
 });

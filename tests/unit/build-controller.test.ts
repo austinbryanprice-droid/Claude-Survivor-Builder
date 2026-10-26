@@ -3,8 +3,10 @@ import {
   BLASTER_SLOT,
   BuildController,
   HOTBAR_MATERIALS,
+  HOTBAR_MODULES,
   HOTBAR_SLOTS,
   MIN_HAND_SCALE,
+  MODULE_SLOT,
   NOTICE_SECONDS,
   NOT_READY,
   REPEAT_DELAY,
@@ -16,9 +18,13 @@ import {
 import {
   MATERIAL,
   MATERIALS,
+  MODULE,
+  MODULE_FACINGS,
   SHAPE,
   SHAPE_KINDS,
   isUpsideDown,
+  moduleFacing,
+  moduleShape,
   packState,
   slabShape,
   stateShape,
@@ -1084,6 +1090,131 @@ describe('a heap of debris in the way of a placement', () => {
   it('does not keep a block off ground away from the heap', () => {
     const r = heapUnderCursor();
     r.heaps.nodes[0] = { ...r.heaps.nodes[0]!, x: SPOT.x + 10.5 };
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    expect(r.sent).toHaveLength(1);
+  });
+});
+
+describe('the module slot', () => {
+  const terminal = packState(moduleShape(MODULE.terminal, 0), 1);
+
+  it('sits after the blaster, and only there is a module in hand', () => {
+    const { controller } = rig();
+    expect(MODULE_SLOT).toBe(BLASTER_SLOT + 1);
+    expect(MODULE_SLOT).toBeLessThan(HOTBAR_SLOTS);
+    expect(HOTBAR_MODULES).toEqual([MODULE.terminal]);
+    for (let slot = 0; slot < HOTBAR_SLOTS; slot++) {
+      controller.selectSlot(slot);
+      expect(controller.modular, `slot ${slot}`).toBe(slot === MODULE_SLOT);
+      expect(controller.armed, `slot ${slot}`).toBe(slot === BLASTER_SLOT);
+    }
+  });
+
+  it('holds the Research Terminal at its first level, before it is turned', () => {
+    const { controller } = rig();
+    controller.selectSlot(MODULE_SLOT);
+    expect(controller.module).toBe(MODULE.terminal);
+    expect(controller.piece).toBe(terminal);
+    expect(controller.choice).toEqual({
+      material: 1,
+      kind: 'module',
+      turn: 0,
+      module: MODULE.terminal,
+    });
+    expect(controller.hudState()).toMatchObject({
+      selected: MODULE_SLOT,
+      module: MODULE.terminal,
+      piece: terminal,
+      blaster: false,
+    });
+  });
+
+  it('turns through four facings, and the shape key keeps the block slots’ kind as it was', () => {
+    const { controller } = rig();
+    controller.cycleShape();
+    expect(controller.kind).toBe('slab');
+    controller.selectSlot(MODULE_SLOT);
+    const turns = new Set<number>();
+    for (let i = 0; i < MODULE_FACINGS * 2; i++) {
+      turns.add(controller.turn);
+      controller.turnPiece();
+      expect(controller.turn).toBeLessThan(MODULE_FACINGS);
+    }
+    expect(turns.size).toBe(MODULE_FACINGS);
+    // With one module to choose from, the shape key leaves it chosen, and the block kind alone.
+    controller.cycleShape();
+    expect(controller.module).toBe(MODULE.terminal);
+    expect(controller.turn).toBe(0);
+    expect(controller.kind).toBe('slab');
+    controller.selectSlot(0);
+    expect(controller.piece).toBe(packState(slabShape(false), MATERIAL.scrap));
+  });
+
+  it('starts the turn over on the way into and out of the slot, and keeps it between block slots', () => {
+    const { controller } = rig();
+    controller.cycleShape();
+    controller.cycleShape();
+    controller.turnPiece();
+    controller.turnPiece();
+    expect(controller.turn).toBe(2);
+    controller.selectSlot(2);
+    expect(controller.turn).toBe(2);
+    controller.selectSlot(MODULE_SLOT);
+    expect(controller.turn).toBe(0);
+    controller.turnPiece();
+    controller.selectSlot(0);
+    expect(controller.turn).toBe(0);
+    controller.scrollSlot(1);
+    expect(controller.turn).toBe(0);
+  });
+
+  it('places the module the aim shows, and nothing else', () => {
+    const r = rig();
+    r.controller.selectSlot(MODULE_SLOT);
+    r.controller.update(0.016, r.lookDown(3));
+    const shown = r.controller.target.state;
+    expect(moduleFacing(stateShape(shown))).toBeGreaterThanOrEqual(0);
+    expect(stateShape(shown)).toBeGreaterThanOrEqual(SHAPE.module);
+    r.controller.press('secondary');
+    r.controller.release('secondary');
+    expect(r.sent).toEqual([
+      { type: 'place', x: SPOT.x, y: Math.floor(r.surface), z: SPOT.z, state: shown },
+    ]);
+  });
+
+  it('breaks with a left click as a block does, and fires nothing', () => {
+    const r = rig();
+    const y = Math.floor(r.surface);
+    r.world.setBlock(SPOT.x, y, SPOT.z, terminal);
+    r.controller.selectSlot(MODULE_SLOT);
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('primary');
+    expect(r.sent).toEqual([{ type: 'break', x: SPOT.x, y, z: SPOT.z }]);
+    expect(r.shots).toEqual([]);
+  });
+
+  it('charges 40 Scrap and says what is short', () => {
+    const r = rig();
+    r.pool.cap = 400;
+    r.pool.stock.splice(0, 4, 39, 9, 9, 9);
+    r.controller.selectSlot(MODULE_SLOT);
+    r.controller.toggleBuildMode();
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBe(notEnough('Scrap'));
+    expect(r.controller.hudState().crosshair).toBe('blocked');
+    r.pool.stock[0] = 40;
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBeNull();
+    expect(r.controller.hudState().crosshair).toBe('place');
+  });
+
+  it('is never locked by a tier', () => {
+    const r = rig();
+    r.pool.cap = 400;
+    r.pool.stock.splice(0, 4, 40, 0, 0, 0);
+    r.pool.tier = 1;
+    r.controller.selectSlot(MODULE_SLOT);
     r.controller.update(0.016, r.lookDown(3));
     r.controller.press('secondary');
     expect(r.sent).toHaveLength(1);

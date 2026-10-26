@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MODULE,
+  MODULE_FACINGS,
   SHAPE,
   SHAPE_KINDS,
   baseShape,
   isUpsideDown,
+  moduleFacing,
+  moduleShape,
   shapeKind,
   slabShape,
   wedgeFacing,
@@ -178,5 +182,57 @@ describe('every orientation is a shape the table defines', () => {
         }
       }
     }
+  });
+});
+
+describe('placing a module', () => {
+  const place = (turn: number, lookX: number, lookZ: number, surface = ON_TOP): number =>
+    orientShape('module', turn, surface, lookX, lookZ, MODULE.terminal);
+
+  it('turns through its four facings and then comes round to the first', () => {
+    expect(turnCount('module')).toBe(MODULE_FACINGS);
+    let turn = 0;
+    const seen = new Set<number>();
+    for (let i = 0; i < turnCount('module'); i++) {
+      seen.add(turn);
+      turn = nextTurn('module', turn);
+    }
+    expect(turn).toBe(0);
+    expect(seen.size).toBe(MODULE_FACINGS);
+  });
+
+  it('faces the player, so that the front is what they see', () => {
+    // The front looks the way the module faces: toward the player, who looks the opposite way.
+    expect(moduleFacing(place(0, -1, 0))).toBe(0);
+    expect(moduleFacing(place(0, 0, -1))).toBe(1);
+    expect(moduleFacing(place(0, 1, 0))).toBe(2);
+    expect(moduleFacing(place(0, 0, 1))).toBe(3);
+    for (let facing = 0; facing < MODULE_FACINGS; facing++) {
+      const [x, z] = [
+        [-1, 0],
+        [0, -1],
+        [1, 0],
+        [0, 1],
+      ][facing] as [number, number];
+      expect(place(0, x, z)).toBe(moduleShape(MODULE.terminal, facing));
+      expect(shapeKind(place(0, x, z))).toBe('module');
+    }
+  });
+
+  it('turns a quarter turn a step, from the way it started', () => {
+    for (let turn = 0; turn < MODULE_FACINGS; turn++) {
+      expect(moduleFacing(place(turn, 1, 0))).toBe((2 + turn) % MODULE_FACINGS);
+    }
+    expect(place(MODULE_FACINGS, 1, 0)).toBe(place(0, 1, 0));
+  });
+
+  it('stands the same on a floor, a wall or a ceiling: it is the support rule that decides', () => {
+    for (const surface of [ON_TOP, UNDER, side(0.2), side(0.8)]) {
+      expect(place(1, 0, 1, surface)).toBe(place(1, 0, 1));
+    }
+  });
+
+  it('names the module in the shape it makes', () => {
+    expect(place(0, 1, 0)).toBeGreaterThanOrEqual(SHAPE.module);
   });
 });

@@ -15,6 +15,10 @@ import type { CellState } from './block-world';
  *  - `SHAPE.wedge` + facing is a wedge that rises toward +x (facing 0), +z (1), -x (2) or -z (3),
  *    and + 4 turns it upside down: the sloped face then looks down and the flat one is on top.
  *    A wedge is half a cube cut along the diagonal, so its slope is 45 degrees and rises one block.
+ *  - `SHAPE.module` + (module - 1) * 4 + facing is a functional module (Phase 5d): a model drawn in
+ *    code that stands in one cell, its front looking toward +x (facing 0), +z (1), -x (2) or -z (3).
+ *    The material byte of a module is its level, 1 for the model as it is built and up for its
+ *    upgrades, so a module is placed, broken and upgraded as any block is.
  */
 
 export const SHAPE = {
@@ -22,12 +26,16 @@ export const SHAPE = {
   cube: 1,
   slab: 8,
   wedge: 16,
+  module: 32,
 } as const;
 
-export type ShapeKind = 'cube' | 'slab' | 'wedge';
+/** The kinds of structural piece a material makes. */
+export type BlockKind = 'cube' | 'slab' | 'wedge';
 
-/** The kinds a player chooses between, in the order the shape key cycles through them. */
-export const SHAPE_KINDS: readonly ShapeKind[] = ['cube', 'slab', 'wedge'];
+export type ShapeKind = BlockKind | 'module';
+
+/** The kinds of block a player chooses between, in the order the shape key cycles through them. */
+export const SHAPE_KINDS: readonly BlockKind[] = ['cube', 'slab', 'wedge'];
 
 export const MATERIAL = {
   none: 0,
@@ -44,6 +52,30 @@ export interface ShapeDef {
   readonly kind: ShapeKind;
 }
 
+/** How many ways a module can face: the way its front looks, toward +x, +z, -x or -z. */
+export const MODULE_FACINGS = 4;
+
+/** The functional modules (SPEC section 9). Ids are stored in saves and sent on the wire, so they never change. */
+export const MODULE = {
+  terminal: 1,
+} as const;
+
+export interface ModuleDef {
+  readonly id: number;
+  /** What a player calls it. */
+  readonly name: string;
+  /** How many levels it has: its cell's material byte is its level, from 1 up to this. */
+  readonly levels: number;
+  /** What placing it takes from the shared pool: so many of a material, whatever way it faces. */
+  readonly cost: { readonly material: number; readonly amount: number };
+  /**
+   * The part of its cell it fills, as a box in cell coordinates (0 to 1, y up) with its front toward
+   * +x. Movement collides with it and the cursor aims at it; the model is drawn in code and fits
+   * inside the cell.
+   */
+  readonly body: readonly [x0: number, y0: number, z0: number, x1: number, y1: number, z1: number];
+}
+
 export interface MaterialDef {
   readonly id: number;
   readonly name: string;
@@ -57,6 +89,39 @@ export interface MaterialDef {
   readonly cost: number;
 }
 
+/**
+ * The modules, in the order of their ids. The Research Terminal is the first (Phase 5d); the turret,
+ * generator, node, storage, bed and light follow it (5f to 5h). The cost is Scrap only (about 40),
+ * because the notes price it in Composite, which the Terminal itself unlocks (docs/decisions.md).
+ */
+export const MODULES: readonly ModuleDef[] = [
+  {
+    id: MODULE.terminal,
+    name: 'Research Terminal',
+    levels: 1,
+    cost: { material: MATERIAL.scrap, amount: 40 },
+    body: [0.1, 0, 0.1, 0.9, 0.9, 0.9],
+  },
+];
+
+/** The shape id of a module standing so its front looks toward `facing` (0 is +x, 1 is +z, 2 is -x, 3 is -z). */
+export function moduleShape(module: number, facing: number): number {
+  const turn = ((Math.round(facing) % MODULE_FACINGS) + MODULE_FACINGS) % MODULE_FACINGS;
+  return SHAPE.module + (module - 1) * MODULE_FACINGS + turn;
+}
+
+/** The module a shape id names, or undefined when the shape is not a module. */
+export function moduleOfShape(shape: number): ModuleDef | undefined {
+  if (shape < SHAPE.module) return undefined;
+  const id = Math.floor((shape - SHAPE.module) / MODULE_FACINGS) + 1;
+  return MODULES.find((def) => def.id === id);
+}
+
+/** The way a module's front looks, 0 to 3, or -1 when the shape is not a module. */
+export function moduleFacing(shape: number): number {
+  return moduleOfShape(shape) === undefined ? -1 : (shape - SHAPE.module) % MODULE_FACINGS;
+}
+
 export const SHAPES: readonly ShapeDef[] = [
   { id: SHAPE.cube, name: 'Block', kind: 'cube' },
   ...[0, 1].map((half): ShapeDef => ({ id: SHAPE.slab + half, name: 'Slab', kind: 'slab' })),
@@ -65,13 +130,20 @@ export const SHAPES: readonly ShapeDef[] = [
     name: 'Wedge',
     kind: 'wedge',
   })),
+  ...MODULES.flatMap((def) =>
+    Array.from({ length: MODULE_FACINGS }, (_, facing): ShapeDef => ({
+      id: moduleShape(def.id, facing),
+      name: def.name,
+      kind: 'module',
+    })),
+  ),
 ];
 
 /** The four directions a wedge can rise toward: +x, +z, -x, -z. */
 export const WEDGE_FACINGS = 4;
 
-/** The shape a kind starts as: the whole cell, the lower slab, the wedge rising toward +x. */
-export function baseShape(kind: ShapeKind): number {
+/** The shape a kind of block starts as: the whole cell, the lower slab, the wedge rising toward +x. */
+export function baseShape(kind: BlockKind): number {
   if (kind === 'slab') return SHAPE.slab;
   if (kind === 'wedge') return SHAPE.wedge;
   return SHAPE.cube;
@@ -141,12 +213,18 @@ export function isCellState(value: number): boolean {
   return Number.isInteger(value) && value >= 0 && value <= MAX_STATE;
 }
 
-/** True when the state names a shape and a material the tables define, so it can be placed. */
+/**
+ * True when the state names a shape and a material the tables define, so it can be placed. A module's
+ * material byte is its level, so it is known when it is a level the module has.
+ */
 export function isKnownState(state: CellState): boolean {
   if (!isCellState(state)) return false;
   const shape = stateShape(state);
   const material = stateMaterial(state);
-  return SHAPES.some((s) => s.id === shape) && MATERIALS.some((m) => m.id === material);
+  if (!SHAPES.some((s) => s.id === shape)) return false;
+  const module = moduleOfShape(shape);
+  if (module) return material >= 1 && material <= module.levels;
+  return MATERIALS.some((m) => m.id === material);
 }
 
 /** The material a cell state is made of, or undefined when the tables do not know it. */
@@ -160,8 +238,13 @@ export function materialTier(id: number): number {
   return MATERIALS.find((m) => m.id === id)?.tier ?? 1;
 }
 
-/** What a player calls a placed piece, such as "Scrap Block", or an empty string for a state the tables do not know. */
+/**
+ * What a player calls a placed piece, such as "Scrap Block" or "Research Terminal", or an empty
+ * string for a state the tables do not know.
+ */
 export function pieceName(state: CellState): string {
+  const module = moduleOfShape(stateShape(state));
+  if (module) return isKnownState(state) ? module.name : '';
   const material = materialOf(state);
   const shape = SHAPES.find((s) => s.id === stateShape(state));
   return material && shape ? `${material.name} ${shape.name}` : '';
