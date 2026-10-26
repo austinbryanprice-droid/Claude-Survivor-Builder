@@ -8,12 +8,13 @@ import { createEnemyState, type EnemyPose } from '../../src/shared/enemy-state';
 import type { Vec3 } from '../../src/shared/look';
 import { PLAYER } from '../../src/shared/movement';
 import { NET } from '../../src/shared/net-config';
-import { MODULE, moduleShape, packState } from '../../src/shared/blocks';
+import { MODULE, moduleShape, packState, withMaterial } from '../../src/shared/blocks';
 import { HOST_PLAYER_ID, NO_PLAYER, type HostFrame } from '../../src/shared/protocol';
 import { SHOT_FLAG, type ShotEvent } from '../../src/shared/shot';
+import { RESEARCH_STEPS } from '../../src/systems/economy/research';
 import { BLASTER, ENEMIES, VITALS } from '../../src/systems/survival/balance';
 import { turretLevel } from '../../src/systems/survival/turrets';
-import { SurvivalSim } from '../../src/systems/survival/sim';
+import { SurvivalSim, type SurvivalOptions } from '../../src/systems/survival/sim';
 import { FLOOR, arena, play, sim, type Room } from './helpers/arena';
 import { SCRAP } from './helpers/nav-world';
 import {
@@ -38,8 +39,13 @@ function seatFor(slot: number): { x: number; y: number; z: number } {
 const CRAWLER = { x: 14.5, z: -3.5 };
 
 /** A room with `crew` guests who have said where they stand, the host included, and a crawler on the road. */
-async function range(crew = 2, options: RoomOptions = {}, build?: (world: TestWorld) => void) {
-  const { room, machines } = arena({ spawnFor: seatFor, ...options }, {}, build);
+async function range(
+  crew = 2,
+  options: RoomOptions = {},
+  build?: (world: TestWorld) => void,
+  run: SurvivalOptions = {},
+) {
+  const { room, machines } = arena({ spawnFor: seatFor, ...options }, run, build);
   const code = await room.openRoom();
   const guests = [];
   for (let i = 0; i < crew; i++) guests.push(await room.join(code, `Guest ${i + 1}`));
@@ -510,6 +516,33 @@ describe('a turret’s shot', () => {
     room.hostWorld.setBlock(TURRET_CELL.x, TURRET_CELL.y, TURRET_CELL.z, 0);
     await play(room, 1);
     expect(heard).toEqual([]);
+  });
+
+  it('shoots as its new level says from the moment the crew raises it, each blow harder', async () => {
+    const { room, machines, guests } = await range(
+      1,
+      {},
+      (world) => world.setBlock(TURRET_CELL.x, TURRET_CELL.y, TURRET_CELL.z, TURRET_STATE),
+      { stock: 30, research: RESEARCH_STEPS[2]!.points },
+    );
+    const heard = listen(guests[0]!.session);
+    // The host stands by the turret, as a player who presses E does.
+    room.host.publishState(at(TURRET_CELL.x - 2, FLOOR, TURRET_CELL.z));
+    for (const level of [2, 3]) {
+      room.host.sendCommand({
+        type: 'upgrade',
+        ...TURRET_CELL,
+        state: withMaterial(TURRET_STATE, level),
+      });
+    }
+    expect(room.hostWorld.getBlock(TURRET_CELL.x, TURRET_CELL.y, TURRET_CELL.z)).toBe(
+      withMaterial(TURRET_STATE, 3),
+    );
+    await play(room, turretLevel(3).interval * 3);
+    expect(machines().count).toBe(0);
+    // A Basic Turret needs six blows for the crawler. The Heavy Turret needs two.
+    expect(heard).toHaveLength(Math.ceil(ENEMIES.crawler.health / turretLevel(3).damage));
+    expect(heard).toHaveLength(2);
   });
 });
 

@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { REFUSAL } from '../../src/net/host-session';
-import { MATERIAL, SHAPE, packState, stateMaterial, wedgeShape } from '../../src/shared/blocks';
+import {
+  MATERIAL,
+  MODULE,
+  SHAPE,
+  moduleFacing,
+  moduleShape,
+  packState,
+  stateMaterial,
+  stateShape,
+  wedgeShape,
+  withMaterial,
+} from '../../src/shared/blocks';
 import { createEconomyReading, type EconomyView } from '../../src/shared/economy';
 import type { BlockCommand } from '../../src/shared/protocol';
 import { createReading } from '../../src/shared/survival-state';
@@ -166,6 +177,121 @@ describe('the host upgrading a piece in place', () => {
     expect(sim(room).over).toBe(true);
     room.host.sendCommand(upgrade(0, COMPOSITE));
     expect(upgraded(room)).toBe(0);
+  });
+});
+
+/** A Basic Turret facing +x, and the same turret at the two steps up its ladder (its material byte is its level). */
+const BASIC = packState(moduleShape(MODULE.turret, 0), 1);
+const AUTO = withMaterial(BASIC, 2);
+const HEAVY = withMaterial(BASIC, 3);
+
+/** A Basic Turret facing `facing`. */
+function basicFacing(facing: number): number {
+  return packState(moduleShape(MODULE.turret, facing), 1);
+}
+
+/** A room with `count` Basic Turrets standing in a row from the spot, facing each way in turn, and 30 of every material in the pool (more for a long row). */
+function turretRoom(research = RESEARCH_STEPS[2]!.points, count = 1, stockEach = 30) {
+  return arena({}, { stock: stockEach, research }, (world) => {
+    for (let i = 0; i < count; i++) world.setBlock(SPOT.x, SPOT.y, SPOT.z + i, basicFacing(i));
+  });
+}
+
+describe('the host raising a turret', () => {
+  it('steps a Basic Turret up to the Auto Turret and then the Heavy Turret, each paid in its own material', () => {
+    const { room, hostWorld } = turretRoom();
+    const seen = reasons(room.host);
+    room.host.sendCommand(upgrade(0, AUTO));
+    expect(hostWorld.getBlock(SPOT.x, SPOT.y, SPOT.z)).toBe(AUTO);
+    expect(stock(room.host.economy)).toEqual([30, 20, 30, 30]);
+    room.host.sendCommand(upgrade(0, HEAVY));
+    expect(hostWorld.getBlock(SPOT.x, SPOT.y, SPOT.z)).toBe(HEAVY);
+    expect(stock(room.host.economy)).toEqual([30, 20, 20, 30]);
+    expect(seen).toEqual([]);
+    expect(hostWorld.cells.size).toBe(1);
+    expect(upgraded(room)).toBe(2);
+  });
+
+  it('keeps the way the turret faces', () => {
+    const { room, hostWorld } = turretRoom(undefined, 4, 50);
+    for (let facing = 0; facing < 4; facing++) {
+      room.host.sendCommand(upgrade(facing, withMaterial(basicFacing(facing), 2)));
+      const state = hostWorld.getBlock(SPOT.x, SPOT.y, SPOT.z + facing);
+      expect(moduleFacing(stateShape(state))).toBe(facing);
+      expect(stateMaterial(state)).toBe(2);
+    }
+  });
+
+  it('opens each step with the research of the material that pays for it', () => {
+    const { room, hostWorld } = turretRoom(0);
+    const seen = reasons(room.host);
+    const turret = () => hostWorld.getBlock(SPOT.x, SPOT.y, SPOT.z);
+    room.host.sendCommand(upgrade(0, AUTO));
+    expect(seen).toEqual([needsResearch('Reinforced Composite')]);
+    expect(turret()).toBe(BASIC);
+
+    sim(room).economy!.research.set(RESEARCH_STEPS[0]!.points);
+    room.host.sendCommand(upgrade(0, AUTO));
+    room.host.sendCommand(upgrade(0, HEAVY));
+    expect(seen).toEqual([needsResearch('Reinforced Composite'), needsResearch('Advanced Alloy')]);
+    expect(turret()).toBe(AUTO);
+
+    sim(room).economy!.research.set(RESEARCH_STEPS[1]!.points);
+    room.host.sendCommand(upgrade(0, HEAVY));
+    expect(turret()).toBe(HEAVY);
+    expect(seen).toHaveLength(2);
+  });
+
+  it('says the pool is short of the better material, naming it, and takes nothing', () => {
+    const { room, hostWorld } = turretRoom();
+    const seen = reasons(room.host);
+    sim(room).economy!.pool.set(MATERIAL.composite, 9);
+    room.host.sendCommand(upgrade(0, AUTO));
+    expect(seen).toEqual([notEnough('Reinforced Composite')]);
+    expect(hostWorld.getBlock(SPOT.x, SPOT.y, SPOT.z)).toBe(BASIC);
+    expect(stock(room.host.economy)).toEqual([30, 9, 30, 30]);
+    expect(upgraded(room)).toBe(0);
+  });
+
+  it('turns away a command that skips a step, and says the Heavy Turret is fully upgraded', () => {
+    const { room, hostWorld } = turretRoom();
+    const seen = reasons(room.host);
+    room.host.sendCommand(upgrade(0, HEAVY)); // the Auto Turret is the step above this
+    expect(seen).toEqual([REFUSAL.changed]);
+    expect(hostWorld.getBlock(SPOT.x, SPOT.y, SPOT.z)).toBe(BASIC);
+    room.host.sendCommand(upgrade(0, AUTO));
+    room.host.sendCommand(upgrade(0, HEAVY));
+    room.host.sendCommand(upgrade(0, withMaterial(BASIC, 4)));
+    expect(seen).toEqual([REFUSAL.changed, FULLY_UPGRADED]);
+    expect(stock(room.host.economy)).toEqual([30, 20, 20, 30]);
+  });
+
+  it('is done for a guest who stands by it, and every screen shows the better turret', async () => {
+    const { room } = turretRoom();
+    const code = await room.openRoom();
+    const ada = await room.join(code, 'Ada');
+    const bob = await room.join(code, 'Bob');
+    ada.session.publishState(at(SPOT.x - 2, SPOT.y, SPOT.z));
+    await room.settle(100);
+    ada.session.sendCommand(upgrade(0, AUTO));
+    await room.settle(300);
+    for (const guest of [ada, bob]) {
+      expect(guest.world().getBlock(SPOT.x, SPOT.y, SPOT.z)).toBe(AUTO);
+    }
+    expect(stock(room.host.economy)).toEqual([30, 20, 30, 30]);
+    expect(stock(ada.session.economy)).toEqual([30, 20, 30, 30]);
+  });
+
+  it('gives back the price of the level the turret is at when it is broken, and nothing for the ones it left behind', () => {
+    const { room, hostWorld } = arena({}, { stock: 30, research: RESEARCH_STEPS[2]!.points });
+    room.host.sendCommand(place(0, BASIC));
+    expect(stock(room.host.economy)).toEqual([5, 30, 30, 30]);
+    room.host.sendCommand(upgrade(0, AUTO));
+    expect(stock(room.host.economy)).toEqual([5, 20, 30, 30]);
+    room.host.sendCommand({ type: 'break', x: SPOT.x, y: SPOT.y, z: SPOT.z });
+    expect(hostWorld.getBlock(SPOT.x, SPOT.y, SPOT.z)).toBe(0);
+    // The ten Composite the step took come back. The twenty-five Scrap the Basic Turret cost do not.
+    expect(stock(room.host.economy)).toEqual([5, 30, 30, 30]);
   });
 });
 
