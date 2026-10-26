@@ -109,8 +109,10 @@ export interface HudResearch {
   readonly fraction: number;
   /** The words at the end of the pill: "12/20", or the points alone once there is no next row. */
   readonly value: string;
-  /** 'full' once the whole ladder is climbed. */
-  readonly tone: 'rising' | 'full';
+  /** The word in front of the bar: "Research", or "Needs Terminal" while points the crew has earned wait for one to read them. */
+  readonly label: string;
+  /** 'full' once the whole ladder is climbed, 'waiting' while a row the points reach is shut for want of a Terminal. */
+  readonly tone: 'rising' | 'full' | 'waiting';
   /** How many times the points have risen so far: each rise flashes the pill once. */
   readonly gains: number;
 }
@@ -242,6 +244,7 @@ export class PlayerHud {
   private readonly chargeValue: HTMLElement;
   private readonly research: HTMLElement;
   private readonly researchFill: HTMLElement;
+  private readonly researchLabel: HTMLElement;
   private readonly researchValue: HTMLElement;
   private readonly down: HTMLElement;
   private readonly downTitle: HTMLElement;
@@ -374,13 +377,9 @@ export class PlayerHud {
     const researchTrack = el('i', 'ph-research-track');
     this.researchFill = el('i', 'ph-research-fill');
     researchTrack.append(this.researchFill);
+    this.researchLabel = el('span', 'ph-research-label', 'Research');
     this.researchValue = el('span', 'ph-research-value');
-    this.research.append(
-      researchIcon,
-      el('span', 'ph-research-label', 'Research'),
-      researchTrack,
-      this.researchValue,
-    );
+    this.research.append(researchIcon, this.researchLabel, researchTrack, this.researchValue);
     this.gauges = el('div', 'ph-gauges');
     this.gauges.append(this.core, this.charges, this.research);
 
@@ -680,12 +679,15 @@ export class PlayerHud {
   private updateResearch(state: PlayerHudState): void {
     const research = state.research ?? null;
     const fill = research ? Math.round(clamp01(research.fraction) * 1000) / 10 : -1;
-    const key = research ? `${research.tone}|${research.value}|${fill}|${research.gains}` : '';
+    const key = research
+      ? `${research.tone}|${research.label}|${research.value}|${fill}|${research.gains}`
+      : '';
     if (key === this.lastResearch) return;
     this.lastResearch = key;
     this.research.hidden = research === null;
     if (!research) return;
     this.research.dataset.tone = research.tone;
+    this.researchLabel.textContent = research.label;
     this.researchValue.textContent = research.value;
     this.researchFill.style.width = `${fill}%`;
     // Points earned flash the pill. Two animations take turns, because setting the one that is

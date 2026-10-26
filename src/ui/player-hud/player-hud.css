@@ -786,6 +786,16 @@
   --tone: #e3d6ff;
 }
 
+/* Points a Terminal has not read: the pill turns to the amber the Terminal itself shows when it is at work. */
+
+.ph-research[data-tone='waiting'] {
+  --tone: #f2a43a;
+}
+
+.ph-research[data-tone='waiting'] .ph-research-label {
+  color: var(--tone);
+}
+
 .ph-research-icon {
   width: calc(var(--u) * 18px);
   height: calc(var(--u) * 18px);
