@@ -17,6 +17,7 @@ import {
   type ModuleKit,
   type ModuleLook,
   type ModuleModel,
+  type ModulePalette,
 } from './module-models';
 
 /**
@@ -25,10 +26,13 @@ import {
  * (the mesher leaves them out), so this follows the world's list of them: it draws the ones that stand
  * when it is made, and then each one that is placed, turned or broken.
  *
- * Every module of a kind shares one model and one set of materials, so a base full of them costs a
- * handful of draw calls each and no more geometry. The lit material cannot be instanced (it reads the
- * model matrix), so a group of meshes stands for each one; the turret of 5f is where a crowd of
- * them would first be, and where instancing would be looked at.
+ * Every module of a kind and level shares one model, and every module of a grade one set of materials,
+ * so a base full of them costs a handful of draw calls each and no more geometry. A module's level is
+ * its cell's material byte: raising one is a change of the cell's state, which draws it again with
+ * the model and the paint of its new level (the Auto Turret is grey-green and cyan, the Heavy Turret
+ * brushed steel and amber). The lit material cannot be instanced (it reads the model matrix), so a
+ * group of meshes stands for each one; the turret of 5f is where a crowd of them would first be, and
+ * where instancing would be looked at.
  *
  * A turret has a head that turns, a group of its own inside the module's, which `aim` points at the end
  * of a shot and which stays pointing there until the next one.
@@ -45,13 +49,21 @@ const BLINK_OFF_GLOW = 0.15;
 /** The name of the group a turning head hangs in, inside the group of the module it belongs to. */
 const HEAD = 'head';
 
+/** The materials of one paint, a lit material for each look, and the glow each is animated through. */
+interface Paint {
+  readonly materials: Map<ModuleLook, ShaderMaterial>;
+  readonly glows: Map<ModuleLook, { readonly now: Color; readonly base: Color }>;
+}
+
 export class ModuleRenderer {
   readonly object = new Group();
-  /** The models of the kinds of module that have been drawn, each shared by every module of its kind. */
+  /** The models of the kinds and levels of module that have been drawn, each shared by every module of its kind and level. */
   private readonly kits = new Map<number, ModuleKit>();
   private readonly placed = new Map<number, Group>();
-  private readonly materials = new Map<ModuleLook, ShaderMaterial>();
-  private readonly glows = new Map<ModuleLook, { readonly now: Color; readonly base: Color }>();
+  /** The materials of each paint that has been drawn in. */
+  private readonly paints = new Map<ModulePalette, Paint>();
+  /** The animation clock the lights were last moved to, so that a paint made later starts where the others are. */
+  private time = 0;
   private readonly stop: () => void;
 
   constructor(
@@ -60,13 +72,7 @@ export class ModuleRenderer {
     voxels: VoxelWorld,
   ) {
     this.object.name = 'modules';
-    for (const look of MODULE_LOOK_NAMES) {
-      const spec = MODULE_LOOKS[look];
-      const material = createLitMaterial(registry, spec);
-      this.materials.set(look, material);
-      const now = material.uniforms.uGlow?.value as Color;
-      this.glows.set(look, { now, base: now.clone() });
-    }
+    this.paint(MODULE_LOOKS);
     parent.add(this.object);
     voxels.forEachModule(({ x, y, z, state }) => this.show(x, y, z, state));
     this.stop = voxels.onModuleChange((x, y, z, _previous, state) => this.show(x, y, z, state));
@@ -106,13 +112,8 @@ export class ModuleRenderer {
 
   /** Moves the lights for the stage's animation clock, in seconds. */
   update(time: number): void {
-    const shimmer = 1 + 0.08 * Math.sin(time * 2.3) + 0.04 * Math.sin(time * 7.1 + 1.3);
-    const beat = 0.92 + 0.08 * Math.sin(time * 1.3 + 1);
-    const blink = time % BLINK_PERIOD < BLINK_ON ? 1 : BLINK_OFF_GLOW;
-    this.glow('screen', shimmer);
-    this.glow('lights', beat);
-    this.glow('amber', 0.9 + 0.1 * beat);
-    this.glow('beacon', blink);
+    this.time = time;
+    for (const paint of this.paints.values()) this.light(paint);
   }
 
   dispose(): void {
@@ -126,13 +127,44 @@ export class ModuleRenderer {
       }
     }
     this.kits.clear();
-    this.materials.forEach((material) => this.registry.release(material));
-    this.materials.clear();
+    for (const paint of this.paints.values()) {
+      paint.materials.forEach((material) => this.registry.release(material));
+    }
+    this.paints.clear();
   }
 
-  private glow(look: ModuleLook, scale: number): void {
-    const glow = this.glows.get(look);
+  /** Moves the lights of one paint for the clock. */
+  private light(paint: Paint): void {
+    const time = this.time;
+    const shimmer = 1 + 0.08 * Math.sin(time * 2.3) + 0.04 * Math.sin(time * 7.1 + 1.3);
+    const beat = 0.92 + 0.08 * Math.sin(time * 1.3 + 1);
+    const blink = time % BLINK_PERIOD < BLINK_ON ? 1 : BLINK_OFF_GLOW;
+    this.glow(paint, 'screen', shimmer);
+    this.glow(paint, 'lights', beat);
+    this.glow(paint, 'amber', 0.9 + 0.1 * beat);
+    this.glow(paint, 'beacon', blink);
+  }
+
+  private glow(paint: Paint, look: ModuleLook, scale: number): void {
+    const glow = paint.glows.get(look);
     if (glow) glow.now.copy(glow.base).multiplyScalar(scale);
+  }
+
+  /** The materials of a paint, made the first time a module is drawn in it. */
+  private paint(palette: ModulePalette): Paint {
+    let paint = this.paints.get(palette);
+    if (!paint) {
+      paint = { materials: new Map(), glows: new Map() };
+      for (const look of MODULE_LOOK_NAMES) {
+        const material = createLitMaterial(this.registry, palette[look]);
+        paint.materials.set(look, material);
+        const now = material.uniforms.uGlow?.value as Color;
+        paint.glows.set(look, { now, base: now.clone() });
+      }
+      this.paints.set(palette, paint);
+      this.light(paint);
+    }
+    return paint;
   }
 
   /** Draws the cell as it is now: the module in it, turned the way it faces, or nothing. */
@@ -140,7 +172,8 @@ export class ModuleRenderer {
     const key = cellKey(x, y, z);
     const shape = stateShape(state);
     const module = moduleOfShape(shape);
-    const kit = module ? this.kit(module) : undefined;
+    const level = stateMaterial(state);
+    const kit = module ? this.kit(module, level) : undefined;
     const old = this.placed.get(key);
     if (old) {
       old.removeFromParent();
@@ -149,28 +182,29 @@ export class ModuleRenderer {
     if (!module || !kit) return;
     const group = new Group();
     group.name = 'module';
-    group.userData = { module: module.id, level: stateMaterial(state) };
+    group.userData = { module: module.id, level };
     group.position.set(x + 0.5, y, z + 0.5);
     group.rotation.y = (-moduleFacing(shape) * Math.PI) / 2;
-    this.mesh(group, kit.model);
+    const paint = this.paint(kit.palette);
+    this.mesh(group, kit.model, paint);
     if (kit.head) {
       // Yaw first, then the lift about the head's own side, then no roll: the order the turn is built in.
       const head = new Group();
       head.name = HEAD;
       head.position.y = kit.head.pivot;
       head.rotation.order = 'YZX';
-      this.mesh(head, kit.head.model);
+      this.mesh(head, kit.head.model, paint);
       group.add(head);
     }
     this.object.add(group);
     this.placed.set(key, group);
   }
 
-  /** Hangs a mesh for each look of a model in a group. */
-  private mesh(parent: Group, model: ModuleModel): void {
+  /** Hangs a mesh for each look of a model in a group, in the materials of a paint. */
+  private mesh(parent: Group, model: ModuleModel, paint: Paint): void {
     for (const look of MODULE_LOOK_NAMES) {
       const geometry: BufferGeometry | undefined = model[look];
-      const material = this.materials.get(look);
+      const material = paint.materials.get(look);
       if (!geometry || !material) continue;
       const mesh = new Mesh(geometry, material);
       mesh.castShadow = true;
@@ -179,13 +213,14 @@ export class ModuleRenderer {
     }
   }
 
-  /** The model of a module, built the first time one is drawn. */
-  private kit(module: ModuleDef): ModuleKit | undefined {
-    let kit = this.kits.get(module.id);
+  /** The model of a module at a level, built the first time one is drawn. */
+  private kit(module: ModuleDef, level: number): ModuleKit | undefined {
+    const key = module.id * 256 + level;
+    let kit = this.kits.get(key);
     if (!kit) {
-      kit = buildModuleKit(module.id);
+      kit = buildModuleKit(module.id, level);
       if (!kit) return undefined;
-      this.kits.set(module.id, kit);
+      this.kits.set(key, kit);
     }
     return kit;
   }

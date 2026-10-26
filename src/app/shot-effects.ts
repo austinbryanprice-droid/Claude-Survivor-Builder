@@ -8,6 +8,7 @@ import type { RayWorld } from '../shared/raycast';
 import { SHOT_FLAG, createShotTrace, muzzleOf, traceShot, type ShotEvent } from '../shared/shot';
 import { turretMuzzle } from '../shared/turret';
 import { BLASTER, hitboxOf } from '../systems/survival/balance';
+import { turretLevel } from '../systems/survival/turrets';
 import type { LocalPlayer } from './player-sync';
 
 /**
@@ -34,6 +35,8 @@ export interface ShotEffectsOptions {
   player: Pick<LocalPlayer, 'read'>;
   /** A turret in cell (x, y, z) fired at (tx, ty, tz): the head of the model that stands there turns to it. */
   aimTurret?(x: number, y: number, z: number, tx: number, ty: number, tz: number): void;
+  /** The level of the turret standing in cell (x, y, z) on this screen (its cell's material byte), or 1 where none is known: a heavier gun draws a heavier bolt. */
+  levelOfTurret?(x: number, y: number, z: number): number;
 }
 
 /** One shot as it was drawn, for the browser tests and a curious console. */
@@ -81,6 +84,7 @@ export function createShotEffects({
   rayWorld,
   player,
   aimTurret,
+  levelOfTurret,
 }: ShotEffectsOptions): ShotEffects {
   const sample = createPlayerSample();
   const gun: Vec3 = { x: 0, y: 0, z: 0 };
@@ -121,7 +125,13 @@ export function createShotEffects({
    * Draws a bolt in `color` from the gun in `gun` (where `armed`) to `mark`, and what it does there
    * once it lands. Returns the seconds it takes to.
    */
-  const draw = (color: string, flags: number, aim: Vec3 | null, armed: boolean): number => {
+  const draw = (
+    color: string,
+    flags: number,
+    aim: Vec3 | null,
+    armed: boolean,
+    heft = 1,
+  ): number => {
     let arrives = 0;
     if (armed) {
       const length = Math.hypot(mark.x - gun.x, mark.y - gun.y, mark.z - gun.z);
@@ -132,8 +142,8 @@ export function createShotEffects({
       } else {
         aimAlong(aim ?? DOWN);
       }
-      fx.muzzle(gun, way, color);
-      arrives = fx.bolt(gun, mark, color);
+      fx.muzzle(gun, way, color, heft);
+      arrives = fx.bolt(gun, mark, color, heft);
     } else {
       aimAlong(aim ?? DOWN);
     }
@@ -149,12 +159,13 @@ export function createShotEffects({
   /**
    * Draws a turret's bolt to `mark`, from the muzzle of the turret in `cell`: where every screen
    * works it out from the cell and the end of the bolt, so the bolt leaves the barrel the head is
-   * turned along. Returns the seconds it takes to.
+   * turned along, and as heavy as the gun of its level (`TURRET`). Returns the seconds it takes to.
    */
   const flyFromTurret = (cell: readonly [number, number, number], flags: number): number => {
     turretMuzzle(cell[0], cell[1], cell[2], mark.x, mark.y, mark.z, gun);
     aimTurret?.(cell[0], cell[1], cell[2], mark.x, mark.y, mark.z);
-    return draw(FX_COLOR.turret, flags, null, true);
+    const heft = turretLevel(levelOfTurret?.(cell[0], cell[1], cell[2]) ?? 1).heft;
+    return draw(FX_COLOR.turret, flags, null, true, heft);
   };
 
   const remember = (

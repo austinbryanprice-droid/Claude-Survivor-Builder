@@ -93,6 +93,8 @@ export interface TurretLevel {
   readonly damage: number;
   /** Seconds between its shots. */
   readonly interval: number;
+  /** How heavy its bolt is drawn, against a player's blaster at 1: the bolt's width and its light. */
+  readonly heft: number;
 }
 
 /**
@@ -113,9 +115,9 @@ export const TURRET = {
    * the module table (`MODULES`). That is 10, 20 and 40 points a second, against the blaster's 28.6.
    */
   levels: [
-    { range: 18, damage: 5, interval: 0.5 },
-    { range: 20, damage: 5, interval: 0.25 },
-    { range: 26, damage: 24, interval: 0.6 },
+    { range: 18, damage: 5, interval: 0.5, heft: 1 },
+    { range: 20, damage: 5, interval: 0.25, heft: 1 },
+    { range: 26, damage: 24, interval: 0.6, heft: 2 },
   ] as readonly TurretLevel[],
 } as const;
 

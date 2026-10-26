@@ -1,6 +1,7 @@
 import { Box3, Vector3, type BufferGeometry } from 'three';
 import { describe, expect, it } from 'vitest';
 import {
+  MATERIAL,
   MODULE,
   MODULES,
   MODULE_FACINGS,
@@ -15,6 +16,7 @@ import {
   MODULE_SKIRT,
   buildModuleKit,
   moduleGhostGeometry,
+  modulePalette,
   type ModuleKit,
   type ModuleModel,
 } from '../../src/world/render/module-models';
@@ -284,6 +286,258 @@ describe('the Basic Turret model', () => {
 
   it('is the only module with a head so far', () => {
     expect((buildModuleKit(MODULE.terminal) as ModuleKit).head).toBeUndefined();
+  });
+});
+
+/** The turrets by level: the Basic Turret and the two steps up its ladder. */
+const TURRET_LEVELS = [1, 2, 3] as const;
+
+describe('the turrets at every level', () => {
+  const kitAt = (level: number) => buildModuleKit(MODULE.turret, level) as ModuleKit;
+  const headAt = (level: number) => kitAt(level).head as NonNullable<ModuleKit['head']>;
+  const everyPart = (level: number) => [
+    ...partsOf(kitAt(level).model),
+    ...partsOf(headAt(level).model),
+  ];
+
+  it.each(TURRET_LEVELS)(
+    'level %i is a body that stands still and a head that turns, of looks the table defines',
+    (level) => {
+      for (const model of [kitAt(level).model, headAt(level).model]) {
+        for (const look of Object.keys(model)) expect(MODULE_LOOK_NAMES).toContain(look);
+      }
+      for (const geometry of everyPart(level)) {
+        const position = geometry.getAttribute('position');
+        const normal = geometry.getAttribute('normal');
+        expect(position.count).toBeGreaterThan(0);
+        expect(normal.count).toBe(position.count);
+        for (let i = 0; i < position.count; i++) {
+          expect(Number.isFinite(position.getX(i) + position.getY(i) + position.getZ(i))).toBe(
+            true,
+          );
+          expect(Math.hypot(normal.getX(i), normal.getY(i), normal.getZ(i))).toBeCloseTo(1, 3);
+        }
+      }
+    },
+  );
+
+  it.each(TURRET_LEVELS)(
+    'level %i keeps its pad over the body the cursor aims at, below its pivot, with a foundation under the floor',
+    (level) => {
+      const box = boundsOf(partsOf(kitAt(level).model));
+      const [x0, , z0, x1, , z1] = MODULES.find((def) => def.id === MODULE.turret)!.body;
+      const slack = 0.02;
+      expect(box.min.x).toBeGreaterThanOrEqual(x0 - 0.5 - slack);
+      expect(box.max.x).toBeLessThanOrEqual(x1 - 0.5 + slack);
+      expect(box.min.z).toBeGreaterThanOrEqual(z0 - 0.5 - slack);
+      expect(box.max.z).toBeLessThanOrEqual(z1 - 0.5 + slack);
+      expect(box.min.y).toBeCloseTo(-MODULE_SKIRT, 6);
+      expect(box.max.y).toBeLessThan(TURRET_GUN.pivot);
+    },
+  );
+
+  it.each(TURRET_LEVELS)(
+    'level %i turns about the pivot the shared gun geometry names, and its barrel ends where a bolt leaves',
+    (level) => {
+      const head = headAt(level);
+      expect(head.pivot).toBe(TURRET_GUN.pivot);
+      let farthest = 0;
+      for (const geometry of partsOf(head.model)) {
+        for (const point of pointsWhere(geometry, () => true)) {
+          farthest = Math.max(farthest, point.length());
+        }
+      }
+      // Nothing of the head is farther from the pivot than the muzzle, bar the rim of a wider tip.
+      expect(farthest).toBeLessThanOrEqual(TURRET_GUN.reach + 0.01);
+      expect(farthest).toBeGreaterThan(TURRET_GUN.reach - 0.01);
+      expect(boundsOf(partsOf(head.model)).max.x).toBeGreaterThan(TURRET_GUN.reach - 0.02);
+      // The tip glows amber, on the axis the bolt leaves along.
+      const tip = pointsWhere(
+        head.model.amber as BufferGeometry,
+        (p) => p.x > TURRET_GUN.reach - 0.02,
+      );
+      expect(tip.length).toBeGreaterThan(0);
+    },
+  );
+
+  it.each(TURRET_LEVELS)(
+    'level %i swings clear of its column and inside its cell when it dips or lifts to follow a shot',
+    (level) => {
+      const head = headAt(level);
+      const vertices = partsOf(head.model).flatMap((geometry) => pointsWhere(geometry, () => true));
+      // How far a point is inside the column (a box 0.26 across from the pad's top to its collar), or 0.
+      const inside = (p: Vector3): number =>
+        Math.max(0, Math.min(0.13 - Math.abs(p.x), 0.13 - Math.abs(p.z), p.y - 0.18, 0.35 - p.y));
+      const deepest = (degrees: number): number => {
+        const pitch = (degrees * Math.PI) / 180;
+        return Math.max(
+          ...vertices.map((point) => {
+            const moved = point.clone().applyAxisAngle(new Vector3(0, 0, 1), pitch);
+            moved.y += head.pivot;
+            expect(moved.y).toBeLessThanOrEqual(1.01);
+            return inside(moved);
+          }),
+        );
+      };
+      for (let degrees = -45; degrees <= 45; degrees += 5) {
+        expect(deepest(degrees), `${degrees} degrees`).toBeLessThan(0.005);
+      }
+      for (const point of vertices) expect(Math.hypot(point.x, point.z)).toBeLessThan(0.5);
+    },
+  );
+
+  it('is a different gun at each level, and a bigger one: the head and what it is made of grow with the grade', () => {
+    const size = (level: number) => boundsOf(partsOf(headAt(level).model)).getSize(new Vector3());
+    const volume = (level: number) => {
+      const box = size(level);
+      return box.x * box.y * box.z;
+    };
+    expect(volume(2)).toBeGreaterThan(volume(1));
+    expect(volume(3)).toBeGreaterThan(volume(2));
+    const triangleCount = (level: number) =>
+      everyPart(level).reduce((sum, geometry) => sum + triangles(geometry), 0);
+    expect(triangleCount(2)).toBeGreaterThan(triangleCount(1));
+    expect(triangleCount(3)).toBeGreaterThan(triangleCount(2));
+    // The Auto Turret has two barrels side by side, which the other two do not: at the tip of the
+    // barrels there is plate on either side of the axis and none on it. The Heavy Turret's one barrel
+    // is thicker than the Basic Turret's.
+    const tips = (level: number) =>
+      pointsWhere(headAt(level).model.plate as BufferGeometry, (p) => p.x > 0.35);
+    expect(tips(2).some((p) => p.z > 0.03) && tips(2).some((p) => p.z < -0.03)).toBe(true);
+    expect(tips(2).every((p) => Math.abs(p.z) > 0.03)).toBe(true);
+    expect(tips(1).every((p) => Math.abs(p.z) < 0.04)).toBe(true);
+    expect(tips(3).every((p) => Math.abs(p.z) < 0.05)).toBe(true);
+    const thickness = (level: number) =>
+      Math.max(...tips(level).map((p) => Math.max(Math.abs(p.y), Math.abs(p.z))));
+    expect(thickness(3)).toBeGreaterThan(thickness(1));
+  });
+
+  it.each(TURRET_LEVELS)(
+    'level %i is built the same way every time, so two pictures of it agree',
+    (level) => {
+      const a = kitAt(level);
+      const b = kitAt(level);
+      for (const [first, second] of [
+        [a.model, b.model],
+        [
+          (a.head as NonNullable<ModuleKit['head']>).model,
+          (b.head as NonNullable<ModuleKit['head']>).model,
+        ],
+      ] as const) {
+        for (const look of MODULE_LOOK_NAMES) {
+          const x = first[look]?.getAttribute('position').array;
+          const y = second[look]?.getAttribute('position').array;
+          expect(y ? Array.from(y) : y, `level ${level} ${look}`).toEqual(x ? Array.from(x) : x);
+        }
+      }
+    },
+  );
+
+  it.each(TURRET_LEVELS)(
+    'level %i is a few thousand triangles at most, in at most eight draw calls',
+    (level) => {
+      const count = everyPart(level).reduce((sum, geometry) => sum + triangles(geometry), 0);
+      expect(count).toBeGreaterThan(200);
+      expect(count).toBeLessThan(4500);
+      expect(everyPart(level).length).toBeLessThanOrEqual(8);
+    },
+  );
+
+  it('draws a level the table does not have as the nearest one it does', () => {
+    const same = (a: ModuleKit, b: ModuleKit) => {
+      expect(a.palette).toBe(b.palette);
+      for (const look of MODULE_LOOK_NAMES) {
+        const x = a.model[look]?.getAttribute('position').array;
+        const y = b.model[look]?.getAttribute('position').array;
+        expect(y ? Array.from(y) : y).toEqual(x ? Array.from(x) : x);
+      }
+    };
+    same(kitAt(0), kitAt(1));
+    same(kitAt(9), kitAt(3));
+    same(kitAt(2.4), kitAt(2));
+    // A module with no ladder is the one model whatever level it is asked for.
+    same(
+      buildModuleKit(MODULE.terminal, 3) as ModuleKit,
+      buildModuleKit(MODULE.terminal) as ModuleKit,
+    );
+  });
+});
+
+describe('the paint of a module’s grade', () => {
+  const channels = (hex: string) => {
+    const value = parseInt(hex.slice(1), 16);
+    return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
+  };
+  const spread = (hex: string) => {
+    const { r, g, b } = channels(hex);
+    return Math.max(r, g, b) - Math.min(r, g, b);
+  };
+
+  it('is the Core’s palette for Scrap, and for a grade with no dress of its own', () => {
+    expect(modulePalette(MATERIAL.scrap)).toBe(MODULE_LOOKS);
+    expect(modulePalette(MATERIAL.energy)).toBe(MODULE_LOOKS);
+    expect(modulePalette(99)).toBe(MODULE_LOOKS);
+  });
+
+  it('is one object for each grade, so a renderer can keep one set of materials for it', () => {
+    expect(modulePalette(MATERIAL.composite)).toBe(modulePalette(MATERIAL.composite));
+    expect(modulePalette(MATERIAL.alloy)).toBe(modulePalette(MATERIAL.alloy));
+    expect(modulePalette(MATERIAL.composite)).not.toBe(modulePalette(MATERIAL.alloy));
+    expect(modulePalette(MATERIAL.composite)).not.toBe(MODULE_LOOKS);
+  });
+
+  it('dresses Composite in grey-green panels with cyan light, as its blocks and heaps are', () => {
+    const paint = modulePalette(MATERIAL.composite);
+    for (const look of ['plate', 'trim'] as const) {
+      const { r, g, b } = channels(paint[look].color);
+      // Green leads, blue follows and red is least: grey with a green cast, not saturated.
+      expect(g, look).toBeGreaterThan(b);
+      expect(b, look).toBeGreaterThanOrEqual(r);
+      expect(spread(paint[look].color), look).toBeLessThan(70);
+    }
+    const glow = channels(paint.lights.glow as string);
+    expect(glow.b).toBeGreaterThan(glow.r);
+    expect(glow.g).toBeGreaterThan(glow.r);
+    expect(paint.lights.glowIntensity as number).toBeGreaterThan(
+      MODULE_LOOKS.lights.glowIntensity as number,
+    );
+  });
+
+  it('dresses Alloy in brushed steel inlaid with amber and a pale lamp, as its blocks and heaps are', () => {
+    const paint = modulePalette(MATERIAL.alloy);
+    for (const look of ['plate', 'trim'] as const) {
+      expect(spread(paint[look].color), look).toBeLessThan(40);
+      expect(paint[look].metalness, look).toBeGreaterThan(MODULE_LOOKS[look].metalness);
+    }
+    const inlay = channels(paint.amber.glow as string);
+    expect(inlay.r).toBeGreaterThan(inlay.b);
+    expect(inlay.r).toBeGreaterThan(inlay.g);
+    const lamp = channels(paint.lights.glow as string);
+    expect(Math.min(lamp.r, lamp.g, lamp.b)).toBeGreaterThan(150);
+    // The steel is lighter than the Core’s dark plates, or it would read as black in a low sun.
+    expect(channels(paint.plate.color).g).toBeGreaterThan(channels(MODULE_LOOKS.plate.color).g);
+  });
+
+  it('leaves the looks a grade does not name as they are', () => {
+    expect(modulePalette(MATERIAL.composite).amber).toBe(MODULE_LOOKS.amber);
+    expect(modulePalette(MATERIAL.composite).beacon).toBe(MODULE_LOOKS.beacon);
+    expect(modulePalette(MATERIAL.alloy).screen).toBe(MODULE_LOOKS.screen);
+    for (const material of [MATERIAL.composite, MATERIAL.alloy]) {
+      for (const look of MODULE_LOOK_NAMES) {
+        expect(modulePalette(material)[look].color, look).toMatch(/^#[0-9a-f]{6}$/);
+      }
+    }
+  });
+
+  it('is what each level of a turret is drawn in: the grade of the material that pays for it', () => {
+    expect((buildModuleKit(MODULE.turret, 1) as ModuleKit).palette).toBe(MODULE_LOOKS);
+    expect((buildModuleKit(MODULE.turret, 2) as ModuleKit).palette).toBe(
+      modulePalette(MATERIAL.composite),
+    );
+    expect((buildModuleKit(MODULE.turret, 3) as ModuleKit).palette).toBe(
+      modulePalette(MATERIAL.alloy),
+    );
+    expect((buildModuleKit(MODULE.terminal) as ModuleKit).palette).toBe(MODULE_LOOKS);
   });
 });
 
