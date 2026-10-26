@@ -49,6 +49,8 @@ export interface BuildHudInput {
   readonly salvage: number;
   /** The material that heap gives, as a `MATERIAL` id; 0 when the cursor is on none. */
   readonly salvageGrade: number;
+  /** The Research Terminal: 'aimed' when the cursor is on one the interact key would open, 'open' while its ladder is up, else 'none'. */
+  readonly terminal: 'none' | 'aimed' | 'open';
 }
 
 export interface BuildHudSource {

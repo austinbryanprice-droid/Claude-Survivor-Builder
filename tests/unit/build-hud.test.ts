@@ -53,6 +53,7 @@ function hands(overrides: Partial<BuildHudInput> = {}): BuildHudInput {
     kill: false,
     salvage: 0,
     salvageGrade: 0,
+    terminal: 'none',
     ...overrides,
   };
 }

@@ -9,7 +9,10 @@ import {
   segmentFills,
 } from './format';
 import { ICON_SPRITE, iconMarkup, type IconId } from './icons';
+import { ResearchLadder, type HudLadder } from './research-ladder';
 import './player-hud.css';
+
+export type { HudLadder, HudLadderRow } from './research-ladder';
 
 /** One slot of the hotbar. Everything but the icon is optional. */
 export interface HotbarSlot {
@@ -170,6 +173,8 @@ export interface PlayerHudState {
   readonly prompt?: HudPrompt | null;
   /** What the interact key would do for what the cursor is on, under the crosshair; absent or null for nothing. */
   readonly interact?: HudInteract | null;
+  /** The research ladder of the Research Terminal the player has opened, beside the crosshair; absent or null for none. */
+  readonly ladder?: HudLadder | null;
   /** Absent means a plain dot. */
   readonly crosshair?: CrosshairState;
   /** The hit marker; absent never flashes it. */
@@ -261,6 +266,7 @@ export class PlayerHud {
   private readonly interactKey: HTMLElement;
   private readonly interactLabel: HTMLElement;
   private readonly interactDetail: HTMLElement;
+  private readonly ladder: ResearchLadder;
   private readonly crosshair: HTMLElement;
   private readonly hitmark: HTMLElement;
   private readonly buildHint: HTMLElement;
@@ -430,6 +436,9 @@ export class PlayerHud {
     this.interactDetail = el('span', 'ph-interact-detail');
     this.interact.append(this.interactKey, this.interactLabel, this.interactDetail);
 
+    // The research ladder a Terminal shows, beside the crosshair.
+    this.ladder = new ResearchLadder();
+
     this.crosshair = el('div', 'ph-crosshair');
     // Four ticks that flash round the crosshair on a hit; they sit inside it so they are always centered.
     this.hitmark = el('div', 'ph-hitmark');
@@ -447,6 +456,7 @@ export class PlayerHud {
       this.prompt,
       bar,
       this.interact,
+      this.ladder.root,
       this.crosshair,
     );
     parent.append(this.root);
@@ -784,6 +794,7 @@ export class PlayerHud {
         this.interactDetail.textContent = interact.detail;
       }
     }
+    this.ladder.update(state.ladder ?? null);
     const crosshair = state.crosshair ?? 'none';
     if (crosshair !== this.lastCrosshair) {
       this.lastCrosshair = crosshair;

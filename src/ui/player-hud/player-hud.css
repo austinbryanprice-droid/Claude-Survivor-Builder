@@ -1287,6 +1287,180 @@
   color: var(--ink-soft);
 }
 
+/* The research ladder a Research Terminal shows when the interact key opens it: beside the crosshair, so the Terminal stays in view, on the side the key list of Build Mode does not take. */
+
+.ph-ladder {
+  position: absolute;
+  top: 50%;
+  right: calc(50% + var(--u) * 92px);
+  width: calc(var(--u) * 318px);
+  transform: translateY(-50%);
+  text-shadow: var(--shadow);
+}
+
+.ph-ladder-card {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 9px);
+  padding: calc(var(--u) * 14px) calc(var(--u) * 16px) calc(var(--u) * 11px);
+}
+
+/* The frame's dark shape sits on a pseudo-element, so what is drawn over it has to be positioned too. */
+
+.ph-ladder-card > * {
+  position: relative;
+}
+
+.ph-ladder-title {
+  font-size: calc(var(--u) * 11px);
+  font-weight: 700;
+  letter-spacing: 0.17em;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+}
+
+.ph-ladder-total {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--u) * 8px);
+}
+
+.ph-ladder-points {
+  font-size: calc(var(--u) * 34px);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.ph-ladder-caption {
+  font-size: calc(var(--u) * 12px);
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.ph-ladder-progress {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 10px);
+}
+
+.ph-ladder-track {
+  position: relative;
+  flex: 1;
+  height: calc(var(--u) * 7px);
+  overflow: hidden;
+  border-radius: calc(var(--u) * 3.5px);
+  background: rgb(0 0 0 / 45%);
+  box-shadow: inset 0 0 0 calc(var(--u) * 1px) rgb(255 255 255 / 10%);
+}
+
+.ph-ladder-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(180deg, #e3d6ff, #b9a2ff);
+}
+
+.ph-ladder-next {
+  font-size: calc(var(--u) * 12px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.ph-ladder-rows {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 5px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ph-ladder-row {
+  display: grid;
+  grid-template-columns: calc(var(--u) * 28px) 1fr auto;
+  align-items: center;
+  gap: calc(var(--u) * 10px);
+  padding: calc(var(--u) * 5px) calc(var(--u) * 10px) calc(var(--u) * 5px) calc(var(--u) * 6px);
+  border-radius: calc(var(--u) * 6px);
+  background: rgb(255 255 255 / 6%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%);
+}
+
+.ph-ladder-icon {
+  width: calc(var(--u) * 28px);
+  height: calc(var(--u) * 28px);
+}
+
+.ph-ladder-words {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 2px);
+}
+
+.ph-ladder-name {
+  font-size: calc(var(--u) * 14px);
+  line-height: 1.1;
+}
+
+.ph-ladder-need {
+  font-size: calc(var(--u) * 11.5px);
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+.ph-ladder-note {
+  font-size: calc(var(--u) * 12px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.ph-ladder-row[data-state='open'] .ph-ladder-note {
+  color: var(--mint);
+}
+
+.ph-ladder-row[data-state='waiting'] {
+  box-shadow: inset 0 0 0 1px rgb(242 164 58 / 55%);
+}
+
+.ph-ladder-row[data-state='waiting'] .ph-ladder-note {
+  color: #f2a43a;
+}
+
+/* A row still shut is dim, the way a locked hotbar slot is. */
+
+.ph-ladder-row[data-state='shut'] .ph-ladder-icon {
+  opacity: 0.4;
+  filter: grayscale(0.75);
+}
+
+.ph-ladder-row[data-state='shut'] .ph-ladder-name {
+  color: var(--ink-soft);
+}
+
+.ph-ladder-footer {
+  margin: 0;
+  font-size: calc(var(--u) * 11.5px);
+  line-height: 1.35;
+  letter-spacing: 0.03em;
+  color: var(--ink-soft);
+}
+
+.ph-ladder-close {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: calc(var(--u) * 6px);
+  font-size: calc(var(--u) * 11.5px);
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
 /* A small dot at the screen center. Over a surface a click could build on it gets a cyan ring, and a red one over a surface it could not. */
 
 .ph-crosshair {

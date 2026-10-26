@@ -1,15 +1,26 @@
 import type { BlockWorld, CellState } from '../shared/block-world';
 import {
   MATERIALS,
+  MODULE,
   MODULES,
   SHAPE_KINDS,
   baseShape,
+  moduleOfShape,
   moduleShape,
   packState,
+  stateShape,
   type BlockKind,
   type ShapeKind,
 } from '../shared/blocks';
-import { createAim, updateAim, type Aim } from '../shared/build-aim';
+import {
+  AIM_REFUSAL,
+  BUILD_REACH,
+  createAim,
+  distanceToCell,
+  updateAim,
+  type Aim,
+  type Cell,
+} from '../shared/build-aim';
 import { createEconomyReading } from '../shared/economy';
 import type { GroundQuery } from '../shared/ground';
 import type { Vec3 } from '../shared/look';
@@ -24,7 +35,8 @@ import { BLASTER } from '../systems/survival/balance';
  * The player's hands: which hotbar slot is selected, which kind of shape it makes and how that is
  * turned, whether Build Mode is on, what the cursor would do and the clicks that send it, the
  * pulse blaster in the slot after the blocks, the module slot after the blaster, and the interact
- * key that strips a heap of debris the cursor is on. It holds no DOM and no three.js, and reaches the
+ * key that strips a heap of debris the cursor is on, or opens the research ladder of the Research
+ * Terminal it is on. It holds no DOM and no three.js, and reaches the
  * rest of the game through `BuildPorts`, so the tests can drive it with fakes. Nothing here
  * changes the world: a click becomes a command (or a shot) for the session, the host validates it,
  * and the world changes (or the machine is hurt) when the host's word comes back.
@@ -41,6 +53,8 @@ export const MIN_HAND_SCALE = 0.25;
 export const RESEND_GUARD = 0.5;
 /** How long (seconds) a refusal stays on the screen after a click. */
 export const NOTICE_SECONDS = 1.8;
+/** An open research ladder stays open until the player is this many blocks from the Terminal, a little past the reach that opened it, so a step either way at the edge does not flicker it shut. */
+export const LADDER_STAY = BUILD_REACH + 1;
 
 /** The refusal shown when there is nobody to send a command to yet (the network code is still loading). */
 export const NOT_READY = 'not-ready';
@@ -90,6 +104,8 @@ export interface BuildHudState {
   readonly salvage: number;
   /** The material that heap gives, as a `MATERIAL` id; 0 when the cursor is on none. */
   readonly salvageGrade: number;
+  /** The Research Terminal: 'aimed' when the cursor is on one the interact key would open, 'open' while its ladder is up, else 'none'. */
+  readonly terminal: 'none' | 'aimed' | 'open';
 }
 
 /** Where the player is looking from, as the camera has it this frame. */
@@ -152,6 +168,9 @@ export class BuildController {
   private salvageCooldown = 0;
   /** The heap of debris the cursor was on at the last `update`. */
   private readonly heap: DebrisAim = createDebrisAim();
+  /** Whether the ladder of a Research Terminal is open, and the cell of the Terminal it was opened on. */
+  private ladderUp = false;
+  private readonly ladderCell: Cell = { x: 0, y: 0, z: 0 };
   /** The pool as it was read for the last question about a placement. */
   private readonly pool = createEconomyReading();
   /** The host's economic rules for a placement, asked of this screen's view of the economy, so the ghost shows what the host would say. */
@@ -189,6 +208,7 @@ export class BuildController {
     kill: boolean;
     salvage: number;
     salvageGrade: number;
+    terminal: 'none' | 'aimed' | 'open';
   } = {
     selected: 0,
     buildMode: false,
@@ -203,6 +223,7 @@ export class BuildController {
     kill: false,
     salvage: 0,
     salvageGrade: 0,
+    terminal: 'none',
   };
 
   constructor(private readonly ports: BuildPorts) {}
@@ -288,6 +309,11 @@ export class BuildController {
     return this.heap;
   }
 
+  /** Whether the research ladder of a Terminal is open. */
+  get ladderOpen(): boolean {
+    return this.ladderUp;
+  }
+
   selectSlot(slot: number): void {
     if (!Number.isInteger(slot) || slot < 0 || slot >= HOTBAR_SLOTS) return;
     this.moveTo(slot);
@@ -336,7 +362,10 @@ export class BuildController {
   setDown(down: boolean): void {
     if (down === this.down) return;
     this.down = down;
-    if (down) this.releaseAll();
+    if (down) {
+      this.releaseAll();
+      this.ladderUp = false;
+    }
   }
 
   toggleBuildMode(): void {
@@ -360,11 +389,12 @@ export class BuildController {
     this.held.secondary = -1;
   }
 
-  /** The cursor is not looking at the world any more (the mouse was freed): nothing is aimed at until the next `update`. */
+  /** The cursor is not looking at the world any more (the mouse was freed): nothing is aimed at until the next `update`, and a research ladder shuts. */
   clearAim(): void {
     this.heap.index = -1;
     this.heap.left = 0;
     this.heap.distance = 0;
+    this.ladderUp = false;
   }
 
   /** The host refused a command that was sent: show why for a moment. */
@@ -373,12 +403,34 @@ export class BuildController {
   }
 
   /**
-   * The interact key: strips the heap of debris the cursor is on, if the player can reach it. The
-   * host has the final word (and says no when the heap is bare, the pool is full or the hands are
-   * too quick); the hands only keep their own pace, a little slower than the host's.
+   * The interact key. With a research ladder open it shuts it. Otherwise it strips the heap of
+   * debris the cursor is on, if the player can reach it (the host has the final word, and says no
+   * when the heap is bare, the pool is full or the hands are too quick; the hands only keep their
+   * own pace, a little slower than the host's), or, with the cursor on a Research Terminal in
+   * reach and no heap in front of it, opens the Terminal's ladder, which only shows what the
+   * crew's research has opened and asks the host for nothing.
    */
   interact(): void {
-    if (this.down || this.heap.index < 0 || this.salvageCooldown > 0) return;
+    if (this.down) return;
+    if (this.ladderUp) {
+      this.ladderUp = false;
+      return;
+    }
+    if (this.heap.index >= 0) {
+      this.strip();
+      return;
+    }
+    if (this.terminalAimed()) {
+      this.ladderCell.x = this.aim.target.x;
+      this.ladderCell.y = this.aim.target.y;
+      this.ladderCell.z = this.aim.target.z;
+      this.ladderUp = true;
+    }
+  }
+
+  /** Sends the strip of the heap the cursor is on, at the hands' pace. */
+  private strip(): void {
+    if (this.salvageCooldown > 0) return;
     const node = this.ports.economy().debris.nodes[this.heap.index];
     if (!node) return;
     const sent = this.send({
@@ -388,6 +440,27 @@ export class BuildController {
       z: Math.floor(node.z),
     });
     if (sent) this.salvageCooldown = DEBRIS.pace;
+  }
+
+  /** Whether the cursor is on a Research Terminal that a break would reach, with no heap of debris in front of it. */
+  private terminalAimed(): boolean {
+    const aim = this.aim;
+    return (
+      this.heap.index < 0 &&
+      aim.on === 'block' &&
+      aim.breakRefusal !== AIM_REFUSAL.outOfReach &&
+      moduleOfShape(stateShape(aim.targetState))?.id === MODULE.terminal
+    );
+  }
+
+  /** Whether the Terminal the open ladder belongs to still stands, and the player is still near it. */
+  private ladderHolds(eye: Vec3): boolean {
+    const { x, y, z } = this.ladderCell;
+    const state = this.ports.blocks().getBlock(x, y, z);
+    return (
+      moduleOfShape(stateShape(state))?.id === MODULE.terminal &&
+      distanceToCell(eye, x, y, z) <= LADDER_STAY
+    );
   }
 
   /** The host said one of the player's shots hit a machine (and felled it, if `kill`): the HUD marks it. */
@@ -418,6 +491,8 @@ export class BuildController {
       bodies: this.ports.bodies(),
       rules: this.houseRules,
     });
+    // The ladder is open for as long as its Terminal stands and the player is near it.
+    if (this.ladderUp && (this.down || !this.ladderHolds(view.eye))) this.ladderUp = false;
     // A heap in front of the first block or hill the view meets can be stripped; one behind it cannot.
     aimAtDebris(this.heap, {
       debris: this.ports.economy().debris,
@@ -452,6 +527,13 @@ export class BuildController {
     state.salvage = this.down ? 0 : this.heap.left;
     state.salvageGrade =
       state.salvage > 0 ? (this.ports.economy().debris.nodes[this.heap.index]?.grade ?? 0) : 0;
+    state.terminal = this.down
+      ? 'none'
+      : this.ladderUp
+        ? 'open'
+        : this.terminalAimed()
+          ? 'aimed'
+          : 'none';
     if (this.armed) state.crosshair = 'blaster';
     else if (!aim.hasPlace) state.crosshair = 'none';
     else if (!aim.placeRefusal) state.crosshair = 'place';

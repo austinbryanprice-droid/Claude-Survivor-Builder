@@ -36,7 +36,10 @@ const CONTROLS: Control[] = [
   { keys: ['LMB', 'RMB'], label: 'Break or place; LMB fires the pulse blaster' },
   { keys: ['1–8', 'Wheel'], label: 'Choose a block, or 5 for the pulse blaster' },
   { keys: ['Q', 'R'], label: 'Block, slab or wedge; turn it' },
-  { keys: ['E'], label: 'Strip the heap of debris you are looking at' },
+  {
+    keys: ['E'],
+    label: 'Strip the heap of debris you are looking at, or read the ladder of a Research Terminal',
+  },
   { keys: ['B'], label: 'Build Mode' },
   { keys: ['P', 'F3'], label: 'Graphics preset, frame times' },
   { keys: ['Esc'], label: 'Free the mouse' },

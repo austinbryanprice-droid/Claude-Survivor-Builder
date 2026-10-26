@@ -16,6 +16,7 @@ import { wrapBearing } from './player-hud/format';
 import { PlayerHud, type HotbarSlot, type PlayerHudState } from './player-hud/player-hud';
 import { chargesForHud, clockForHud, coreForHud, downForHud, objectiveForRun } from './run-hud';
 import { ResearchPill, lockForPiece, slotLocked } from './research-hud';
+import { ladderForHud, terminalPrompt } from './terminal-hud';
 import { FULL_VITALS, vitalsForHud } from './vitals-hud';
 
 /**
@@ -151,7 +152,11 @@ export function createPlaceholderHud(
         slots: row,
         selected: hands.selected,
         prompt: prompts.update(dt, hands, pool ? lockForPiece(hands.piece, pool) : null),
-        interact: interactPrompt(hands.salvage, hands.salvageGrade),
+        interact:
+          hands.terminal === 'aimed'
+            ? terminalPrompt(pool ?? noPool)
+            : interactPrompt(hands.salvage, hands.salvageGrade),
+        ladder: hands.terminal === 'open' ? ladderForHud(pool ?? noPool) : null,
         crosshair: hands.crosshair,
         hitMarker: { count: hands.hits, kill: hands.kill },
         buildMode: hands.buildMode,
