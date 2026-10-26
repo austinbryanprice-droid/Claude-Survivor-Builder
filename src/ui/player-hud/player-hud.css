@@ -1287,6 +1287,13 @@
   color: var(--ink-soft);
 }
 
+/* A key that would be refused (an upgrade the crew cannot pay for or has not researched) says why in the caption's red. */
+
+.ph-interact[data-tone='warn'] .ph-interact-detail {
+  color: #ff9a86;
+  font-weight: 600;
+}
+
 /* The research ladder a Research Terminal shows when the interact key opens it: beside the crosshair, so the Terminal stays in view, on the side the key list of Build Mode does not take. */
 
 .ph-ladder {

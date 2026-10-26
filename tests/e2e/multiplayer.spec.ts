@@ -2,7 +2,7 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 import { MATERIAL, MODULE, MODULES, SHAPE, moduleShape, packState } from '../../src/shared/blocks';
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../src/shared/daycycle';
 import { DEBRIS, POOL, RESEARCH } from '../../src/systems/economy/balance';
-import { needsResearch } from '../../src/systems/economy/build-rules';
+import { needsResearch, notEnough } from '../../src/systems/economy/build-rules';
 import { RESPAWN, VITALS } from '../../src/systems/survival/balance';
 import { recordToasts, toasts } from './support/toasts';
 
@@ -1530,6 +1530,143 @@ test.describe('multiplayer', () => {
           .toMatchObject({ claimed: compositeAt, tier: 2 });
         await expect(slotOf(p, 1)).not.toHaveAttribute('data-locked', '', slow);
       }
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
+  test("an upgrade is the host's to allow: a guest's swaps the block in every world and the one pool pays for the better piece, a player who joins later is shown it, and the host turns away a material the points have not opened, a pool that cannot pay and a block that is not the one she saw", async ({
+    browser,
+    baseURL,
+  }) => {
+    // The crew's pool is the host's, and opens with plenty of every material.
+    const host = await openPlayer(browser, baseURL, 'Host', { stock: 200 });
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone: Player[] = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and the picture and the hands only change when one is drawn.
+    const slow = { timeout: 60_000 };
+    const [compositeAt, alloyAt] = RESEARCH.steps.map((step) => step.points) as [number, number];
+    const stockOf = async (p: Player, material: number) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.pool())).stock[material - 1] as number;
+    const rejectionsOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.rejections())).map((r) => r.reason);
+    const upgradesOf = async (p: Player) => (await clockOf(p)).upgraded;
+    const cellOf = (p: Player, at: { x: number; y: number; z: number }) =>
+      p.page.evaluate(([x, y, z]) => window.__ashbound!.mp!.block(x!, y!, z!), [
+        at.x,
+        at.y,
+        at.z,
+      ] as const);
+    const upgrade = (p: Player, at: { x: number; y: number; z: number }, shown?: number) =>
+      p.page.evaluate(([x, y, z, s]) => window.__ashbound!.mp!.upgrade(x!, y!, z!, s), [
+        at.x,
+        at.y,
+        at.z,
+        shown,
+      ] as const);
+    /** Every screen shows this block in the cell, this much of a material in the pool, and this many upgrades on the card. */
+    const expectEverywhere = async (
+      at: { x: number; y: number; z: number },
+      state: number,
+      stock: readonly [number, number],
+      upgrades: number,
+    ) => {
+      for (const p of everyone) {
+        await expect
+          .poll(() => cellOf(p, at), { ...slow, message: `${p.name} sees the cell` })
+          .toBe(state);
+        await expect
+          .poll(() => stockOf(p, stock[0]), { ...slow, message: `${p.name} sees the pool` })
+          .toBe(stock[1]);
+        await expect
+          .poll(() => upgradesOf(p), { ...slow, message: `${p.name} counts the upgrades` })
+          .toBe(upgrades);
+      }
+    };
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) {
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+        await expect
+          .poll(() => stockOf(p, MATERIAL.scrap), { ...slow, message: `${p.name} sees the pool` })
+          .toBe(200);
+      }
+
+      // Ada's Scrap block is in everyone's world, paid from the one pool; the crew reads Composite.
+      const cell = await ada.page.evaluate(
+        ([state]) => window.__ashbound!.mp!.placeNear(4, 0, state!),
+        [SCRAP] as const,
+      );
+      await expectSameWorld(everyone, 1);
+      await expectEverywhere(cell, SCRAP, [MATERIAL.scrap, 199], 0);
+      await host.page.evaluate((n) => window.__ashbound!.mp!.setResearch(n), compositeAt);
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await p.page.evaluate(() => window.__ashbound!.mp!.pool())).tier, {
+            ...slow,
+            message: `${p.name} reads the tier`,
+          })
+          .toBe(2);
+      }
+
+      // Ada upgrades it: the same cell holds Composite in every world, the better piece comes out of
+      // the pool and nothing goes back for the old one, and every card counts the upgrade.
+      await upgrade(ada, cell);
+      await expectEverywhere(cell, COMPOSITE, [MATERIAL.composite, 199], 1);
+      for (const p of everyone) expect(await stockOf(p, MATERIAL.scrap), p.name).toBe(199);
+      await expectSameWorld(everyone, 1);
+      expect(await rejectionsOf(ada)).toEqual([]);
+      expect(await rejectionsOf(host)).toEqual([]);
+
+      // Alloy is past the points: the host turns it away in words, to Ada alone, and nothing changes.
+      await upgrade(ada, cell);
+      await expect
+        .poll(() => rejectionsOf(ada), { ...slow, message: 'the host turns Ada down' })
+        .toEqual([needsResearch('Advanced Alloy')]);
+      expect(await rejectionsOf(host)).toEqual([]);
+      await expectEverywhere(cell, COMPOSITE, [MATERIAL.composite, 199], 1);
+
+      // The points are there and the Alloy is not: the pool is what Ada is turned away for.
+      await host.page.evaluate((n) => window.__ashbound!.mp!.setResearch(n), alloyAt);
+      await host.page.evaluate(([material]) => window.__ashbound!.mp!.setPool(material!, 0), [
+        MATERIAL.alloy,
+      ] as const);
+      await upgrade(ada, cell);
+      await expect
+        .poll(() => rejectionsOf(ada), { ...slow, message: 'the host turns Ada down again' })
+        .toEqual([needsResearch('Advanced Alloy'), notEnough('Advanced Alloy')]);
+      await expectEverywhere(cell, COMPOSITE, [MATERIAL.composite, 199], 1);
+
+      // Her screen believed the block was Scrap and asks for Composite: it is Composite now, and the
+      // host will not swap a block for the one she did not see.
+      await upgrade(ada, cell, COMPOSITE);
+      await expect
+        .poll(() => rejectionsOf(ada), { ...slow, message: 'the host turns Ada down a third time' })
+        .toEqual([
+          needsResearch('Advanced Alloy'),
+          notEnough('Advanced Alloy'),
+          'that block has changed',
+        ]);
+      await expectEverywhere(cell, COMPOSITE, [MATERIAL.composite, 199], 1);
+
+      // The host puts Alloy back, and the same press goes through.
+      await host.page.evaluate(([material]) => window.__ashbound!.mp!.setPool(material!, 5), [
+        MATERIAL.alloy,
+      ] as const);
+      await upgrade(ada, cell);
+      await expectEverywhere(cell, ALLOY, [MATERIAL.alloy, 4], 2);
+
+      // A player who joins now is shown the better block with the rest of the world, and the count.
+      const bo = await openPlayer(browser, baseURL, 'Bo');
+      everyone.push(bo);
+      await joinRoom(bo, code);
+      await expectSameWorld(everyone, 1);
+      await expectEverywhere(cell, ALLOY, [MATERIAL.alloy, 4], 2);
+      expect(await rejectionsOf(host)).toEqual([]);
+      expect(await rejectionsOf(bo)).toEqual([]);
       expectNoProblems(everyone);
     } finally {
       await closeAll(everyone);

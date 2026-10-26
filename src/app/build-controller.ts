@@ -28,18 +28,26 @@ import { nextTurn, type PieceChoice } from '../shared/placement';
 import type { BlockCommand } from '../shared/protocol';
 import { aimAtDebris, createDebrisAim, type DebrisAim } from '../systems/economy/aim';
 import { DEBRIS } from '../systems/economy/balance';
-import { placementRefusal, type PlacementEconomy } from '../systems/economy/build-rules';
+import {
+  FULLY_UPGRADED,
+  placementRefusal,
+  upgradeBlocker,
+  upgradeRefusalOnScreen,
+  upgradeStep,
+  type PlacementEconomy,
+  type UpgradeStep,
+} from '../systems/economy/build-rules';
 import { BLASTER } from '../systems/survival/balance';
 
 /**
  * The player's hands: which hotbar slot is selected, which kind of shape it makes and how that is
  * turned, whether Build Mode is on, what the cursor would do and the clicks that send it, the
  * pulse blaster in the slot after the blocks, the module slot after the blaster, and the interact
- * key that strips a heap of debris the cursor is on, or opens the research ladder of the Research
- * Terminal it is on. It holds no DOM and no three.js, and reaches the
- * rest of the game through `BuildPorts`, so the tests can drive it with fakes. Nothing here
- * changes the world: a click becomes a command (or a shot) for the session, the host validates it,
- * and the world changes (or the machine is hurt) when the host's word comes back.
+ * key that strips a heap of debris the cursor is on, opens the research ladder of the Research
+ * Terminal it is on, or upgrades the block it is on to the next material. It holds no DOM and no
+ * three.js, and reaches the rest of the game through `BuildPorts`, so the tests can drive it with
+ * fakes. Nothing here changes the world: a click becomes a command (or a shot) for the session, the
+ * host validates it, and the world changes (or the machine is hurt) when the host's word comes back.
  */
 
 export const HOTBAR_SLOTS = 8;
@@ -106,6 +114,10 @@ export interface BuildHudState {
   readonly salvageGrade: number;
   /** The Research Terminal: 'aimed' when the cursor is on one the interact key would open, 'open' while its ladder is up, else 'none'. */
   readonly terminal: 'none' | 'aimed' | 'open';
+  /** The piece the interact key would make of the block the cursor is on, one material up, or 0 when it offers none (outside Build Mode, when it would be refused). */
+  readonly upgrade: CellState;
+  /** Why the host would refuse that upgrade (the economy's words), or null when it would go. Meaningful when `upgrade` is not 0. */
+  readonly upgradeRefusal: string | null;
 }
 
 /** Where the player is looking from, as the camera has it this frame. */
@@ -209,6 +221,8 @@ export class BuildController {
     salvage: number;
     salvageGrade: number;
     terminal: 'none' | 'aimed' | 'open';
+    upgrade: CellState;
+    upgradeRefusal: string | null;
   } = {
     selected: 0,
     buildMode: false,
@@ -224,6 +238,8 @@ export class BuildController {
     salvage: 0,
     salvageGrade: 0,
     terminal: 'none',
+    upgrade: 0,
+    upgradeRefusal: null,
   };
 
   constructor(private readonly ports: BuildPorts) {}
@@ -408,7 +424,9 @@ export class BuildController {
    * when the heap is bare, the pool is full or the hands are too quick; the hands only keep their
    * own pace, a little slower than the host's), or, with the cursor on a Research Terminal in
    * reach and no heap in front of it, opens the Terminal's ladder, which only shows what the
-   * crew's research has opened and asks the host for nothing.
+   * crew's research has opened and asks the host for nothing, or, with the cursor on any other
+   * block in reach, upgrades that block to the next material (Build Mode or not: it only shows
+   * more there, as it does for a click).
    */
   interact(): void {
     if (this.down) return;
@@ -425,7 +443,52 @@ export class BuildController {
       this.ladderCell.y = this.aim.target.y;
       this.ladderCell.z = this.aim.target.z;
       this.ladderUp = true;
+      return;
     }
+    this.upgradeTarget();
+  }
+
+  /**
+   * Upgrades the block the cursor is on: the better piece is sent as the piece this screen showed
+   * (the host checks the cell still holds what the player saw). What this screen can tell is
+   * refused is shown instead of sent, as for a click; the host has the final word.
+   */
+  private upgradeTarget(): void {
+    const aim = this.aim;
+    if (aim.on !== 'block') return;
+    if (aim.breakRefusal === AIM_REFUSAL.outOfReach) {
+      this.setNotice(AIM_REFUSAL.outOfReach);
+      return;
+    }
+    const step = upgradeStep(aim.targetState);
+    if (!step) {
+      this.setNotice(upgradeBlocker(aim.targetState) ?? FULLY_UPGRADED);
+      return;
+    }
+    const refusal = upgradeRefusalOnScreen(this.ports.economy(), this.pool, aim.targetState);
+    if (refusal) {
+      this.setNotice(refusal);
+      return;
+    }
+    this.send({
+      type: 'upgrade',
+      x: aim.target.x,
+      y: aim.target.y,
+      z: aim.target.z,
+      state: step.to,
+    });
+  }
+
+  /**
+   * What the interact key would upgrade the block under the cursor to, or null when it offers
+   * nothing: the player is down, a ladder is open, a heap of debris is in front (the key strips
+   * it), or the cursor is not on a block in reach that has a better material.
+   */
+  private upgradeOffer(): UpgradeStep | null {
+    const aim = this.aim;
+    if (this.down || this.ladderUp || this.heap.index >= 0) return null;
+    if (aim.on !== 'block' || aim.breakRefusal === AIM_REFUSAL.outOfReach) return null;
+    return upgradeStep(aim.targetState);
   }
 
   /** Sends the strip of the heap the cursor is on, at the hands' pace. */
@@ -534,6 +597,13 @@ export class BuildController {
         : this.terminalAimed()
           ? 'aimed'
           : 'none';
+    // Build Mode shows every upgrade the cursor is on, and why one would be refused; outside it the
+    // card is only for an upgrade that would go, so a crew with nothing to spend is not nagged.
+    const offer = this.upgradeOffer();
+    const why = offer ? upgradeRefusalOnScreen(this.ports.economy(), this.pool, offer.from) : null;
+    const shown = offer !== null && (this.buildMode || why === null);
+    state.upgrade = shown ? offer.to : 0;
+    state.upgradeRefusal = shown ? why : null;
     if (this.armed) state.crosshair = 'blaster';
     else if (!aim.hasPlace) state.crosshair = 'none';
     else if (!aim.placeRefusal) state.crosshair = 'place';
@@ -597,7 +667,7 @@ export class BuildController {
 
   /** Sends a command unless the same one went a moment ago. True when it went. */
   private send(command: BlockCommand): boolean {
-    const state = command.type === 'place' ? command.state : 0;
+    const state = command.type === 'place' || command.type === 'upgrade' ? command.state : 0;
     const key = `${command.type} ${command.x} ${command.y} ${command.z} ${state}`;
     if (key === this.lastKey && this.clock - this.lastSentAt < RESEND_GUARD) return false;
     if (!this.ports.send(command)) {

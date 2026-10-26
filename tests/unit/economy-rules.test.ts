@@ -7,11 +7,17 @@ import {
   SHAPE,
   moduleShape,
   packState,
+  slabShape,
+  stateMaterial,
+  stateShape,
+  wedgeShape,
 } from '../../src/shared/blocks';
 import { createEconomyReading, type DebrisNode } from '../../src/shared/economy';
 import { DEBRIS } from '../../src/systems/economy/balance';
 import {
   DEBRIS_IN_THE_WAY,
+  FULLY_UPGRADED,
+  NOTHING_TO_UPGRADE,
   builtOver,
   heapInTheWay,
   keepsClear,
@@ -22,6 +28,10 @@ import {
   pieceCost,
   placementRefusal,
   shortfall,
+  upgradeBlocker,
+  upgradeRefusal,
+  upgradeRefusalOnScreen,
+  upgradeStep,
   type PlacementEconomy,
 } from '../../src/systems/economy/build-rules';
 
@@ -322,5 +332,146 @@ describe('whether a module stands in the world', () => {
     expect(moduleStands(worldOf([]), MODULE.terminal)).toBe(false);
     expect(moduleStands(worldOf([SCRAP, COMPOSITE, ALLOY]), MODULE.terminal)).toBe(false);
     expect(moduleStands(worldOf([TERMINAL]), MODULE.terminal + 1)).toBe(false);
+  });
+});
+
+describe('what upgrading a piece makes of it', () => {
+  const SHAPES = [
+    SHAPE.cube,
+    slabShape(false),
+    slabShape(true),
+    ...[0, 1, 2, 3].flatMap((facing) => [wedgeShape(facing), wedgeShape(facing, true)]),
+  ];
+
+  it('is the same piece in the next material up, whatever its shape, half or facing', () => {
+    for (const shape of SHAPES) {
+      for (const material of [MATERIAL.scrap, MATERIAL.composite, MATERIAL.alloy]) {
+        const step = upgradeStep(packState(shape, material));
+        expect(step).not.toBeNull();
+        expect(stateShape(step!.to)).toBe(shape);
+        expect(stateMaterial(step!.to)).toBe(material + 1);
+        expect(step!.from).toBe(packState(shape, material));
+      }
+    }
+  });
+
+  it('climbs the ladder one rung at a time, from Scrap to Energy-Infused and no further', () => {
+    let state = SCRAP;
+    const climbed = [stateMaterial(state)];
+    for (let step = upgradeStep(state); step; step = upgradeStep(state)) {
+      state = step.to;
+      climbed.push(stateMaterial(state));
+    }
+    expect(climbed).toEqual([MATERIAL.scrap, MATERIAL.composite, MATERIAL.alloy, MATERIAL.energy]);
+  });
+
+  it('costs the price of the better piece, which the table gives for its material', () => {
+    for (const material of [MATERIAL.scrap, MATERIAL.composite, MATERIAL.alloy]) {
+      const step = upgradeStep(packState(SHAPE.cube, material))!;
+      const better = MATERIALS.find(
+        (m) => m.tier === MATERIALS.find((m2) => m2.id === material)!.tier + 1,
+      )!;
+      expect(step.cost).toEqual({ material: better.id, name: better.name, amount: better.cost });
+      expect(step.cost).toEqual(pieceCost(step.to));
+    }
+  });
+
+  it('is nothing for Energy-Infused, an empty cell and a state the tables do not know', () => {
+    expect(upgradeStep(packState(SHAPE.cube, MATERIAL.energy))).toBeNull();
+    expect(upgradeStep(packState(wedgeShape(1), MATERIAL.energy))).toBeNull();
+    expect(upgradeStep(0)).toBeNull();
+    expect(upgradeStep(packState(SHAPE.cube, 99))).toBeNull();
+  });
+
+  it('is nothing for a module: its levels come with the modules that have more than one', () => {
+    for (let facing = 0; facing < 4; facing++) {
+      expect(upgradeStep(packState(moduleShape(MODULE.terminal, facing), 1))).toBeNull();
+    }
+  });
+});
+
+describe('why a piece cannot be upgraded at all', () => {
+  it('says nothing is there for an empty cell', () => {
+    expect(upgradeBlocker(0)).toBe(NOTHING_TO_UPGRADE);
+  });
+
+  it('says a piece at the top, or a module, is fully upgraded', () => {
+    expect(upgradeBlocker(packState(SHAPE.cube, MATERIAL.energy))).toBe(FULLY_UPGRADED);
+    expect(upgradeBlocker(packState(moduleShape(MODULE.terminal, 0), 1))).toBe(FULLY_UPGRADED);
+  });
+
+  it('says nothing of a piece that has a better self', () => {
+    expect(upgradeBlocker(SCRAP)).toBeNull();
+    expect(upgradeBlocker(COMPOSITE)).toBeNull();
+    expect(upgradeBlocker(ALLOY)).toBeNull();
+  });
+});
+
+describe('whether the crew can upgrade a piece now', () => {
+  const plenty = () => 99;
+  const none = () => 0;
+
+  it('accepts when the better material is researched and the pool holds its price', () => {
+    expect(upgradeRefusal(2, plenty, SCRAP)).toBeNull();
+    expect(upgradeRefusal(3, plenty, COMPOSITE)).toBeNull();
+    expect(upgradeRefusal(4, plenty, ALLOY)).toBeNull();
+  });
+
+  it('refuses a better material the crew has not researched, in the words placing it would get', () => {
+    expect(upgradeRefusal(1, plenty, SCRAP)).toBe(needsResearch('Reinforced Composite'));
+    expect(upgradeRefusal(2, plenty, COMPOSITE)).toBe(needsResearch('Advanced Alloy'));
+    expect(upgradeRefusal(3, plenty, ALLOY)).toBe(needsResearch('Energy-Infused'));
+  });
+
+  it('refuses a pool short of the better material, naming it', () => {
+    expect(upgradeRefusal(2, none, SCRAP)).toBe(notEnough('Reinforced Composite'));
+    expect(upgradeRefusal(4, none, ALLOY)).toBe(notEnough('Energy-Infused'));
+  });
+
+  it('asks only about the better material: a pool without Scrap can upgrade a Scrap block', () => {
+    const onlyComposite = (material: number) => (material === MATERIAL.composite ? 1 : 0);
+    expect(upgradeRefusal(2, onlyComposite, SCRAP)).toBeNull();
+  });
+
+  it('asks about the research before the pool', () => {
+    expect(upgradeRefusal(1, none, SCRAP)).toBe(needsResearch('Reinforced Composite'));
+  });
+
+  it('says what stops a piece that cannot be upgraded, whatever the crew holds', () => {
+    expect(upgradeRefusal(4, plenty, 0)).toBe(NOTHING_TO_UPGRADE);
+    expect(upgradeRefusal(4, plenty, packState(SHAPE.cube, MATERIAL.energy))).toBe(FULLY_UPGRADED);
+  });
+});
+
+describe('what a screen asks before it offers an upgrade', () => {
+  const scratch = createEconomyReading();
+  function view(stock: number[], cap: number, tier: number): Pick<PlacementEconomy, 'read'> {
+    return {
+      read(out) {
+        out.stock.splice(0, out.stock.length, ...stock);
+        out.cap = cap;
+        out.tier = tier;
+        return out;
+      },
+    };
+  }
+
+  it('reads the pool as this screen has it', () => {
+    expect(upgradeRefusalOnScreen(view([0, 1, 0, 0], 400, 2), scratch, SCRAP)).toBeNull();
+    expect(upgradeRefusalOnScreen(view([9, 0, 0, 0], 400, 2), scratch, SCRAP)).toBe(
+      notEnough('Reinforced Composite'),
+    );
+    expect(upgradeRefusalOnScreen(view([9, 9, 9, 9], 400, 1), scratch, SCRAP)).toBe(
+      needsResearch('Reinforced Composite'),
+    );
+  });
+
+  it('charges and locks nothing where there is no pool to read, but still says a piece has no better self', () => {
+    const nothing = view([0, 0, 0, 0], 0, 1);
+    expect(upgradeRefusalOnScreen(nothing, scratch, SCRAP)).toBeNull();
+    expect(upgradeRefusalOnScreen(nothing, scratch, packState(SHAPE.cube, MATERIAL.energy))).toBe(
+      FULLY_UPGRADED,
+    );
+    expect(upgradeRefusalOnScreen(nothing, scratch, 0)).toBe(NOTHING_TO_UPGRADE);
   });
 });

@@ -316,12 +316,14 @@ describe('the results of a lost run', () => {
     const lost = withCore(720 + DAY_SECONDS + 90, 0, true);
     lost.felled = 31;
     lost.placed = 212;
+    lost.upgraded = 17;
     lost.gathered = 460;
     lost.revived = 3;
     expect(resultsForHud(lost)?.stats).toEqual([
       { label: 'Time held', value: '21:30' },
       { label: 'Machines destroyed', value: '31' },
       { label: 'Blocks placed', value: '212' },
+      { label: 'Upgrades completed', value: '17' },
       { label: 'Materials gathered', value: '460' },
       { label: 'Respawns used', value: '3' },
     ]);
@@ -337,6 +339,7 @@ describe('the results of a lost run', () => {
       'Time held',
       'Machines destroyed',
       'Blocks placed',
+      'Upgrades completed',
       'Materials gathered',
       'Research earned',
       'Respawns used',
@@ -350,7 +353,7 @@ describe('the results of a lost run', () => {
 
   it('show a crew that did nothing as zeros, not as gaps', () => {
     const stats = resultsForHud(withCore(DAY_SECONDS + 30, 0, true))?.stats ?? [];
-    expect(stats.map((stat) => stat.value)).toEqual(['8:30', '0', '0', '0', '0']);
+    expect(stats.map((stat) => stat.value)).toEqual(['8:30', '0', '0', '0', '0', '0']);
   });
 });
 

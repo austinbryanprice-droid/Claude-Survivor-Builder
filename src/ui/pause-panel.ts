@@ -38,7 +38,8 @@ const CONTROLS: Control[] = [
   { keys: ['Q', 'R'], label: 'Block, slab or wedge; turn it' },
   {
     keys: ['E'],
-    label: 'Strip the heap of debris you are looking at, or read the ladder of a Research Terminal',
+    label:
+      'Strip the heap of debris you are looking at, read the ladder of a Research Terminal, or upgrade the block to the next material',
   },
   { keys: ['B'], label: 'Build Mode' },
   { keys: ['P', 'F3'], label: 'Graphics preset, frame times' },

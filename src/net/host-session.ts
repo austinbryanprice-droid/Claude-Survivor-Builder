@@ -45,6 +45,7 @@ import {
   type RelayEntry,
 } from '../shared/wire';
 import { DEBRIS } from '../systems/economy/balance';
+import { upgradeBlocker, upgradeStep } from '../systems/economy/build-rules';
 import type { NavCell } from '../systems/survival/nav';
 import { createShotOutcome, type SurvivalSim } from '../systems/survival/sim';
 import { HostEconomyReport } from './economy-sync';
@@ -77,6 +78,7 @@ export const REFUSAL = {
   nothing: 'nothing to salvage there',
   depleted: 'nothing left there',
   poolFull: 'the pool is full',
+  changed: 'that block has changed',
 } as const;
 
 export interface HostSessionOptions {
@@ -908,16 +910,15 @@ export class HostSession implements GameSession {
   private runCommand(member: Member, commandId: number | null, command: BlockCommand): void {
     const refusal = this.refusal(member, command);
     if (refusal) {
-      this.counters.rejections++;
-      if (member.link && commandId !== null) {
-        this.sendTo(member, encodeFrame({ t: 'rej', id: commandId, r: refusal }));
-      } else if (!member.link) {
-        this.rejections.emit({ command, reason: refusal });
-      }
+      this.reject(member, commandId, command, refusal);
       return;
     }
     if (command.type === 'harvest') {
       this.runHarvest(member, commandId, command);
+      return;
+    }
+    if (command.type === 'upgrade') {
+      this.runUpgrade(member, commandId, command);
       return;
     }
     const state = command.type === 'place' ? command.state : 0;
@@ -927,12 +928,7 @@ export class HostSession implements GameSession {
         ? this.binding.current().getBlock(command.x, command.y, command.z)
         : 0;
     if (!this.applyEdit(command.x, command.y, command.z, state, member.id)) {
-      this.counters.rejections++;
-      if (member.link && commandId !== null) {
-        this.sendTo(member, encodeFrame({ t: 'rej', id: commandId, r: REFUSAL.failed }));
-      } else if (!member.link) {
-        this.rejections.emit({ command, reason: REFUSAL.failed });
-      }
+      this.reject(member, commandId, command, REFUSAL.failed);
       return;
     }
     // The crew's pool pays for a block that was placed (the refusal checked that it could) and gets back one that was broken.
@@ -942,6 +938,21 @@ export class HostSession implements GameSession {
       economy?.placed(command.state);
     } else economy?.refund(broken);
     this.sim?.playerBuilt(member.id, command.type === 'place');
+  }
+
+  /** Turns a command away: counts it, and tells the guest that sent it, or the host's own screen when the host did. */
+  private reject(
+    member: Member,
+    commandId: number | null,
+    command: BlockCommand,
+    reason: string,
+  ): void {
+    this.counters.rejections++;
+    if (member.link && commandId !== null) {
+      this.sendTo(member, encodeFrame({ t: 'rej', id: commandId, r: reason }));
+    } else if (!member.link) {
+      this.rejections.emit({ command, reason });
+    }
   }
 
   /**
@@ -986,6 +997,7 @@ export class HostSession implements GameSession {
     if (command.type === 'harvest') return this.harvestRefusal(member, command);
 
     const world: BlockWorld = this.binding.current();
+    if (command.type === 'upgrade') return this.upgradeRefusal(world, command);
     if (command.type === 'place') {
       const reason = world.checkPlace(command.x, command.y, command.z, command.state);
       if (reason) return reason;
@@ -1040,16 +1052,45 @@ export class HostSession implements GameSession {
     const result = economy && node ? economy.harvest(node.index, member.id) : null;
     if (!result || !result.ok) {
       const reason = result?.reason === 'full' ? REFUSAL.poolFull : REFUSAL.nothing;
-      this.counters.rejections++;
-      if (member.link && commandId !== null) {
-        this.sendTo(member, encodeFrame({ t: 'rej', id: commandId, r: reason }));
-      } else if (!member.link) {
-        this.rejections.emit({ command, reason });
-      }
+      this.reject(member, commandId, command, reason);
       return;
     }
     member.harvestAt = this.scheduler.now();
     this.broadcast(this.economyReport.harvested(result.event));
+  }
+
+  // --------------------------------------------------------------------------------------------
+  // Upgrades.
+  // --------------------------------------------------------------------------------------------
+
+  /**
+   * Why the piece in the cell cannot be upgraded now, or null when it can: it is not what the
+   * player saw (it was upgraded, broken or rebuilt since), nothing is better, the better material is
+   * not researched, or the pool cannot pay for it. A host with no run charges and locks nothing.
+   */
+  private upgradeRefusal(
+    world: BlockWorld,
+    command: Extract<BlockCommand, { type: 'upgrade' }>,
+  ): string | null {
+    const state = world.getBlock(command.x, command.y, command.z);
+    const step = upgradeStep(state);
+    if (!step) return upgradeBlocker(state);
+    if (step.to !== command.state) return REFUSAL.changed;
+    return this.sim?.economy?.upgradeRefusal(state) ?? null;
+  }
+
+  /** Upgrades the piece a checked command names: the better piece takes the cell and the pool pays its price. */
+  private runUpgrade(
+    member: Member,
+    commandId: number | null,
+    command: Extract<BlockCommand, { type: 'upgrade' }>,
+  ): void {
+    if (!this.applyEdit(command.x, command.y, command.z, command.state, member.id)) {
+      this.reject(member, commandId, command, REFUSAL.failed);
+      return;
+    }
+    this.sim?.economy?.pay(command.state);
+    this.sim?.playerUpgraded(member.id);
   }
 
   // --------------------------------------------------------------------------------------------
@@ -1395,7 +1436,13 @@ export class HostSession implements GameSession {
       over: sim?.over ?? false,
       ...(why ? { why } : {}),
       rc: [sim?.respawns ?? 0, sim?.respawnMax ?? 0],
-      st: [sim?.felled ?? 0, sim?.placed ?? 0, sim?.revived ?? 0, sim?.gathered ?? 0],
+      st: [
+        sim?.felled ?? 0,
+        sim?.placed ?? 0,
+        sim?.revived ?? 0,
+        sim?.gathered ?? 0,
+        sim?.upgraded ?? 0,
+      ],
     });
   }
 

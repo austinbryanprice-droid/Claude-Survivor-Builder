@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { MATERIAL, MODULE, SHAPE, moduleShape, packState } from '../../src/shared/blocks';
 import { createEconomyReading, type DebrisNode } from '../../src/shared/economy';
 import { DEBRIS, POOL } from '../../src/systems/economy/balance';
-import { DEBRIS_IN_THE_WAY, needsResearch, notEnough } from '../../src/systems/economy/build-rules';
+import {
+  DEBRIS_IN_THE_WAY,
+  FULLY_UPGRADED,
+  NOTHING_TO_UPGRADE,
+  needsResearch,
+  notEnough,
+  upgradeStep,
+} from '../../src/systems/economy/build-rules';
 import { Economy, cellKey, evenStock, stripYield } from '../../src/systems/economy/economy';
 import { RESEARCH_STEPS } from '../../src/systems/economy/research';
 
@@ -256,6 +263,59 @@ describe('the economy paying for blocks', () => {
     ]);
     expect(new Economy(5, field(), evenStock(9999)).pool.amount(MATERIAL.alloy)).toBe(POOL.cap);
     expect(new Economy(5, field(), {}).read(createEconomyReading()).stock).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe('the economy upgrading a piece in place', () => {
+  const scrapBlock = packState(SHAPE.cube, MATERIAL.scrap);
+  const compositeBlock = packState(SHAPE.cube, MATERIAL.composite);
+  const alloyBlock = packState(SHAPE.cube, MATERIAL.alloy);
+  const energyBlock = packState(SHAPE.cube, MATERIAL.energy);
+
+  it('accepts a piece whose better material is researched and in the pool', () => {
+    const economy = new Economy(5, field(), evenStock(5));
+    economy.research.set(RESEARCH_STEPS[0]!.points);
+    expect(economy.upgradeRefusal(scrapBlock)).toBeNull();
+  });
+
+  it('refuses a better material the crew has not researched, before it asks about the pool', () => {
+    const economy = new Economy(5, field(), evenStock(5));
+    expect(economy.upgradeRefusal(scrapBlock)).toBe(needsResearch('Reinforced Composite'));
+    economy.research.set(RESEARCH_STEPS[0]!.points);
+    expect(economy.upgradeRefusal(compositeBlock)).toBe(needsResearch('Advanced Alloy'));
+    economy.research.set(RESEARCH_STEPS[1]!.points);
+    expect(economy.upgradeRefusal(compositeBlock)).toBeNull();
+    expect(economy.upgradeRefusal(alloyBlock)).toBe(needsResearch('Energy-Infused'));
+  });
+
+  it('does not count the unread points of a crew with no Terminal', () => {
+    const economy = new Economy(5, field(), evenStock(5));
+    economy.research.set(RESEARCH_STEPS[0]!.points, false);
+    expect(economy.upgradeRefusal(scrapBlock)).toBe(needsResearch('Reinforced Composite'));
+    economy.placed(packState(moduleShape(MODULE.terminal, 0), 1));
+    expect(economy.upgradeRefusal(scrapBlock)).toBeNull();
+  });
+
+  it('refuses a pool short of the better material, naming it, however much Scrap it holds', () => {
+    const economy = new Economy(5, field());
+    economy.research.set(RESEARCH_STEPS[0]!.points);
+    expect(economy.pool.amount(MATERIAL.scrap)).toBeGreaterThan(0);
+    expect(economy.upgradeRefusal(scrapBlock)).toBe(notEnough('Reinforced Composite'));
+  });
+
+  it('says what stops a piece that has no better self', () => {
+    const economy = new Economy(5, field(), evenStock(50));
+    economy.research.set(RESEARCH_STEPS[2]!.points);
+    expect(economy.upgradeRefusal(0)).toBe(NOTHING_TO_UPGRADE);
+    expect(economy.upgradeRefusal(energyBlock)).toBe(FULLY_UPGRADED);
+  });
+
+  it('is paid by the better piece’s price, and the old block gives nothing back', () => {
+    const economy = new Economy(5, field(), evenStock(5));
+    economy.research.set(RESEARCH_STEPS[0]!.points);
+    const step = upgradeStep(scrapBlock)!;
+    expect(economy.pay(step.to)).toBe(true);
+    expect(economy.read(createEconomyReading()).stock).toEqual([5, 4, 5, 5]);
   });
 });
 

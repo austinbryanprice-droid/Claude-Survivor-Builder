@@ -27,6 +27,7 @@ import { createEconomyReading } from '../shared/economy';
 import { createReading, type RestartKind, type SurvivalReading } from '../shared/survival-state';
 import { createVitalsReading, type VitalsReading } from '../shared/vitals-state';
 import { DEBRIS } from '../systems/economy/balance';
+import { upgradeStep } from '../systems/economy/build-rules';
 import { hitboxOf } from '../systems/survival/balance';
 import { createRoomPanel } from '../ui/room-panel';
 import { browserStore } from './browser-storage';
@@ -142,6 +143,12 @@ export interface MultiplayerDebug {
   block(x: number, y: number, z: number): CellState;
   place(x: number, y: number, z: number, state: CellState): void;
   breakBlock(x: number, y: number, z: number): void;
+  /**
+   * Asks the host to upgrade the block in a cell, as a press of E does: the command names the piece
+   * this screen shows there made one material better. `shown` names another piece, for a test of the
+   * host's refusal of a cell that is not what the player saw.
+   */
+  upgrade(x: number, y: number, z: number, shown?: CellState): void;
   /** Where the local player stands. */
   position(): { x: number; y: number; z: number };
   /**
@@ -405,6 +412,10 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     block: (x, y, z) => options.world.world().getBlock(x, y, z),
     place: (x, y, z, state) => hub.sendCommand({ type: 'place', x, y, z, state }),
     breakBlock: (x, y, z) => hub.sendCommand({ type: 'break', x, y, z }),
+    upgrade: (x, y, z, shown) => {
+      const state = shown ?? upgradeStep(options.world.world().getBlock(x, y, z))?.to ?? 1;
+      hub.sendCommand({ type: 'upgrade', x, y, z, state });
+    },
     position: () => {
       const { x, y, z } = here();
       return { x, y, z };
