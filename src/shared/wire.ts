@@ -366,13 +366,13 @@ export function decodeHostFrame(text: string): HostFrame | null {
       if (!Array.isArray(raw.pl) || raw.pl.length !== POOL_SLOTS || !isInt(raw.cap, 0, MAX_U31)) {
         return null;
       }
-      if (!isInt(raw.rp, 0, MAX_U31)) return null;
+      if (!isInt(raw.rp, 0, MAX_U31) || !isInt(raw.cl, 0, raw.rp)) return null;
       const stock: number[] = [];
       for (const amount of raw.pl as unknown[]) {
         if (!isInt(amount, 0, MAX_U31)) return null;
         stock.push(amount);
       }
-      return { t: 'ec', pl: stock, cap: raw.cap, rp: raw.rp };
+      return { t: 'ec', pl: stock, cap: raw.cap, rp: raw.rp, cl: raw.cl };
     }
     case 'nl': {
       if (!Array.isArray(raw.n) || raw.n.length > NET.maxDebris) return null;

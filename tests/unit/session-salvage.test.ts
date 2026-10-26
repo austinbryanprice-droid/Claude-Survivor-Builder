@@ -366,6 +366,7 @@ describe('what the host tells a guest about the economy', () => {
       pl: [START + stripYield(SEED, HEAP.index, 0), 0, 0, 0],
       cap: POOL.cap,
       rp: 0,
+      cl: 0,
     });
     expect(list[0]?.n).toHaveLength(FIELD.length);
     expect(list[0]?.n[HEAP.index]).toEqual([

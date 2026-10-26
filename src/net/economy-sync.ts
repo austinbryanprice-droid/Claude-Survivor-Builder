@@ -83,6 +83,7 @@ export class HostEconomyReport {
   private sentStock: number[] = [];
   private sentCap = -1;
   private sentResearch = -1;
+  private sentClaimed = -1;
   private sentAt = -Infinity;
   private listDirty = true;
 
@@ -121,6 +122,7 @@ export class HostEconomyReport {
     this.sentStock = [];
     this.sentCap = -1;
     this.sentResearch = -1;
+    this.sentClaimed = -1;
     this.sentAt = -Infinity;
     this.listDirty = true;
   }
@@ -149,11 +151,13 @@ export class HostEconomyReport {
     const changed =
       this.scratch.cap !== this.sentCap ||
       this.scratch.research !== this.sentResearch ||
+      this.scratch.claimed !== this.sentClaimed ||
       this.scratch.stock.some((amount, i) => amount !== this.sentStock[i]);
     if (changed && now - this.sentAt >= NET.poolIntervalMs) {
       this.sentAt = now;
       this.sentCap = this.scratch.cap;
       this.sentResearch = this.scratch.research;
+      this.sentClaimed = this.scratch.claimed;
       this.sentStock = [...this.scratch.stock];
       frames.push(this.poolFrame(economy));
     }
@@ -167,6 +171,7 @@ export class HostEconomyReport {
       pl: [...this.scratch.stock],
       cap: this.scratch.cap,
       rp: this.scratch.research,
+      cl: this.scratch.claimed,
     };
     return encodeFrame(frame);
   }
@@ -231,13 +236,15 @@ export class EconomyMirror implements EconomyView {
   private readonly stock = new Array<number>(POOL_SLOTS).fill(0);
   private cap = 0;
   private research = 0;
+  private claimed = 0;
   readonly debris = new DebrisMirror();
 
-  /** The pool and the research points as the host last said them. */
-  applyPool(stock: readonly number[], cap: number, research: number): void {
+  /** The pool and the research points (all of them, and the part a Terminal has read) as the host last said them. */
+  applyPool(stock: readonly number[], cap: number, research: number, claimed: number): void {
     for (let i = 0; i < POOL_SLOTS; i++) this.stock[i] = stock[i] ?? 0;
     this.cap = cap;
     this.research = research;
+    this.claimed = claimed;
   }
 
   /** A new run: nothing is known until the host speaks. */
@@ -245,6 +252,7 @@ export class EconomyMirror implements EconomyView {
     this.stock.fill(0);
     this.cap = 0;
     this.research = 0;
+    this.claimed = 0;
     this.debris.clear();
   }
 
@@ -252,7 +260,8 @@ export class EconomyMirror implements EconomyView {
     for (let i = 0; i < POOL_SLOTS; i++) out.stock[i] = this.stock[i] as number;
     out.cap = this.cap;
     out.research = this.research;
-    out.tier = tierAt(this.research);
+    out.claimed = this.claimed;
+    out.tier = tierAt(this.claimed);
     return out;
   }
 }

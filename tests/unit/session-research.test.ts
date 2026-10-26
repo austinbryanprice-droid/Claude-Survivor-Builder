@@ -37,8 +37,8 @@ describe('the research the host tells its guests', () => {
     const code = await room.openRoom();
     const ada = await room.join(code, 'Ada');
     await room.settle(400);
-    expect(reading(ada.session.economy)).toMatchObject({ research: 55, tier: 3 });
-    expect(reading(room.host.economy)).toMatchObject({ research: 55, tier: 3 });
+    expect(reading(ada.session.economy)).toMatchObject({ research: 55, claimed: 55, tier: 3 });
+    expect(reading(room.host.economy)).toMatchObject({ research: 55, claimed: 55, tier: 3 });
   });
 
   it('sends the points on the pool frame, to a guest that arrives late too', async () => {
@@ -47,7 +47,7 @@ describe('the research the host tells its guests', () => {
     const raw = await rawGuest(room, code);
     raw.link.sendControl(helloText());
     await room.settle(400);
-    expect(framesOf(raw, 'ec')[0]).toMatchObject({ rp: 21 });
+    expect(framesOf(raw, 'ec')[0]).toMatchObject({ rp: 21, cl: 21 });
   });
 
   it('tells a guest again when a dawn adds to the points, with nothing else in the pool changed', async () => {
@@ -65,13 +65,16 @@ describe('the research the host tells its guests', () => {
 
     const words = framesOf(raw, 'ec').slice(before);
     expect(words).toHaveLength(1);
-    expect(words[0]).toMatchObject({ rp: CLEAN });
+    expect(words[0]).toMatchObject({ rp: CLEAN, cl: 0 });
     expect(reading(ada.session.economy).research).toBe(CLEAN);
     expect(reading(room.host.economy).research).toBe(CLEAN);
   });
 
-  it('opens a tier on a guest’s screen at the dawn that reaches its row', async () => {
-    const { room } = arena({}, { research: RESEARCH_STEPS[0]!.points - CLEAN });
+  it('opens a tier on a guest’s screen at the dawn that reaches its row, while a Terminal stands', async () => {
+    const { room } = arena(
+      {},
+      { research: RESEARCH_STEPS[0]!.points - CLEAN, standing: () => true },
+    );
     const code = await room.openRoom();
     const ada = await room.join(code, 'Ada');
     await room.settle(400);
@@ -80,7 +83,28 @@ describe('the research the host tells its guests', () => {
     await room.settle(600);
     expect(reading(ada.session.economy)).toMatchObject({
       research: RESEARCH_STEPS[0]!.points,
+      claimed: RESEARCH_STEPS[0]!.points,
       tier: 2,
+    });
+  });
+
+  it('shows a guest the points of a dawn as earned and not as open while no Terminal stands', async () => {
+    const { room } = arena({}, { research: RESEARCH_STEPS[0]!.points - CLEAN });
+    const code = await room.openRoom();
+    const ada = await room.join(code, 'Ada');
+    await room.settle(400);
+    toDawn(room);
+    await room.settle(600);
+    const read = RESEARCH_STEPS[0]!.points - CLEAN;
+    expect(reading(ada.session.economy)).toMatchObject({
+      research: RESEARCH_STEPS[0]!.points,
+      claimed: read,
+      tier: 1,
+    });
+    expect(reading(room.host.economy)).toMatchObject({
+      research: RESEARCH_STEPS[0]!.points,
+      claimed: read,
+      tier: 1,
     });
   });
 
@@ -154,15 +178,15 @@ describe('a Research Terminal placed in the room', () => {
 
   it('reads the points the crew has earned the moment it stands, and opens what they reach', async () => {
     const { room, hostWorld, ada } = await crew();
+    await room.settle(400);
     expect(reading(room.host.economy)).toMatchObject({ research: UNREAD, claimed: 0, tier: 1 });
+    expect(reading(ada.session.economy)).toMatchObject({ research: UNREAD, claimed: 0, tier: 1 });
     place(ada, TERMINAL);
-    await room.settle(300);
+    await room.settle(400);
     expect(hostWorld.cells.size).toBe(1);
-    expect(reading(room.host.economy)).toMatchObject({
-      research: UNREAD,
-      claimed: UNREAD,
-      tier: 2,
-    });
+    const opened = { research: UNREAD, claimed: UNREAD, tier: 2 };
+    expect(reading(room.host.economy)).toMatchObject(opened);
+    expect(reading(ada.session.economy)).toMatchObject(opened);
   });
 
   it('reads nothing for a Terminal the host refuses, such as one the pool cannot pay for', async () => {
