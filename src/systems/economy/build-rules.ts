@@ -17,6 +17,7 @@ import {
   type EconomyReading,
 } from '../../shared/economy';
 import { DEBRIS } from './balance';
+import { moduleLock } from './research';
 
 /**
  * What the economy asks of a placement (SPEC section 9: one shared pool pays for all base
@@ -69,8 +70,8 @@ export function needsResearch(name: string): string {
  * Why `state` may not be placed by a crew that has researched up to `tier`, or null when its material
  * is open to them. A module's material byte is its level, not a material, so what opens a module is
  * the material that pays for it: the Terminal and the Basic Turret are paid in Scrap and never locked,
- * and the steps up the turret's ladder are opened by Composite and Alloy, as a block of them is. The
- * research that opens the other modules comes with them (5g, 5h).
+ * and the steps up the turret's ladder are opened by Composite and Alloy, as a block of them is. A
+ * module that belongs to a group of research is held back by that as well (`groupRefusal`).
  */
 export function lockedRefusal(tier: number, state: CellState): string | null {
   const price = pieceCost(state);
@@ -78,6 +79,16 @@ export function lockedRefusal(tier: number, state: CellState): string | null {
     ? MATERIALS.find((m) => m.id === price?.material)
     : materialOf(state);
   return material && material.tier > tier ? needsResearch(material.name) : null;
+}
+
+/**
+ * Why `state` may not be placed by a crew whose Research Terminal has read `claimed` points because
+ * the module belongs to a group the points do not reach yet (the Generator waits for Power), in the
+ * same words as a material not researched, or null when it is open to them or no group gates it.
+ */
+export function groupRefusal(claimed: number, state: CellState): string | null {
+  const module = moduleOfShape(stateShape(state));
+  return module && moduleLock(module.id, claimed) ? needsResearch(module.name) : null;
 }
 
 /**
@@ -161,11 +172,11 @@ export interface PlacementEconomy {
 }
 
 /**
- * Why the economy refuses a piece at a cell, in the host's order (a heap in the way, a material the
- * crew has not researched, then a pool that is short), read from the economy as this screen has it.
- * Null when it would accept. Where there is no pool to read (`cap` is 0: a host without a run, or the
- * guest's first moment before the host has said) nothing is charged and nothing is locked, as the
- * host charges and locks nothing there.
+ * Why the economy refuses a piece at a cell, in the host's order (a heap in the way, a material or a
+ * group of modules the crew has not researched, then a pool that is short), read from the economy as
+ * this screen has it. Null when it would accept. Where there is no pool to read (`cap` is 0: a host
+ * without a run, or the guest's first moment before the host has said) nothing is charged and nothing
+ * is locked, as the host charges and locks nothing there.
  */
 export function placementRefusal(
   economy: PlacementEconomy,
@@ -180,6 +191,7 @@ export function placementRefusal(
   if (pool.cap <= 0) return null;
   return (
     lockedRefusal(pool.tier, state) ??
+    groupRefusal(pool.claimed, state) ??
     shortfall((material) => pool.stock[poolSlot(material)] ?? 0, state)
   );
 }

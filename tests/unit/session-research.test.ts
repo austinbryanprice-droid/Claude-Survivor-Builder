@@ -229,3 +229,84 @@ describe('a Research Terminal placed in the room', () => {
     });
   });
 });
+
+describe('a guest building a Generator, which waits for the Power research', () => {
+  const GENERATOR = packState(moduleShape(MODULE.generator, 0), 1);
+  const TERMINAL = packState(moduleShape(MODULE.terminal, 0), 1);
+  /** The cell next to the first, clear of every heap. */
+  const BESIDE = { x: SPOT.x + 2, y: SPOT.y, z: SPOT.z };
+  const POWER = RESEARCH.groups[0]!.points;
+
+  /** A crew with Scrap for both modules, in a world that knows what stands in it, and `research` points earned and unread. */
+  async function crew(research = 0, stock = 100) {
+    const held: { world?: TestWorld } = {};
+    const built = arena(
+      {},
+      { stock, standing: (module) => !!held.world && moduleStands(held.world, module) },
+    );
+    held.world = built.hostWorld;
+    const code = await built.room.openRoom();
+    const ada = await built.room.join(code, 'Ada');
+    ada.session.publishState(at(SPOT.x - 2, SPOT.y, SPOT.z));
+    await built.room.settle(100);
+    sim(built.room).economy!.research.set(research, false);
+    const seen: string[] = [];
+    ada.session.onRejected((rejection) => seen.push(rejection.reason));
+    return { ...built, ada, seen };
+  }
+  const place = (
+    ada: Awaited<ReturnType<typeof crew>>['ada'],
+    state: number,
+    at: { x: number; y: number; z: number } = SPOT,
+  ) => ada.session.sendCommand({ type: 'place', x: at.x, y: at.y, z: at.z, state });
+
+  it('is told the Generator needs research, and nothing is built or paid', async () => {
+    const { room, hostWorld, ada, seen } = await crew();
+    place(ada, GENERATOR);
+    await room.settle(300);
+    expect(seen).toEqual(['Generator needs research']);
+    expect(hostWorld.cells.size).toBe(0);
+    expect(reading(room.host.economy).stock[0]).toBe(100);
+  });
+
+  it('is turned away while the points are earned and no Terminal has read them, even when they reach the row', async () => {
+    const { room, hostWorld, ada, seen } = await crew(POWER + 4);
+    await room.settle(400);
+    expect(reading(ada.session.economy)).toMatchObject({ research: POWER + 4, claimed: 0 });
+    place(ada, GENERATOR);
+    await room.settle(300);
+    expect(seen).toEqual(['Generator needs research']);
+    expect(hostWorld.cells.size).toBe(0);
+  });
+
+  it('builds the Generator once a Terminal has been placed and has read the points, and pays 40 Scrap', async () => {
+    const { room, hostWorld, ada, seen } = await crew(POWER + 4);
+    place(ada, TERMINAL);
+    await room.settle(300);
+    place(ada, GENERATOR, BESIDE);
+    await room.settle(300);
+    expect(seen).toEqual([]);
+    expect(hostWorld.cells.size).toBe(2);
+    expect(hostWorld.cells.get(`${BESIDE.x},${BESIDE.y},${BESIDE.z}`)).toBe(GENERATOR);
+    // 40 for the Terminal and 40 for the Generator, from 100.
+    expect(reading(room.host.economy).stock[0]).toBe(20);
+    expect(reading(ada.session.economy).stock[0]).toBe(20);
+  });
+
+  it('opens at the first dawn once a Terminal stands, and is built after it', async () => {
+    const { room, hostWorld, ada, seen } = await crew(0);
+    place(ada, TERMINAL);
+    await room.settle(300);
+    place(ada, GENERATOR, BESIDE);
+    await room.settle(300);
+    expect(seen).toEqual(['Generator needs research']);
+    expect(hostWorld.cells.size).toBe(1);
+    toDawn(room);
+    await room.settle(600);
+    expect(reading(ada.session.economy)).toMatchObject({ research: CLEAN, claimed: CLEAN });
+    place(ada, GENERATOR, BESIDE);
+    await room.settle(300);
+    expect(seen).toEqual(['Generator needs research']);
+    expect(hostWorld.cells.size).toBe(2);
+  });
+});

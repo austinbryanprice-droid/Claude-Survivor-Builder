@@ -16,7 +16,7 @@ import {
 import { wrapBearing } from './player-hud/format';
 import { PlayerHud, type HotbarSlot, type PlayerHudState } from './player-hud/player-hud';
 import { chargesForHud, clockForHud, coreForHud, downForHud, objectiveForRun } from './run-hud';
-import { ResearchPill, lockForPiece, slotLocked } from './research-hud';
+import { ResearchPill, lockForPiece, moduleSlotLocked, slotLocked } from './research-hud';
 import { ladderForHud, terminalPrompt } from './terminal-hud';
 import { FULL_VITALS, vitalsForHud } from './vitals-hud';
 
@@ -125,9 +125,12 @@ export function createPlaceholderHud(
           slot.locked = pool !== null && slotLocked(material.id, pool);
         }
       });
-      // The module slot draws the module the shape key has chosen.
+      // The module slot draws the module the shape key has chosen, behind a padlock while its research is shut.
       const modules = row[MODULE_SLOT_INDEX];
-      if (modules) modules.icon = moduleSlot(hands.module).icon;
+      if (modules) {
+        modules.icon = moduleSlot(hands.module).icon;
+        modules.locked = pool !== null && moduleSlotLocked(hands.module, pool);
+      }
       const state: PlayerHudState = {
         health: own.health,
         healthTone: own.healthTone,

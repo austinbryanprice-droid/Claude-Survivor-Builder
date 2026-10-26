@@ -1,4 +1,4 @@
-import { MATERIAL } from '../../shared/blocks';
+import { MATERIAL, MODULE } from '../../shared/blocks';
 
 /**
  * Every number that shapes the economy, in one table so it can be tuned and tested without
@@ -113,14 +113,20 @@ export const RESEARCH = {
   /** Extra for a night in which the Core took no damage at all (the spec's small bonus for low base damage). */
   cleanNight: 2,
   /**
-   * What the points open, by total points in rising order: the material tier they unlock. The Power
-   * group (10 points) and the module upgrades (40) join with the modules that use them.
+   * What the points open, by total points in rising order: the material tier they unlock. The module
+   * upgrades (40) join with the modules that use them.
    */
   steps: [
     { points: 20, tier: 2 },
     { points: 55, tier: 3 },
     { points: 100, tier: 4 },
   ],
+  /**
+   * What the points open besides a material: a group of modules, by the total points that open it (the
+   * notes: a 10-point research row opens the Generator and the Power Node). The first night survived
+   * pays for it. The Generator is in it (5g1) and the Power Node joins it (5g2).
+   */
+  groups: [{ id: 'power', name: 'Power', points: 10, modules: [MODULE.generator] }],
   /** The most points the `?research=` switch or the debug page can set. */
   max: 9999,
 } as const;

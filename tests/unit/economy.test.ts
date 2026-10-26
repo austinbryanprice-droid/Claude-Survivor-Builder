@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MATERIAL, MODULE, SHAPE, moduleShape, packState } from '../../src/shared/blocks';
 import { createEconomyReading, type DebrisNode } from '../../src/shared/economy';
-import { DEBRIS, POOL } from '../../src/systems/economy/balance';
+import { DEBRIS, POOL, RESEARCH } from '../../src/systems/economy/balance';
 import {
   DEBRIS_IN_THE_WAY,
   FULLY_UPGRADED,
@@ -500,6 +500,25 @@ describe('the research an economy keeps', () => {
     );
     economy.placed(terminal);
     expect(economy.placementRefusal(0, 20, 0, compositeBlock)).toBeNull();
+  });
+
+  it('keeps the Generator shut until a Terminal has read the Power points, however many are earned', () => {
+    const generator = packState(moduleShape(MODULE.generator, 0), 1);
+    const economy = new Economy(5, field(), evenStock(50));
+    expect(economy.placementRefusal(0, 20, 0, generator)).toBe(needsResearch('Generator'));
+    economy.research.set(9, false);
+    expect(economy.placementRefusal(0, 20, 0, generator)).toBe(needsResearch('Generator'));
+    // Earned and unread: nothing is open.
+    economy.research.set(RESEARCH.groups[0]!.points, false);
+    expect(economy.placementRefusal(0, 20, 0, generator)).toBe(needsResearch('Generator'));
+    economy.placed(terminal);
+    expect(economy.placementRefusal(0, 20, 0, generator)).toBeNull();
+    // Locked outranks short, and the group opens a module that costs Scrap whatever the tier.
+    expect(economy.research.tier).toBe(1);
+    economy.pool.set(MATERIAL.scrap, 39);
+    expect(economy.placementRefusal(0, 20, 0, generator)).toBe(notEnough('Scrap'));
+    economy.research.set(0);
+    expect(economy.placementRefusal(0, 20, 0, generator)).toBe(needsResearch('Generator'));
   });
 
   it('has a placed Research Terminal read every point the crew has earned', () => {

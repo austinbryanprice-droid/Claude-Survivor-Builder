@@ -30,9 +30,13 @@ const [COMPOSITE_AT, ALLOY_AT, ENERGY_AT] = RESEARCH.steps.map((step) => step.po
   number,
   number,
 ];
+/** The points the Power row asks for, below the first material: it opens the Generator, and the first night survived pays for it. */
+const POWER_AT = RESEARCH.groups[0].points;
 /** What a night survived gives, with and without the bonus for a Core nothing touched. */
 const NIGHT = RESEARCH.perNight;
 const CLEAN_NIGHT = RESEARCH.perNight + RESEARCH.cleanNight;
+/** The messages of the research: the points that arrive, what a Terminal opens with them, and that one is missing. */
+const RESEARCH_TOAST = new RegExp(`^Research \\+|unlocked$|^${TERMINAL_NEEDED}$`);
 
 /** `extra` adds switches to the page's address, such as `&night=6` for a run that starts at a later night. */
 async function open(page: Page, extra = ''): Promise<string[]> {
@@ -209,7 +213,8 @@ test.describe('research', () => {
 
     await test.step('in Build Mode the pill says how far the points are from the next row, and the caption how far the held material is', async () => {
       await wait(page.locator('.ph-research')).toBeVisible();
-      await expect(page.locator('.ph-research-value')).toHaveText(`0/${COMPOSITE_AT}`);
+      // The Power row is the nearest on the ladder; the material in hand is further off.
+      await expect(page.locator('.ph-research-value')).toHaveText(`0/${POWER_AT}`);
       await page.keyboard.press('Digit2');
       await wait(slotAt(page, 1)).toHaveAttribute('data-selected', '');
       await poll(async () => (await aimAt(page, -0.5)).placeRefusal).toBe(
@@ -240,10 +245,10 @@ test.describe('research', () => {
     await test.step('the points open Composite: the padlock goes, the pill and the toasts tell, and the block can be placed', async () => {
       await setResearch(page, COMPOSITE_AT);
       await poll(() => pool(page)).toMatchObject({ research: COMPOSITE_AT, tier: 2 });
-      // The points first, then what they opened, each for its turn.
+      // The points first, then what they opened (the rows they pass, lowest first), each for its turn.
       await poll(async () =>
         (await toasts(page)).filter((text) => /^Research \+|unlocked$/.test(text)),
-      ).toEqual([`Research +${COMPOSITE_AT}`, 'Reinforced Composite unlocked']);
+      ).toEqual([`Research +${COMPOSITE_AT}`, 'Power unlocked', 'Reinforced Composite unlocked']);
       await wait(slotAt(page, 1)).not.toHaveAttribute('data-locked', '');
       await wait(slotAt(page, 1).locator('.ph-count')).toHaveText('5');
       await expect(page.locator('.ph-research-value')).toHaveText(`${COMPOSITE_AT}/${ALLOY_AT}`);
@@ -289,17 +294,20 @@ test.describe('research', () => {
     // The messages of a night (its fall, its dawn) come with the research's, each shown in turn.
     await recordToasts(page);
 
-    await test.step('the first night, with the Core untouched, gives the whole award at its dawn and no sooner', async () => {
+    await test.step('the first night, with the Core untouched, gives the whole award at its dawn and no sooner, and it reaches the Power row, which waits for a Terminal', async () => {
       expect((await pool(page)).research).toBe(0);
+      expect(CLEAN_NIGHT).toBeGreaterThanOrEqual(POWER_AT);
+      expect(CLEAN_NIGHT).toBeLessThan(COMPOSITE_AT);
       await toDay(page, 2);
       await wait(page.locator('.ph-clock')).toContainText('Day 2');
-      // No Terminal has read them, though they reach no row yet, so there is nothing to wait for.
+      // No Terminal has read them, so the row they reach stays shut and the HUD says why.
       await poll(() => pool(page)).toMatchObject({ research: CLEAN_NIGHT, claimed: 0, tier: 1 });
-      await poll(() => toasts(page)).toContain(`Research +${CLEAN_NIGHT}`);
-      expect(await toasts(page)).not.toContain(TERMINAL_NEEDED);
+      await poll(async () =>
+        (await toasts(page)).filter((text) => RESEARCH_TOAST.test(text)),
+      ).toEqual([`Research +${CLEAN_NIGHT}`, TERMINAL_NEEDED]);
     });
 
-    await test.step('a night the Core is hurt in gives the plain award, and the dawn that reaches 20 says a Terminal has to read them', async () => {
+    await test.step('a night the Core is hurt in gives the plain award, and the dawn that reaches 20 says again that a Terminal has to read them', async () => {
       // Ten seconds into the second night, and a scratch on the Core.
       await page.evaluate(
         (to) => {
@@ -317,19 +325,33 @@ test.describe('research', () => {
         claimed: 0,
         tier: 1,
       });
-      await poll(() => toasts(page)).toContain(`Research +${NIGHT}`);
-      await poll(() => toasts(page)).toContain(TERMINAL_NEEDED);
-      expect(await toasts(page)).not.toContain('Reinforced Composite unlocked');
+      await poll(async () =>
+        (await toasts(page)).filter((text) => RESEARCH_TOAST.test(text)),
+      ).toEqual([
+        `Research +${CLEAN_NIGHT}`,
+        TERMINAL_NEEDED,
+        `Research +${NIGHT}`,
+        TERMINAL_NEEDED,
+      ]);
     });
 
-    await test.step('a Terminal built then reads them, and Composite opens', async () => {
+    await test.step('a Terminal built then reads them, and the Power row and Composite open, in that order', async () => {
       await buildTerminal(page);
       await poll(() => pool(page)).toMatchObject({
         research: CLEAN_NIGHT + NIGHT,
         claimed: CLEAN_NIGHT + NIGHT,
         tier: 2,
       });
-      await poll(() => toasts(page)).toContain('Reinforced Composite unlocked');
+      await poll(async () =>
+        (await toasts(page)).filter((text) => RESEARCH_TOAST.test(text)),
+      ).toEqual([
+        `Research +${CLEAN_NIGHT}`,
+        TERMINAL_NEEDED,
+        `Research +${NIGHT}`,
+        TERMINAL_NEEDED,
+        'Power unlocked',
+        'Reinforced Composite unlocked',
+      ]);
     });
 
     await test.step('the card at the end of the run counts every point earned', async () => {

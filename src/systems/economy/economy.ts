@@ -17,6 +17,7 @@ import { hash3 } from '../../shared/hash';
 import { POOL } from './balance';
 import {
   DEBRIS_IN_THE_WAY,
+  groupRefusal,
   heapInTheWay,
   lockedRefusal,
   pieceCost,
@@ -181,13 +182,14 @@ export class Economy {
 
   /**
    * Why the crew cannot place `state` at a cell, in the host's words, or null when it can: a heap
-   * of debris lying there keeps the cell clear, the piece's material must be researched, and the
-   * pool must hold what the piece costs.
+   * of debris lying there keeps the cell clear, the piece's material (and, for a module, its group)
+   * must be researched, and the pool must hold what the piece costs.
    */
   placementRefusal(x: number, y: number, z: number, state: CellState): string | null {
     if (heapInTheWay(this, x, y, z)) return DEBRIS_IN_THE_WAY;
     return (
       lockedRefusal(this.research.tier, state) ??
+      groupRefusal(this.research.claimed, state) ??
       shortfall((material) => this.pool.amount(material), state)
     );
   }

@@ -9,6 +9,7 @@ import {
   TERMINAL_NEEDED,
   lockForPiece,
   lockText,
+  moduleSlotLocked,
   researchForHud,
   researchWaiting,
   slotLocked,
@@ -35,7 +36,7 @@ describe('the research pill', () => {
     expect(researchForHud(0)).toEqual({
       points: 0,
       fraction: 0,
-      value: '0/20',
+      value: '0/10',
       label: 'Research',
       tone: 'rising',
       gains: 0,
@@ -43,6 +44,12 @@ describe('the research pill', () => {
     expect(researchForHud(12)).toMatchObject({ value: '12/20', fraction: 0.6 });
     expect(researchForHud(20)).toMatchObject({ value: '20/55', tone: 'rising' });
     expect(researchForHud(54).fraction).toBeCloseTo(54 / 55);
+  });
+
+  it('counts toward the Power group first, which opens before the first material does', () => {
+    expect(researchForHud(0)).toMatchObject({ value: '0/10', fraction: 0 });
+    expect(researchForHud(9)).toMatchObject({ value: '9/10', fraction: 0.9 });
+    expect(researchForHud(10)).toMatchObject({ value: '10/20', fraction: 0.5 });
   });
 
   it('shows the points alone, full, once the whole ladder is climbed', () => {
@@ -72,7 +79,9 @@ describe('the research pill', () => {
       gains: 0,
     });
     // Points that reach no row yet are not waiting for anything, read or not.
-    expect(researchForHud(12, 0, 0)).toMatchObject({ label: 'Research', tone: 'rising' });
+    expect(researchForHud(9, 0, 0)).toMatchObject({ label: 'Research', tone: 'rising' });
+    // The first row is a group of modules, and it waits for a Terminal as a material does.
+    expect(researchForHud(12, 0, 0)).toMatchObject({ label: 'Needs Terminal', tone: 'waiting' });
     // Read points are not waiting, and neither are those that reach no row the read ones have not.
     expect(researchForHud(24, 0, 20)).toMatchObject({ label: 'Research', tone: 'rising' });
     expect(researchForHud(24, 0, 24)).toMatchObject({ label: 'Research', tone: 'rising' });
@@ -89,8 +98,10 @@ describe('the research pill', () => {
   });
 
   it('tells waiting points from open ones by the rows they reach', () => {
-    expect(researchWaiting(19, 0)).toBe(false);
-    expect(researchWaiting(20, 0)).toBe(true);
+    expect(researchWaiting(9, 0)).toBe(false);
+    expect(researchWaiting(10, 0)).toBe(true);
+    expect(researchWaiting(19, 10)).toBe(false);
+    expect(researchWaiting(20, 10)).toBe(true);
     expect(researchWaiting(20, 20)).toBe(false);
     expect(researchWaiting(54, 20)).toBe(false);
     expect(researchWaiting(55, 20)).toBe(true);
@@ -174,7 +185,14 @@ describe('the messages about research', () => {
   it('tell the points that arrived', () => {
     const watcher = new ResearchWatcher();
     watcher.update(reading(0));
-    expect(watcher.update(reading(12))).toEqual(['Research +12']);
+    expect(watcher.update(reading(9))).toEqual(['Research +9']);
+    expect(watcher.update(reading(9))).toEqual([]);
+  });
+
+  it('tell the group of modules the points opened, as they tell a material', () => {
+    const watcher = new ResearchWatcher();
+    watcher.update(reading(0));
+    expect(watcher.update(reading(12))).toEqual(['Research +12', 'Power unlocked']);
     expect(watcher.update(reading(12))).toEqual([]);
   });
 
@@ -186,11 +204,12 @@ describe('the messages about research', () => {
     expect(watcher.update(reading(60))).toEqual(['Research +24', 'Advanced Alloy unlocked']);
   });
 
-  it('tell every tier a jump opened, in the order of the ladder', () => {
+  it('tell every row a jump opened, in the order of the ladder', () => {
     const watcher = new ResearchWatcher();
     watcher.update(reading(0));
     expect(watcher.update(reading(120))).toEqual([
       'Research +120',
+      'Power unlocked',
       'Reinforced Composite unlocked',
       'Advanced Alloy unlocked',
       'Energy-Infused unlocked',
@@ -201,8 +220,12 @@ describe('the messages about research', () => {
     const watcher = new ResearchWatcher();
     watcher.update(reading(60));
     expect(watcher.update(reading(0))).toEqual([]);
-    expect(watcher.update(reading(12))).toEqual(['Research +12']);
-    expect(watcher.update(reading(24))).toEqual(['Research +12', 'Reinforced Composite unlocked']);
+    expect(watcher.update(reading(9))).toEqual(['Research +9']);
+    expect(watcher.update(reading(24))).toEqual([
+      'Research +15',
+      'Power unlocked',
+      'Reinforced Composite unlocked',
+    ]);
   });
 
   it('tell that points are waiting when they reach a row and no Terminal has read them', () => {
@@ -217,9 +240,10 @@ describe('the messages about research', () => {
   it('do not ask for a Terminal for points that reach no row, or that one has read', () => {
     const watcher = new ResearchWatcher();
     watcher.update(reading(0, 400, 0));
-    expect(watcher.update(reading(12, 400, 0))).toEqual(['Research +12']);
+    expect(watcher.update(reading(9, 400, 0))).toEqual(['Research +9']);
     expect(watcher.update(reading(24, 400, 24))).toEqual([
-      'Research +12',
+      'Research +15',
+      'Power unlocked',
       'Reinforced Composite unlocked',
     ]);
   });
@@ -228,6 +252,7 @@ describe('the messages about research', () => {
     const watcher = new ResearchWatcher();
     watcher.update(reading(60, 400, 0));
     expect(watcher.update(reading(60, 400, 60))).toEqual([
+      'Power unlocked',
       'Reinforced Composite unlocked',
       'Advanced Alloy unlocked',
     ]);
@@ -307,6 +332,34 @@ describe('the lock on a piece', () => {
     expect(lockForPiece(packState(moduleShape(MODULE.terminal, 0), 1), reading(0))).toBeNull();
   });
 
+  it('names the module, not its price, for a module that waits on a group of research', () => {
+    const generator = packState(moduleShape(MODULE.generator, 0), 1);
+    // The Generator is paid in Scrap, so only its group can hold it back.
+    expect(lockForPiece(generator, reading(0))).toEqual({
+      name: 'Generator',
+      have: 0,
+      need: 10,
+      terminal: false,
+    });
+    expect(lockForPiece(generator, reading(9))).toMatchObject({
+      have: 9,
+      need: 10,
+      terminal: false,
+    });
+    expect(lockForPiece(generator, reading(12, 400, 0))).toEqual({
+      name: 'Generator',
+      have: 12,
+      need: 10,
+      terminal: true,
+    });
+    expect(lockForPiece(generator, reading(12, 400, 9))).toMatchObject({ terminal: true });
+    expect(lockForPiece(generator, reading(10))).toBeNull();
+    expect(lockForPiece(generator, reading(0, 0))).toBeNull();
+    expect(lockText({ name: 'Generator', have: 4, need: 10, terminal: false })).toBe(
+      'Needs research · 4 of 10',
+    );
+  });
+
   it('says the points the crew has and the points that open it', () => {
     expect(lockText({ name: 'Reinforced Composite', have: 12, need: 20, terminal: false })).toBe(
       'Needs research · 12 of 20',
@@ -328,6 +381,17 @@ describe('the lock on a piece', () => {
     expect(slotLocked(MATERIAL.energy, reading(99))).toBe(true);
     expect(slotLocked(MATERIAL.energy, reading(100))).toBe(false);
     expect(slotLocked(MATERIAL.energy, reading(0, 0))).toBe(false);
+  });
+
+  it('closes the module slot while the module in it waits on research no Terminal has read', () => {
+    expect(moduleSlotLocked(MODULE.generator, reading(9))).toBe(true);
+    expect(moduleSlotLocked(MODULE.generator, reading(10))).toBe(false);
+    expect(moduleSlotLocked(MODULE.generator, reading(12, 400, 9))).toBe(true);
+    expect(moduleSlotLocked(MODULE.generator, reading(0, 0))).toBe(false);
+    // The Terminal and the Basic Turret are not in a group, so nothing holds them back.
+    expect(moduleSlotLocked(MODULE.terminal, reading(0))).toBe(false);
+    expect(moduleSlotLocked(MODULE.turret, reading(0))).toBe(false);
+    expect(moduleSlotLocked(99, reading(0))).toBe(false);
   });
 
   it('keeps a slot closed while the points that would open it have not been read', () => {

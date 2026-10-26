@@ -101,6 +101,11 @@ export function blockIcon(piece: CellState): IconId | null {
   return (material && kind && kind !== 'module' && BLOCK_ICONS[kind][material.id]) || null;
 }
 
+/** The icon of a module (a `MODULE` id), or null when the HUD has none. */
+export function moduleIcon(module: number): IconId | null {
+  return MODULE_ICONS[module] ?? null;
+}
+
 /** The hotbar slot that holds a piece: its icon on the cyan grid of placeable items. */
 export function blockSlot(piece: CellState): HotbarSlot {
   return { icon: blockIcon(piece), blueprint: true };
@@ -118,7 +123,7 @@ export function blockSlotsByKind(): ReadonlyMap<BlockKind, readonly HotbarSlot[]
 
 /** The module slot as it looks while it holds this module: the module's icon on the cyan grid. */
 export function moduleSlot(module: number): HotbarSlot {
-  return { icon: MODULE_ICONS[module] ?? null, blueprint: true };
+  return { icon: moduleIcon(module), blueprint: true };
 }
 
 /** Where the module slot sits on the hotbar: after the block slots and the blaster (the building hands' `MODULE_SLOT` is the same number). */

@@ -1518,7 +1518,8 @@ test.describe('multiplayer', () => {
       }
 
       // The host's points reach the guest, who works out the tier as the host does: Composite opens on
-      // both screens and Alloy does not, and both are told, the points first and then what they opened.
+      // both screens and Alloy does not, and both are told, the points first and then what they opened
+      // (the Power row on the way, since it asks for fewer points than the first material).
       await setResearch(compositeAt);
       for (const p of everyone) {
         await expect
@@ -1534,7 +1535,7 @@ test.describe('multiplayer', () => {
               message: `${p.name} is told`,
             },
           )
-          .toEqual([`Research +${compositeAt}`, 'Reinforced Composite unlocked']);
+          .toEqual([`Research +${compositeAt}`, 'Power unlocked', 'Reinforced Composite unlocked']);
       }
 
       // Both materials are in the pool, so only the points decide. Ada asks past her screen: the host
@@ -1626,8 +1627,8 @@ test.describe('multiplayer', () => {
           .toEqual([`Research +${compositeAt}`, 'Needs a Research Terminal']);
       }
 
-      // Ada builds a Terminal: the host reads the points the moment it stands, and Composite opens on both
-      // screens, each told what it opened.
+      // Ada builds a Terminal: the host reads the points the moment it stands, and the Power row and
+      // Composite open on both screens, each told what it opened.
       const cell = await ada.page.evaluate(
         ([state]) => window.__ashbound!.mp!.placeNear(4, 0, state!),
         [TERMINAL] as const,
@@ -1644,6 +1645,7 @@ test.describe('multiplayer', () => {
           .toEqual([
             `Research +${compositeAt}`,
             'Needs a Research Terminal',
+            'Power unlocked',
             'Reinforced Composite unlocked',
           ]);
       }
