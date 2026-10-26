@@ -51,6 +51,10 @@ export interface BuildHudInput {
   readonly salvageGrade: number;
   /** The Research Terminal: 'aimed' when the cursor is on one the interact key would open, 'open' while its ladder is up, else 'none'. */
   readonly terminal: 'none' | 'aimed' | 'open';
+  /** The piece the interact key would make of the block the cursor is on, one material up, or 0 when it offers none. */
+  readonly upgrade: CellState;
+  /** Why the host would refuse that upgrade (its words), or null when it would go. Meaningful when `upgrade` is not 0. */
+  readonly upgradeRefusal: string | null;
 }
 
 export interface BuildHudSource {
@@ -162,6 +166,30 @@ export function interactPrompt(strips: number, grade: number = MATERIAL.scrap): 
   };
 }
 
+/**
+ * What the interact key would do for a block the cursor is on that has a better material: the key,
+ * the material the block would become and what that costs, or, when the host would refuse, why, in
+ * red. A material the crew has not researched says how many points it has and how many open it
+ * (`lock`), in place of the host's words for the same thing. Null when `to` names no material.
+ */
+export function upgradePrompt(
+  to: CellState,
+  refusal: string | null,
+  lock: HudLock | null = null,
+): HudInteract | null {
+  const material = materialOf(to);
+  if (!material) return null;
+  const label = `Upgrade to ${material.name}`;
+  if (refusal === null) return { key: INTERACT_KEY, label, detail: `Cost ${costText(to)}` };
+  const closed = lock !== null && refusal === needsResearch(lock.name);
+  return {
+    key: INTERACT_KEY,
+    label,
+    detail: closed ? lockText(lock) : refusalText(refusal),
+    tone: 'warn',
+  };
+}
+
 /** How long the name of a newly chosen piece stays up outside Build Mode, in seconds. */
 export const NAME_SECONDS = 1.6;
 
@@ -183,7 +211,7 @@ export const BUILD_KEYS: readonly KeyRow[] = [
   { keys: ['Wheel'], label: 'Next block' },
   { keys: ['Q'], label: 'Block, slab or wedge' },
   { keys: ['R'], label: 'Turn it' },
-  { keys: [INTERACT_KEY], label: 'Strip debris' },
+  { keys: [INTERACT_KEY], label: 'Strip debris, upgrade' },
   { keys: ['B'], label: 'Leave Build Mode' },
   { keys: ['Esc'], label: 'Free the mouse' },
 ];

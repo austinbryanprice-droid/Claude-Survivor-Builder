@@ -30,9 +30,16 @@ import {
   interactPrompt,
   moduleSlot,
   refusalText,
+  upgradePrompt,
   type BuildHudInput,
 } from '../../src/ui/build-hud';
-import { DEBRIS_IN_THE_WAY, needsResearch, notEnough } from '../../src/systems/economy/build-rules';
+import {
+  DEBRIS_IN_THE_WAY,
+  FULLY_UPGRADED,
+  NOTHING_TO_UPGRADE,
+  needsResearch,
+  notEnough,
+} from '../../src/systems/economy/build-rules';
 import { VITALS } from '../../src/systems/survival/balance';
 import { ICON_IDS, ICON_SPRITE } from '../../src/ui/player-hud/icons';
 
@@ -54,6 +61,8 @@ function hands(overrides: Partial<BuildHudInput> = {}): BuildHudInput {
     salvage: 0,
     salvageGrade: 0,
     terminal: 'none',
+    upgrade: 0,
+    upgradeRefusal: null,
     ...overrides,
   };
 }
@@ -221,7 +230,64 @@ describe('the prompt under the crosshair', () => {
 
   it('is in the key list of Build Mode, and the key is the one the game listens for', () => {
     expect(INTERACT_KEY).toBe('E');
-    expect(BUILD_KEYS).toContainEqual({ keys: ['E'], label: 'Strip debris' });
+    expect(BUILD_KEYS).toContainEqual({ keys: ['E'], label: 'Strip debris, upgrade' });
+  });
+});
+
+describe('the upgrade prompt under the crosshair', () => {
+  const composite = packState(SHAPE.cube, MATERIAL.composite);
+
+  it('names the key, the material the block becomes and what that costs', () => {
+    expect(upgradePrompt(composite, null)).toEqual({
+      key: INTERACT_KEY,
+      label: 'Upgrade to Reinforced Composite',
+      detail: `Cost ${costText(composite)}`,
+    });
+    expect(upgradePrompt(ALLOY, null)?.label).toBe('Upgrade to Advanced Alloy');
+  });
+
+  it('is the same for a slab or a wedge: the material is what changes', () => {
+    const slab = packState(slabShape(false), MATERIAL.alloy);
+    expect(upgradePrompt(slab, null)?.label).toBe('Upgrade to Advanced Alloy');
+    expect(upgradePrompt(slab, null)?.detail).toBe(`Cost ${costText(slab)}`);
+  });
+
+  it('says why in red when the host would refuse, in the words the caption uses', () => {
+    const short = upgradePrompt(composite, notEnough('Reinforced Composite'));
+    expect(short).toMatchObject({
+      label: 'Upgrade to Reinforced Composite',
+      detail: 'Not enough Reinforced Composite',
+      tone: 'warn',
+    });
+    expect(upgradePrompt(composite, 'a player is in the way')?.detail).toBe(
+      'A player is in the way',
+    );
+  });
+
+  it('tells a closed material as the lock does, in place of the host’s words', () => {
+    const refusal = needsResearch('Reinforced Composite');
+    const behind = { name: 'Reinforced Composite', have: 5, need: 20, terminal: false };
+    expect(upgradePrompt(composite, refusal, behind)).toMatchObject({
+      detail: 'Needs research · 5 of 20',
+      tone: 'warn',
+    });
+    const unread = { ...behind, have: 25, terminal: true };
+    expect(upgradePrompt(composite, refusal, unread)?.detail).toBe('Needs a Research Terminal');
+    // Without a lock to read, the host's words stand.
+    expect(upgradePrompt(composite, refusal)?.detail).toBe('Reinforced Composite needs research');
+    // A lock on another material says nothing of this refusal.
+    expect(upgradePrompt(composite, notEnough('Reinforced Composite'), behind)?.detail).toBe(
+      'Not enough Reinforced Composite',
+    );
+  });
+
+  it('is nothing for a state that names no material', () => {
+    expect(upgradePrompt(0, null)).toBeNull();
+  });
+
+  it('has words for the two reasons only a key press can raise', () => {
+    expect(refusalText(NOTHING_TO_UPGRADE)).toBe('Nothing to upgrade there');
+    expect(refusalText(FULLY_UPGRADED)).toBe('Already fully upgraded');
   });
 });
 

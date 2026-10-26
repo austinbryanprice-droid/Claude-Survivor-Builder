@@ -47,6 +47,8 @@ export interface HudInteract {
   readonly label: string;
   /** What is worth knowing before pressing it: "3 strips left". */
   readonly detail: string;
+  /** 'warn' draws the detail in red, for a key that would be refused; absent means 'info'. */
+  readonly tone?: 'info' | 'warn';
 }
 
 /**
@@ -784,7 +786,9 @@ export class PlayerHud {
       }
     }
     const interact = state.interact ?? null;
-    const interactKey = interact ? `${interact.key}|${interact.label}|${interact.detail}` : '';
+    const interactKey = interact
+      ? `${interact.key}|${interact.label}|${interact.detail}|${interact.tone ?? 'info'}`
+      : '';
     if (interactKey !== this.lastInteract) {
       this.lastInteract = interactKey;
       this.interact.hidden = interact === null;
@@ -792,6 +796,7 @@ export class PlayerHud {
         this.interactKey.textContent = interact.key;
         this.interactLabel.textContent = interact.label;
         this.interactDetail.textContent = interact.detail;
+        this.interact.dataset.tone = interact.tone ?? 'info';
       }
     }
     this.ladder.update(state.ladder ?? null);

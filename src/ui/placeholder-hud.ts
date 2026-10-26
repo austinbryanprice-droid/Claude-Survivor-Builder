@@ -10,6 +10,7 @@ import {
   blockSlotsByKind,
   interactPrompt,
   moduleSlot,
+  upgradePrompt,
   type BuildHudSource,
 } from './build-hud';
 import { wrapBearing } from './player-hud/format';
@@ -155,7 +156,14 @@ export function createPlaceholderHud(
         interact:
           hands.terminal === 'aimed'
             ? terminalPrompt(pool ?? noPool)
-            : interactPrompt(hands.salvage, hands.salvageGrade),
+            : (interactPrompt(hands.salvage, hands.salvageGrade) ??
+              (hands.upgrade === 0
+                ? null
+                : upgradePrompt(
+                    hands.upgrade,
+                    hands.upgradeRefusal,
+                    pool ? lockForPiece(hands.upgrade, pool) : null,
+                  ))),
         ladder: hands.terminal === 'open' ? ladderForHud(pool ?? noPool) : null,
         crosshair: hands.crosshair,
         hitMarker: { count: hands.hits, kill: hands.kill },

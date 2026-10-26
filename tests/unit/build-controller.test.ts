@@ -38,7 +38,12 @@ import type { Vec3 } from '../../src/shared/look';
 import { turnCount } from '../../src/shared/placement';
 import type { BlockCommand } from '../../src/shared/protocol';
 import { DEBRIS } from '../../src/systems/economy/balance';
-import { DEBRIS_IN_THE_WAY, needsResearch, notEnough } from '../../src/systems/economy/build-rules';
+import {
+  DEBRIS_IN_THE_WAY,
+  FULLY_UPGRADED,
+  needsResearch,
+  notEnough,
+} from '../../src/systems/economy/build-rules';
 import { BLASTER } from '../../src/systems/survival/balance';
 import { createTerrainGround } from '../../src/world/terrain/collision';
 import { createWorld, type VoxelWorld } from '../../src/world/voxels/world';
@@ -92,7 +97,7 @@ function rig(): Rig {
           command.x,
           command.y,
           command.z,
-          command.type === 'place' ? command.state : 0,
+          command.type === 'place' || command.type === 'upgrade' ? command.state : 0,
         );
       }
       return true;
@@ -819,7 +824,16 @@ describe('the interact key and heaps of debris', () => {
     r.controller.update(0.016, view);
     expect(r.controller.hudState().salvage).toBe(0);
     r.controller.interact();
-    expect(r.sent).toEqual([]);
+    // The key is for the block the view meets: it is upgraded, and the heap behind it is left alone.
+    expect(r.sent).toEqual([
+      {
+        type: 'upgrade',
+        x: SPOT.x + 2,
+        y: Math.floor(y),
+        z: SPOT.z,
+        state: packState(SHAPE.cube, MATERIAL.composite),
+      },
+    ]);
   });
 
   it('keeps the pace of the hands: one strip, then none until they are ready again', () => {
@@ -1367,5 +1381,243 @@ describe('the research ladder of a Terminal', () => {
     r.controller.interact();
     expect(r.controller.ladderOpen).toBe(true);
     expect(r.sent).toEqual([]);
+  });
+});
+
+describe('upgrading the block under the cursor with E', () => {
+  const scrap = packState(SHAPE.cube, MATERIAL.scrap);
+  const composite = packState(SHAPE.cube, MATERIAL.composite);
+
+  /** A rig in Build Mode with `state` standing on the ground at the spot, a pool of 9 of everything and the cursor on it from `height` above. */
+  function wallAtSpot(state = scrap, height = 3) {
+    const r = rig();
+    r.pool.cap = 400;
+    r.pool.stock.splice(0, r.pool.stock.length, 9, 9, 9, 9);
+    const y = Math.floor(r.surface);
+    r.world.setBlock(SPOT.x, y, SPOT.z, state);
+    r.controller.toggleBuildMode();
+    r.controller.update(0.016, r.lookDown(height));
+    return { ...r, y };
+  }
+
+  it('offers the next material up under the cursor, and E sends it as the piece the player saw', () => {
+    const r = wallAtSpot();
+    expect(r.controller.hudState().upgrade).toBe(composite);
+    expect(r.controller.hudState().upgradeRefusal).toBeNull();
+    r.controller.interact();
+    expect(r.sent).toEqual([{ type: 'upgrade', x: SPOT.x, y: r.y, z: SPOT.z, state: composite }]);
+    // The world changes only when the host's event comes back, never here.
+    expect(r.world.getBlock(SPOT.x, r.y, SPOT.z)).toBe(scrap);
+  });
+
+  it('keeps the shape, the facing and the half of the cell the block has', () => {
+    const slab = packState(slabShape(true), MATERIAL.composite);
+    const r = wallAtSpot(slab);
+    r.controller.interact();
+    expect(r.sent[0]).toMatchObject({
+      type: 'upgrade',
+      state: packState(slabShape(true), MATERIAL.alloy),
+    });
+    const wedge = packState(wedgeShape(2, true), MATERIAL.alloy);
+    const w = wallAtSpot(wedge);
+    expect(w.controller.target.on).toBe('block');
+    w.controller.interact();
+    expect(w.sent[0]).toMatchObject({
+      type: 'upgrade',
+      state: packState(wedgeShape(2, true), MATERIAL.energy),
+    });
+  });
+
+  it('climbs one material a press, up to the best there is', () => {
+    const r = wallAtSpot();
+    r.session.apply = true;
+    for (const material of [MATERIAL.composite, MATERIAL.alloy, MATERIAL.energy]) {
+      r.controller.interact();
+      expect(r.world.getBlock(SPOT.x, r.y, SPOT.z)).toBe(packState(SHAPE.cube, material));
+      r.controller.update(RESEND_GUARD, r.lookDown(3));
+    }
+    expect(r.sent.map((c) => c.type)).toEqual(['upgrade', 'upgrade', 'upgrade']);
+    // Nothing is better than Energy-Infused: the card goes away and E says so.
+    expect(r.controller.hudState().upgrade).toBe(0);
+    r.controller.interact();
+    expect(r.sent).toHaveLength(3);
+    expect(r.controller.hudState().refusal).toBe(FULLY_UPGRADED);
+  });
+
+  it('works outside Build Mode too, as a click does, and the card is there while the upgrade would go', () => {
+    const r = wallAtSpot();
+    r.controller.toggleBuildMode();
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.inBuildMode).toBe(false);
+    expect(r.controller.hudState().upgrade).toBe(composite);
+    r.controller.interact();
+    expect(r.sent).toEqual([{ type: 'upgrade', x: SPOT.x, y: r.y, z: SPOT.z, state: composite }]);
+  });
+
+  it('keeps the reason for a refusal off the screen outside Build Mode, until E asks', () => {
+    const r = wallAtSpot();
+    r.pool.stock[1] = 0;
+    r.controller.update(0.016, r.lookDown(3));
+    // In Build Mode the card is there, in red.
+    expect(r.controller.hudState().upgrade).toBe(composite);
+    expect(r.controller.hudState().upgradeRefusal).toBe(notEnough('Reinforced Composite'));
+    r.controller.toggleBuildMode();
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().upgrade).toBe(0);
+    expect(r.controller.hudState().upgradeRefusal).toBeNull();
+    // A press still says why, for a moment, and sends nothing.
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().refusal).toBe(notEnough('Reinforced Composite'));
+  });
+
+  it('is not offered for bare ground, empty air or a block out of reach, and E says only what it can know', () => {
+    const r = wallAtSpot();
+    r.world.setBlock(SPOT.x, r.y, SPOT.z, 0);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.target.on).toBe('terrain');
+    expect(r.controller.hudState().upgrade).toBe(0);
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().refusal).not.toBe(FULLY_UPGRADED);
+
+    r.world.setBlock(SPOT.x, r.y, SPOT.z, scrap);
+    r.controller.update(0.016, r.lookDown(BUILD_REACH + 1));
+    expect(r.controller.target.breakRefusal).toBe(AIM_REFUSAL.outOfReach);
+    expect(r.controller.hudState().upgrade).toBe(0);
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().refusal).toBe(AIM_REFUSAL.outOfReach);
+  });
+
+  it('shows what the pool cannot pay for as refused, naming what is short, and sends nothing', () => {
+    const r = wallAtSpot();
+    r.pool.stock.splice(0, 4, 9, 0, 9, 9);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().upgrade).toBe(composite);
+    expect(r.controller.hudState().upgradeRefusal).toBe(notEnough('Reinforced Composite'));
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().refusal).toBe(notEnough('Reinforced Composite'));
+    // Once the pool holds the price the same press goes.
+    r.pool.stock[1] = 1;
+    r.controller.update(NOTICE_SECONDS + 0.1, r.lookDown(3));
+    expect(r.controller.hudState().upgradeRefusal).toBeNull();
+    r.controller.interact();
+    expect(r.sent).toHaveLength(1);
+  });
+
+  it('shows a material the crew has not researched as refused, in the words the host would use', () => {
+    const r = wallAtSpot();
+    r.pool.tier = 1;
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().upgradeRefusal).toBe(needsResearch('Reinforced Composite'));
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().refusal).toBe(needsResearch('Reinforced Composite'));
+    r.pool.tier = 2;
+    r.controller.update(NOTICE_SECONDS + 0.1, r.lookDown(3));
+    expect(r.controller.hudState().upgradeRefusal).toBeNull();
+  });
+
+  it('charges and locks nothing where there is no pool to read, as the host does', () => {
+    const r = wallAtSpot();
+    r.pool.cap = 0;
+    r.pool.tier = 1;
+    r.pool.stock.fill(0);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().upgrade).toBe(composite);
+    expect(r.controller.hudState().upgradeRefusal).toBeNull();
+    r.controller.interact();
+    expect(r.sent).toHaveLength(1);
+  });
+
+  it('does not send the same upgrade twice before an answer could have come back', () => {
+    const r = wallAtSpot();
+    r.controller.interact();
+    r.controller.update(0.1, r.lookDown(3));
+    r.controller.interact();
+    expect(r.sent).toHaveLength(1);
+    r.controller.update(RESEND_GUARD, r.lookDown(3));
+    r.controller.interact();
+    expect(r.sent).toHaveLength(2);
+  });
+
+  it('says so when there is nobody to send to yet', () => {
+    const r = wallAtSpot();
+    r.session.open = false;
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().refusal).toBe(NOT_READY);
+  });
+
+  it('leaves a Terminal to its ladder and a heap of debris in front of the block to its strip', () => {
+    const terminal = packState(moduleShape(MODULE.terminal, 0), 1);
+    const r = wallAtSpot(terminal);
+    expect(r.controller.hudState().upgrade).toBe(0);
+    r.controller.interact();
+    expect(r.controller.ladderOpen).toBe(true);
+    expect(r.sent).toEqual([]);
+
+    const h = wallAtSpot(scrap, 4);
+    h.heaps.nodes.push({
+      index: 0,
+      x: SPOT.x + 0.5,
+      y: h.surface + 2,
+      z: SPOT.z + 0.5,
+      yaw: 0,
+      scale: 1,
+      harvests: 3,
+      grade: MATERIAL.scrap,
+      from: 0,
+    });
+    h.heaps.left[0] = 3;
+    h.controller.update(0.016, h.lookDown(4));
+    expect(h.controller.salvageTarget.index).toBe(0);
+    expect(h.controller.hudState().upgrade).toBe(0);
+    h.controller.interact();
+    expect(h.sent).toHaveLength(1);
+    expect(h.sent[0]).toMatchObject({ type: 'harvest' });
+  });
+
+  it('is not offered while a ladder is open, and the first press shuts the ladder', () => {
+    const terminal = packState(moduleShape(MODULE.terminal, 0), 1);
+    const r = wallAtSpot(terminal);
+    r.controller.interact();
+    expect(r.controller.ladderOpen).toBe(true);
+    // The cursor moves on to a plain block next door while the Terminal's ladder stays up.
+    r.world.setBlock(SPOT.x + 1, Math.floor(r.surface), SPOT.z, scrap);
+    const beside = { x: SPOT.x + 1.5, y: r.surface + 3, z: SPOT.z + 0.5 };
+    const view = { origin: beside, dir: { x: 0, y: -1, z: 0 }, eye: beside };
+    r.controller.update(0.016, view);
+    expect(r.controller.target.targetState).toBe(scrap);
+    expect(r.controller.ladderOpen).toBe(true);
+    expect(r.controller.hudState().upgrade).toBe(0);
+    r.controller.interact();
+    expect(r.controller.ladderOpen).toBe(false);
+    expect(r.sent).toEqual([]);
+    expect(r.controller.hudState().upgrade).toBe(composite);
+  });
+
+  it('does nothing for a player who is down', () => {
+    const r = wallAtSpot();
+    r.controller.setDown(true);
+    expect(r.controller.hudState().upgrade).toBe(0);
+    r.controller.interact();
+    expect(r.sent).toEqual([]);
+    r.controller.setDown(false);
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.interact();
+    expect(r.sent).toHaveLength(1);
+  });
+
+  it('works with the blaster in hand: the key is the key, whatever the left button does', () => {
+    const r = wallAtSpot();
+    r.controller.selectSlot(BLASTER_SLOT);
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.interact();
+    expect(r.sent).toHaveLength(1);
+    expect(r.sent[0]).toMatchObject({ type: 'upgrade' });
+    expect(r.shots).toEqual([]);
   });
 });
