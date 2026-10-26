@@ -136,14 +136,27 @@ describe('the module slot', () => {
     expect(blockSlot(TERMINAL)).toEqual({ icon: 'terminal', blueprint: true });
   });
 
+  it('gives the Basic Turret its own icon, the same whichever way it faces', () => {
+    for (let facing = 0; facing < 4; facing++) {
+      expect(blockIcon(packState(moduleShape(MODULE.turret, facing), 1))).toBe('turret');
+    }
+    expect(moduleSlot(MODULE.turret)).toEqual({ icon: 'turret', blueprint: true });
+    expect(blockSlot(packState(moduleShape(MODULE.turret, 3), 1))).toEqual({
+      icon: 'turret',
+      blueprint: true,
+    });
+  });
+
   it('has no icon for a module the HUD has no picture of, or a level the module does not have', () => {
     expect(moduleSlot(99).icon).toBeNull();
     expect(blockIcon(packState(moduleShape(MODULE.terminal, 0), 9))).toBeNull();
+    expect(blockIcon(packState(moduleShape(MODULE.turret, 0), 2))).toBeNull();
   });
 
   it('says what a module costs from the module table', () => {
     expect(costText(TERMINAL)).toBe('40 Scrap');
     expect(costText(packState(moduleShape(MODULE.terminal, 0), 9))).toBe('');
+    expect(costText(packState(moduleShape(MODULE.turret, 1), 1))).toBe('25 Scrap');
   });
 });
 

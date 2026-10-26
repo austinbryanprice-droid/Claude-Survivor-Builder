@@ -70,6 +70,8 @@ export const FX_COLOR = {
   burst: '#ff8a2a',
   /** The bits flung off a heap of wreckage as it is stripped: warmer and paler than a machine's fire. */
   strip: '#ffc46b',
+  /** A turret's bolt: the amber of a module at work, so the crew's guns read apart from the players'. */
+  turret: '#ffa83a',
 } as const;
 
 /** Ranges are [least, most]; each spark picks its own. Sizes are in blocks, speeds in blocks a second, lives in seconds. */

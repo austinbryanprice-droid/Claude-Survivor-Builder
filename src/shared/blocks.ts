@@ -68,6 +68,7 @@ export const MODULE_SINK = 0.25;
 /** The functional modules (SPEC section 9). Ids are stored in saves and sent on the wire, so they never change. */
 export const MODULE = {
   terminal: 1,
+  turret: 2,
 } as const;
 
 export interface ModuleDef {
@@ -84,6 +85,12 @@ export interface ModuleDef {
    * inside the cell.
    */
   readonly body: readonly [x0: number, y0: number, z0: number, x1: number, y1: number, z1: number];
+  /**
+   * Which way its front looks when the aim places it, before the turn key: toward the player who aims
+   * it, so that a console's screen is what they see, or the way the player looks, so that a gun points
+   * where they were looking.
+   */
+  readonly facesPlayer: boolean;
 }
 
 export interface MaterialDef {
@@ -100,9 +107,10 @@ export interface MaterialDef {
 }
 
 /**
- * The modules, in the order of their ids. The Research Terminal is the first (Phase 5d); the turret,
- * generator, node, storage, bed and light follow it (5f to 5h). The cost is Scrap only (about 40),
- * because the notes price it in Composite, which the Terminal itself unlocks (docs/decisions.md).
+ * The modules, in the order of their ids. The Research Terminal is the first (Phase 5d) and the Basic
+ * Turret the second (5f); the generator, node, storage, bed and light follow them (5g, 5h). The costs
+ * are Scrap only (about 40 and 25), because the notes price them in Composite, which the Terminal
+ * itself unlocks (docs/decisions.md).
  */
 export const MODULES: readonly ModuleDef[] = [
   {
@@ -111,6 +119,15 @@ export const MODULES: readonly ModuleDef[] = [
     levels: 1,
     cost: { material: MATERIAL.scrap, amount: 40 },
     body: [0.1, 0, 0.1, 0.9, 0.9, 0.9],
+    facesPlayer: true,
+  },
+  {
+    id: MODULE.turret,
+    name: 'Basic Turret',
+    levels: 1,
+    cost: { material: MATERIAL.scrap, amount: 25 },
+    body: [0.14, 0, 0.14, 0.86, 0.78, 0.86],
+    facesPlayer: false,
   },
 ];
 
@@ -120,11 +137,15 @@ export function moduleShape(module: number, facing: number): number {
   return SHAPE.module + (module - 1) * MODULE_FACINGS + turn;
 }
 
+/** The module with this id (`MODULE`), or undefined when the table has none. */
+export function moduleDef(module: number): ModuleDef | undefined {
+  return MODULES.find((def) => def.id === module);
+}
+
 /** The module a shape id names, or undefined when the shape is not a module. */
 export function moduleOfShape(shape: number): ModuleDef | undefined {
   if (shape < SHAPE.module) return undefined;
-  const id = Math.floor((shape - SHAPE.module) / MODULE_FACINGS) + 1;
-  return MODULES.find((def) => def.id === id);
+  return moduleDef(Math.floor((shape - SHAPE.module) / MODULE_FACINGS) + 1);
 }
 
 /** The way a module's front looks, 0 to 3, or -1 when the shape is not a module. */

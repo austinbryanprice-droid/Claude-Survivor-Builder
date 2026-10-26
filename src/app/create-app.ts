@@ -99,6 +99,9 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
             valley ? { blocks: valley.voxels, ground: valley.collision.ground } : null,
           // The heap the cursor is on glows.
           aimedDebris: () => building.controller.salvageTarget.index,
+          // The host's turrets are the modules that stand, and a turret's head turns on every screen when it fires.
+          forEachModule: (visit) => valley?.voxels.forEachModule(visit),
+          aimTurret: (x, y, z, tx, ty, tz) => valley?.view.modules.aim(x, y, z, tx, ty, tz),
           flags: readNetFlags(search, { secure: window.location.protocol === 'https:' }),
           buildId,
           night: view.night,

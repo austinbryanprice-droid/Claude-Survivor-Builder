@@ -3,8 +3,11 @@ import { MATERIAL, MODULE, MODULES, SHAPE, moduleShape, packState } from '../../
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../src/shared/daycycle';
 import { DEBRIS, POOL, RESEARCH } from '../../src/systems/economy/balance';
 import { needsResearch, notEnough } from '../../src/systems/economy/build-rules';
-import { RESPAWN, VITALS } from '../../src/systems/survival/balance';
+import { NO_PLAYER } from '../../src/shared/protocol';
+import { SHOT_FLAG } from '../../src/shared/shot';
+import { ENEMIES, RESPAWN, TURRET, VITALS } from '../../src/systems/survival/balance';
 import { recordToasts, toasts } from './support/toasts';
+import { barrelOf, sendCrawlerNear } from './support/turrets';
 
 /**
  * Four browsers play together through a local PeerServer (started by `playwright.config.ts`):
@@ -33,6 +36,8 @@ const ALLOY = packState(SHAPE.cube, MATERIAL.alloy);
 const COMPOSITE = packState(SHAPE.cube, MATERIAL.composite);
 const TERMINAL = packState(moduleShape(MODULE.terminal, 0), 1);
 const TERMINAL_PRICE = MODULES.find((module) => module.id === MODULE.terminal)!.cost.amount;
+const TURRET_STATE = packState(moduleShape(MODULE.turret, 0), 1);
+const TURRET_PRICE = MODULES.find((module) => module.id === MODULE.turret)!.cost.amount;
 const SMALL = { width: 480, height: 270 };
 const FRAME_GAP_MS = 1500;
 
@@ -1336,6 +1341,132 @@ test.describe('multiplayer', () => {
       ] as const);
       await expectSameWorld(everyone, 0);
       await expectEverywhere(0, 200, 0, cell);
+      for (const p of everyone) expect(await rejectionsOf(p), p.name).toEqual([]);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
+  test("a Basic Turret fires for the whole crew: a guest's build shoots the host's crawler, every screen draws the bolt from its barrel and turns its head, the kill is the crew's, and breaking it stops the fire", async ({
+    browser,
+    baseURL,
+  }) => {
+    const host = await openPlayer(browser, baseURL, 'Host', { stock: 200 });
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone: Player[] = [host, ada];
+    const slow = { timeout: 60_000 };
+    const shotsOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.shots().shots)).filter(
+        (shot) => shot.turret,
+      );
+    const machinesOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.enemies());
+    const scrapOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.pool())).stock[0] as number;
+    const rejectionsOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.rejections())).map((r) => r.reason);
+    const drawnOf = (p: Player) =>
+      p.page.evaluate(
+        () =>
+          (
+            window.__ashbound!.game.world as unknown as {
+              view: { modules: { count: number } };
+            }
+          ).view.modules.count,
+      );
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) {
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+        await expect
+          .poll(() => scrapOf(p), { ...slow, message: `${p.name} sees the pool` })
+          .toBe(200);
+      }
+
+      // Ada builds a turret: one more cell in everyone's world, drawn on both screens, paid from the one pool.
+      const cell = await ada.page.evaluate(
+        ([state]) => window.__ashbound!.mp!.placeNear(4, 0, state!),
+        [TURRET_STATE] as const,
+      );
+      await expectSameWorld(everyone, 1);
+      for (const p of everyone) {
+        await expect
+          .poll(() => drawnOf(p), { ...slow, message: `${p.name} draws the turret` })
+          .toBe(1);
+        await expect
+          .poll(() => scrapOf(p), { ...slow, message: `${p.name} sees the pool` })
+          .toBe(200 - TURRET_PRICE);
+        expect(await shotsOf(p), `${p.name}: nothing to shoot at yet`).toEqual([]);
+      }
+
+      // The host sends a crawler within its range, and the host's simulation fires the turret at it.
+      expect(await sendCrawlerNear(host.page, cell)).not.toBeNull();
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await shotsOf(p)).length, {
+            ...slow,
+            message: `${p.name} sees the turret fire`,
+          })
+          .toBeGreaterThan(0);
+        const first = (await shotsOf(p))[0]!;
+        // The shot names the turret's cell and no player, and struck the machine.
+        expect(first.turret, p.name).toEqual([cell.x, cell.y, cell.z]);
+        expect(first.by, p.name).toBe(NO_PLAYER);
+        expect(first.predicted, p.name).toBe(false);
+        expect(first.flags & SHOT_FLAG.enemy, p.name).toBe(SHOT_FLAG.enemy);
+        // The head on this screen points along the line from the pivot to where the bolt ended.
+        const seen = await barrelOf(p.page, cell);
+        expect(seen, `${p.name} draws the head`).not.toBeNull();
+        for (let i = 0; i < 3; i++) {
+          expect(seen!.tip[i]!, `${p.name}, axis ${i}`).toBeCloseTo(seen!.want[i]!, 4);
+        }
+        expect(seen!.turned[0]! !== 0 || seen!.turned[1]! !== 0, `${p.name}: turned`).toBe(true);
+      }
+
+      // The crawler falls to it on every screen, to one killing shot, and the kill is the crew's.
+      const wanted = Math.ceil(ENEMIES.crawler.health / TURRET.levels[0]!.damage);
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await machinesOf(p)).length, {
+            ...slow,
+            message: `${p.name} sees it gone`,
+          })
+          .toBe(0);
+        await expect
+          .poll(async () => (await shotsOf(p)).filter((s) => s.flags & SHOT_FLAG.kill).length, {
+            ...slow,
+            message: `${p.name} sees it fall once`,
+          })
+          .toBe(1);
+        expect((await shotsOf(p)).length, p.name).toBeGreaterThanOrEqual(wanted);
+        await expect
+          .poll(async () => (await clockOf(p)).felled, {
+            ...slow,
+            message: `${p.name} counts the kill`,
+          })
+          .toBe(1);
+      }
+
+      // The host breaks the turret: gone from every screen, the price back, and a new crawler is left alone.
+      await host.page.evaluate(([x, y, z]) => window.__ashbound!.mp!.breakBlock(x!, y!, z!), [
+        cell.x,
+        cell.y,
+        cell.z,
+      ] as const);
+      await expectSameWorld(everyone, 0);
+      for (const p of everyone) {
+        await expect.poll(() => drawnOf(p), { ...slow, message: `${p.name}: gone` }).toBe(0);
+        await expect.poll(() => scrapOf(p), { ...slow, message: `${p.name}: refund` }).toBe(200);
+      }
+      const fired = (await shotsOf(host)).length;
+      expect(await sendCrawlerNear(host.page, cell)).not.toBeNull();
+      await expect
+        .poll(async () => (await machinesOf(host)).length, { ...slow, message: 'the host sees it' })
+        .toBe(1);
+      await host.page.waitForTimeout(3000);
+      expect(await shotsOf(host)).toHaveLength(fired);
       for (const p of everyone) expect(await rejectionsOf(p), p.name).toEqual([]);
       expectNoProblems(everyone);
     } finally {

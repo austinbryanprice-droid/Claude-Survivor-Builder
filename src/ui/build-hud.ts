@@ -85,6 +85,7 @@ const BLOCK_ICONS: Readonly<Record<BlockKind, Readonly<Record<number, IconId>>>>
 /** The icon of each module, by its `MODULE` id: the picture is the same whatever its level or facing. */
 const MODULE_ICONS: Readonly<Record<number, IconId>> = {
   [MODULE.terminal]: 'terminal',
+  [MODULE.turret]: 'turret',
 };
 
 /**

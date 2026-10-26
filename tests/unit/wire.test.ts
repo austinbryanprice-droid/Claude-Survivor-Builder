@@ -267,6 +267,8 @@ describe('host control frames', () => {
     { t: 'sh', p: 1, e: [-40.25, 12.5, 7], f: 3, h: 9 },
     { t: 'sh', p: 3, e: [0, 10, 40], f: 4, h: 0 },
     { t: 'sh', p: 3, e: [0, 14.75, 40], f: 0, h: 0 },
+    { t: 'sh', p: 0, c: [11, 10, -6], e: [3.5, 10.5, -12.25], f: 1, h: 17 },
+    { t: 'sh', p: 0, c: [-3, 9, 40], e: [0, 10, 40], f: 3, h: 9 },
     {
       t: 'pings',
       p: [
@@ -721,6 +723,28 @@ describe('host control frames', () => {
     }
   });
 
+  it('refuses a word about a turret’s shot that names a player, or whose cell is not a cell', () => {
+    const base = { t: 'sh', p: 0, c: [11, 10, -6], e: [3.5, 10.5, -12.25], f: 1, h: 17 };
+    expect(decodeHostFrame(JSON.stringify(base))).toEqual(base);
+    for (const bad of [
+      { p: 2 },
+      { p: undefined },
+      { p: -1 },
+      { c: null },
+      { c: [1, 2] },
+      { c: [1, 2, 3, 4] },
+      { c: [1.5, 2, 3] },
+      { c: [1, 2, '3'] },
+      { c: [1, null, 3] },
+      { c: [40000, 0, 0] },
+      { c: [0, 0, -40000] },
+      { c: 'x' },
+      { c: {} },
+    ]) {
+      const text = JSON.stringify({ ...base, ...bad });
+      expect(decodeHostFrame(text), text).toBeNull();
+    }
+  });
   it('refuses an event with an out of range cell', () => {
     expect(
       decodeHostFrame('{"t":"ev","s":1,"e":{"type":"set","x":99999,"y":0,"z":0,"state":1,"by":1}}'),

@@ -1,6 +1,7 @@
 import {
   MODULE_FACINGS,
   baseShape,
+  moduleDef,
   moduleShape,
   slabShape,
   wedgeShape,
@@ -67,7 +68,8 @@ export function facingOf(dx: number, dz: number): number {
  *    ground cuts through its cell at any height, and a slab in the half under it would not show.
  *  - A wedge rises away from the player, so that a row of them is a ramp to walk up. It is turned
  *    upside down under a ceiling, where the flat side goes against it.
- *  - A module faces the player, so that its screen and its front are what they see.
+ *  - A module faces the player, so that its screen and its front are what they see, unless the table
+ *    says its front is a gun's: the turret looks the way the player does.
  *
  * Each turn step then moves the wedge a quarter turn (and flips it every fourth step), flips a
  * slab, or turns a module a quarter turn.
@@ -81,7 +83,8 @@ export function orientShape(
   module = 0,
 ): number {
   if (kind === 'module') {
-    return moduleShape(module, facingOf(lookX, lookZ) + 2 + (turn % MODULE_FACINGS));
+    const toward = moduleDef(module)?.facesPlayer === false ? 0 : 2;
+    return moduleShape(module, facingOf(lookX, lookZ) + toward + (turn % MODULE_FACINGS));
   }
   if (kind === 'slab') {
     const upper = surface.ny < 0 || (surface.ny === 0 && surface.height >= 0.5);

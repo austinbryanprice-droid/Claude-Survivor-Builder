@@ -54,6 +54,8 @@ export interface MultiplayerOptions {
   rayWorld(): RayWorld | null;
   /** The heap of debris the player's cursor is on, by its place in the run's list, or -1: the heap glows. */
   aimedDebris(): number;
+  /** Turns the head of the turret standing in a cell toward a point (where its shot ended), on this screen. */
+  aimTurret(x: number, y: number, z: number, tx: number, ty: number, tz: number): void;
   /** The scene node the other players' avatars are added to, and the materials they are lit with. */
   scene: Object3D;
   registry: MaterialRegistry;
@@ -232,6 +234,7 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     session: hub,
     rayWorld: options.rayWorld,
     player: options.player,
+    aimTurret: options.aimTurret,
   });
   const stopShots = hub.onShot((shot) => shots.hear(shot));
   // A strip, anyone's, throws scrap off the heap it was taken from.

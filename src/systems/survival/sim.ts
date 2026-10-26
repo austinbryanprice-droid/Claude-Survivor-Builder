@@ -21,6 +21,7 @@ import { debrisField } from '../economy/field';
 import { BLASTER, RESPAWN, SURVIVAL, VITALS, hitboxOf } from './balance';
 import { EnemySim, type Target } from './enemies';
 import { NavGrid, type NavCell, type NavWorld } from './nav';
+import { Turrets, type ModuleSource, type TurretShot } from './turrets';
 import { PlayerVitals } from './vitals';
 import { WaveDirector } from './waves';
 
@@ -71,6 +72,12 @@ export interface SurvivalOptions {
    * the points a run earns wait unread (the Terminal reads them the moment it is placed).
    */
   standing?: ((module: number) => boolean) | null;
+  /**
+   * Walks the modules standing in the world, which is how the turrets among them are found: each
+   * step, every turret that is ready shoots the nearest machine it has a clear line to. Without it
+   * no turret shoots.
+   */
+  modules?: ModuleSource | null;
 }
 
 /** How a shot of the blaster ended. One object is filled by every call to `fire`. */
@@ -133,6 +140,9 @@ export class SurvivalSim {
   private readonly waves: WaveDirector | null;
   private readonly wealth: Economy | null;
   private readonly standing: ((module: number) => boolean) | null;
+  private readonly turrets: Turrets | null;
+  /** What the turrets have shot since the host last asked. */
+  private readonly turretShots: TurretShot[] = [];
   /** The players the machines can go after in this step, kept between steps so a step allocates nothing. */
   private readonly targets: Target[] = [];
   private readonly feet = { x: 0, y: 0, z: 0 };
@@ -167,6 +177,7 @@ export class SurvivalSim {
           )
         : null;
     this.standing = options.standing ?? null;
+    this.turrets = this.machines && options.modules ? new Turrets(options.modules) : null;
     // A run that starts at a later night has had the dawns before it: their research, read as the
     // run goes on from there (which the `?research=` switch then replaces) and the heaps they
     // uncovered, the better grades included.
@@ -434,6 +445,12 @@ export class SurvivalSim {
     this.pending.length = 0;
   }
 
+  /** Moves the shots the crew's turrets have fired since the last call into `out` (oldest first). The host tells everyone of them. */
+  drainTurretShots(out: TurretShot[]): void {
+    for (const shot of this.turretShots) out.push(shot);
+    this.turretShots.length = 0;
+  }
+
   /** The run as it stands, with the part of a step not yet taken counted in. `running` is false once the run is over. */
   read(out: SurvivalReading): SurvivalReading {
     readClock(this.elapsed + (this.over ? 0 : this.carry * SIM_STEP_SECONDS), out);
@@ -492,6 +509,18 @@ export class SurvivalSim {
     // The night's waves come out of the ground (and at dawn the machines fall back) before the machines move.
     this.waves?.step(this.tickValue, this.pending);
     if (this.machines) this.stepMachines(this.machines);
+    this.stepTurrets();
+  }
+
+  /** Lets the crew's turrets shoot the machines in their reach; the ones they fell count with the blaster's. */
+  private stepTurrets(): void {
+    if (!this.turrets || !this.machines || this.over) return;
+    this.felledCount += this.turrets.step(
+      this.tickValue,
+      this.machines,
+      this.ray,
+      this.turretShots,
+    );
   }
 
   /** The dawn gives the crew a charge for every player, up to the most it can hold. */

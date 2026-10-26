@@ -8,12 +8,14 @@ import {
   SHAPE,
   moduleShape,
 } from '../../src/shared/blocks';
+import { TURRET_GUN } from '../../src/shared/turret';
 import {
   MODULE_LOOKS,
   MODULE_LOOK_NAMES,
   MODULE_SKIRT,
-  buildModuleModel,
+  buildModuleKit,
   moduleGhostGeometry,
+  type ModuleKit,
   type ModuleModel,
 } from '../../src/world/render/module-models';
 
@@ -45,7 +47,7 @@ function triangles(geometry: BufferGeometry): number {
 }
 
 describe('the Research Terminal model', () => {
-  const model = buildModuleModel(MODULE.terminal) as ModuleModel;
+  const model = (buildModuleKit(MODULE.terminal) as ModuleKit).model;
 
   it('is made of one merged geometry for each look, and only looks the table defines', () => {
     expect(Object.keys(model).sort()).toEqual([...MODULE_LOOK_NAMES].sort());
@@ -133,7 +135,7 @@ describe('the Research Terminal model', () => {
   });
 
   it('is built the same way every time, so two pictures of it agree', () => {
-    const again = buildModuleModel(MODULE.terminal) as ModuleModel;
+    const again = (buildModuleKit(MODULE.terminal) as ModuleKit).model;
     for (const look of MODULE_LOOK_NAMES) {
       const a = (model[look] as BufferGeometry).getAttribute('position').array;
       const b = (again[look] as BufferGeometry).getAttribute('position').array;
@@ -149,10 +151,145 @@ describe('the Research Terminal model', () => {
   });
 
   it('has no model for a module the table does not define', () => {
-    expect(buildModuleModel(0)).toBeUndefined();
-    expect(buildModuleModel(99)).toBeUndefined();
+    expect(buildModuleKit(0)).toBeUndefined();
+    expect(buildModuleKit(99)).toBeUndefined();
   });
 });
+
+describe('the Basic Turret model', () => {
+  const kit = buildModuleKit(MODULE.turret) as ModuleKit;
+  const head = kit.head as NonNullable<ModuleKit['head']>;
+
+  it('is a body that stands still and a head that turns, each made of looks the table defines', () => {
+    expect(Object.keys(kit.model).sort()).toEqual(['lights', 'plate', 'trim']);
+    expect(Object.keys(head.model).sort()).toEqual(['amber', 'lights', 'plate', 'trim']);
+    for (const geometry of [...partsOf(kit.model), ...partsOf(head.model)]) {
+      const position = geometry.getAttribute('position');
+      const normal = geometry.getAttribute('normal');
+      expect(position.count).toBeGreaterThan(0);
+      expect(normal.count).toBe(position.count);
+      for (let i = 0; i < position.count; i++) {
+        expect(Number.isFinite(position.getX(i) + position.getY(i) + position.getZ(i))).toBe(true);
+        expect(Math.hypot(normal.getX(i), normal.getY(i), normal.getZ(i))).toBeCloseTo(1, 3);
+      }
+    }
+  });
+
+  it('keeps its pad over the body the cursor aims at, with a foundation below the floor', () => {
+    const box = boundsOf(partsOf(kit.model));
+    const [x0, , z0, x1, , z1] = MODULES.find((def) => def.id === MODULE.turret)!.body;
+    const slack = 0.02;
+    expect(box.min.x).toBeGreaterThanOrEqual(x0 - 0.5 - slack);
+    expect(box.max.x).toBeLessThanOrEqual(x1 - 0.5 + slack);
+    expect(box.min.z).toBeGreaterThanOrEqual(z0 - 0.5 - slack);
+    expect(box.max.z).toBeLessThanOrEqual(z1 - 0.5 + slack);
+    expect(box.min.y).toBeCloseTo(-MODULE_SKIRT, 6);
+    expect(box.max.y).toBeLessThan(TURRET_GUN.pivot);
+  });
+
+  it('turns about the pivot the shared gun geometry names, and its barrel ends where a bolt leaves', () => {
+    expect(head.pivot).toBe(TURRET_GUN.pivot);
+    const box = boundsOf(partsOf(head.model));
+    // Nothing of the head is farther from the pivot than the muzzle, and the barrel's tip is on the axis.
+    let farthest = 0;
+    for (const geometry of partsOf(head.model)) {
+      for (const point of pointsWhere(geometry, () => true)) {
+        farthest = Math.max(farthest, point.length());
+      }
+    }
+    expect(farthest).toBeCloseTo(TURRET_GUN.reach, 2);
+    // (The amber ring at the tip is wider than the barrel, so its rim is a hair farther than its middle.)
+    expect(farthest).toBeLessThanOrEqual(TURRET_GUN.reach + 0.01);
+    expect(box.max.x).toBeCloseTo(TURRET_GUN.reach, 6);
+    const tip = pointsWhere(
+      head.model.amber as BufferGeometry,
+      (p) => p.x > TURRET_GUN.reach - 0.01,
+    );
+    expect(tip.length).toBeGreaterThan(0);
+  });
+
+  it('looks toward +x: the barrel and the eye in front, the strip behind, the amber ring at the tip', () => {
+    const lights = head.model.lights as BufferGeometry;
+    expect(pointsWhere(lights, (p) => p.x > 0.1).length).toBeGreaterThan(0);
+    expect(pointsWhere(lights, (p) => p.x < -0.1).length).toBeGreaterThan(0);
+    const plate = head.model.plate as BufferGeometry;
+    // The barrel is the plate beyond the housing: thin, on the axis.
+    const barrel = pointsWhere(plate, (p) => p.x > 0.27);
+    expect(barrel.length).toBeGreaterThan(0);
+    expect(barrel.every((p) => Math.abs(p.y) < 0.04 && Math.abs(p.z) < 0.04)).toBe(true);
+    expect(box(head.model).min.x).toBeGreaterThan(-0.25);
+    // The column's strip is on the front of the body.
+    const strip = pointsWhere(kit.model.lights as BufferGeometry, (p) => p.y > 0.2);
+    expect(strip.length).toBeGreaterThan(0);
+    expect(strip.every((p) => p.x > 0.1)).toBe(true);
+  });
+
+  it('swings clear of its column and inside its cell when it dips or lifts to follow a shot', () => {
+    const vertices = partsOf(head.model).flatMap((geometry) => pointsWhere(geometry, () => true));
+    // How far a point is inside the column (a box 0.26 across from the pad's top to its collar), or 0.
+    const inside = (p: Vector3): number =>
+      Math.max(0, Math.min(0.13 - Math.abs(p.x), 0.13 - Math.abs(p.z), p.y - 0.18, 0.35 - p.y));
+    const deepest = (degrees: number): number => {
+      const pitch = (degrees * Math.PI) / 180;
+      return Math.max(
+        ...vertices.map((point) => {
+          const moved = point.clone().applyAxisAngle(new Vector3(0, 0, 1), pitch);
+          moved.y += head.pivot;
+          expect(moved.y).toBeLessThanOrEqual(1.01);
+          return inside(moved);
+        }),
+      );
+    };
+    // Dipping or lifting up to 45 degrees touches nothing, and at the steepest the muzzle ring's rim
+    // is at most six centimeters into the column’s side, where the gun is nearly on end.
+    for (let degrees = -45; degrees <= 60; degrees += 5) {
+      expect(deepest(degrees), `${degrees} degrees`).toBe(0);
+    }
+    for (let degrees = -70; degrees < -45; degrees += 5) {
+      expect(deepest(degrees), `${degrees} degrees`).toBeLessThan(0.06);
+    }
+    // Whatever the heading, the head is inside the cell.
+    for (const point of vertices) expect(Math.hypot(point.x, point.z)).toBeLessThan(0.5);
+  });
+
+  it('lights its eye cyan and its muzzle and lamp amber', () => {
+    expect(MODULE_LOOKS.lights.glow).toBe('#3ad1e0');
+    expect(MODULE_LOOKS.amber.glow).toBe('#f2a43a');
+  });
+
+  it('is built the same way every time, so two pictures of it agree', () => {
+    const again = buildModuleKit(MODULE.turret) as ModuleKit;
+    const same = (a: ModuleModel, b: ModuleModel) => {
+      for (const look of MODULE_LOOK_NAMES) {
+        const first = a[look]?.getAttribute('position').array;
+        const second = b[look]?.getAttribute('position').array;
+        expect(second ? Array.from(second) : second, look).toEqual(
+          first ? Array.from(first) : first,
+        );
+      }
+    };
+    same(kit.model, again.model);
+    same(head.model, (again.head as NonNullable<ModuleKit['head']>).model);
+  });
+
+  it('is a few thousand triangles at most, in seven draw calls', () => {
+    const count = [...partsOf(kit.model), ...partsOf(head.model)].reduce(
+      (sum, geometry) => sum + triangles(geometry),
+      0,
+    );
+    expect(count).toBeGreaterThan(200);
+    expect(count).toBeLessThan(3000);
+    expect(partsOf(kit.model).length + partsOf(head.model).length).toBe(7);
+  });
+
+  it('is the only module with a head so far', () => {
+    expect((buildModuleKit(MODULE.terminal) as ModuleKit).head).toBeUndefined();
+  });
+});
+
+function box(model: ModuleModel): Box3 {
+  return boundsOf(partsOf(model));
+}
 
 describe('the ghost of a module', () => {
   it('is the whole model in one geometry, in cell coordinates, whichever way it faces', () => {
@@ -187,5 +324,28 @@ describe('the ghost of a module', () => {
     expect(moduleGhostGeometry(SHAPE.cube)).toBeUndefined();
     expect(moduleGhostGeometry(SHAPE.wedge + 3)).toBeUndefined();
     expect(moduleGhostGeometry(0)).toBeUndefined();
+  });
+
+  it('shows a turret with its head at rest, its muzzle ahead of the way it faces', () => {
+    const ahead = [
+      (p: Vector3) => p.x - 0.5,
+      (p: Vector3) => p.z - 0.5,
+      (p: Vector3) => 0.5 - p.x,
+      (p: Vector3) => 0.5 - p.z,
+    ];
+    for (let facing = 0; facing < MODULE_FACINGS; facing++) {
+      const ghost = moduleGhostGeometry(moduleShape(MODULE.turret, facing)) as BufferGeometry;
+      const box = boundsOf([ghost]);
+      expect(box.min.x, `facing ${facing}`).toBeGreaterThanOrEqual(0);
+      expect(box.max.x, `facing ${facing}`).toBeLessThanOrEqual(1);
+      expect(box.min.z, `facing ${facing}`).toBeGreaterThanOrEqual(0);
+      expect(box.max.z, `facing ${facing}`).toBeLessThanOrEqual(1);
+      const farthest = Math.max(
+        ...pointsWhere(ghost, () => true).map((p) => (ahead[facing] as (p: Vector3) => number)(p)),
+      );
+      expect(farthest, `facing ${facing}`).toBeCloseTo(TURRET_GUN.reach, 2);
+      // The head is up where the pivot is: the tallest point of the ghost is the roof, above the column.
+      expect(box.max.y, `facing ${facing}`).toBeGreaterThan(TURRET_GUN.pivot);
+    }
   });
 });

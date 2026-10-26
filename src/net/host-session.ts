@@ -48,6 +48,7 @@ import { DEBRIS } from '../systems/economy/balance';
 import { upgradeBlocker, upgradeStep } from '../systems/economy/build-rules';
 import type { NavCell } from '../systems/survival/nav';
 import { createShotOutcome, type SurvivalSim } from '../systems/survival/sim';
+import type { TurretShot } from '../systems/survival/turrets';
 import { HostEconomyReport } from './economy-sync';
 import { Emitter } from './emitter';
 import { EnemyMirror } from './enemy-mirror';
@@ -257,6 +258,7 @@ export class HostSession implements GameSession {
   private enemiesSent = 0;
   /** The blocks the machines chewed through, between the simulation and the world. */
   private readonly gnawed: NavCell[] = [];
+  private readonly turretShots: TurretShot[] = [];
   /** Scratch space for deciding a shot: what a guest's frame said, the line it flies along and how it ended. */
   private readonly shotFrom: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly shotToward: Vec3 = { x: 0, y: 0, z: 0 };
@@ -1141,26 +1143,49 @@ export class HostSession implements GameSession {
     const out = this.outcome;
     if (!sim.fire(member.id, muzzle, aim, bodies, bodies.length, out)) return;
 
-    const shot: ShotEvent = {
+    this.announceShot({
       by: member.id,
       x: roundTo(out.x, SHOT_GRID),
       y: roundTo(out.y, SHOT_GRID),
       z: roundTo(out.z, SHOT_GRID),
       flags: out.flags,
       enemy: out.enemy,
-    };
+    });
+  }
+
+  /** Tells everyone of a shot: the guests by a frame, and this screen by the event. */
+  private announceShot(shot: ShotEvent): void {
     if (this.hasGuests()) {
+      const end = [shot.x, shot.y, shot.z] as const;
       this.broadcast(
-        encodeFrame({
-          t: 'sh',
-          p: shot.by,
-          e: [shot.x, shot.y, shot.z],
-          f: shot.flags,
-          h: shot.enemy,
-        }),
+        encodeFrame(
+          shot.turret
+            ? { t: 'sh', p: shot.by, c: shot.turret, e: end, f: shot.flags, h: shot.enemy }
+            : { t: 'sh', p: shot.by, e: end, f: shot.flags, h: shot.enemy },
+        ),
       );
     }
     this.shots.emit(shot);
+  }
+
+  /**
+   * Tells everyone of the shots the crew's turrets fired in the steps just played, the way a
+   * player's are told: where each bolt ended and what became of it, and the cell of the turret.
+   */
+  private reportTurrets(sim: SurvivalSim): void {
+    sim.drainTurretShots(this.turretShots);
+    for (const fired of this.turretShots) {
+      this.announceShot({
+        by: NO_PLAYER,
+        x: roundTo(fired.ex, SHOT_GRID),
+        y: roundTo(fired.ey, SHOT_GRID),
+        z: roundTo(fired.ez, SHOT_GRID),
+        flags: fired.flags,
+        enemy: fired.enemy,
+        turret: [fired.x, fired.y, fired.z],
+      });
+    }
+    this.turretShots.length = 0;
   }
 
   // --------------------------------------------------------------------------------------------
@@ -1304,6 +1329,7 @@ export class HostSession implements GameSession {
       this.observePlayers(sim);
       sim.advance(dt);
       this.breakGnawed(sim);
+      this.reportTurrets(sim);
     }
     this.reportEnemies(sim, now, guests);
 

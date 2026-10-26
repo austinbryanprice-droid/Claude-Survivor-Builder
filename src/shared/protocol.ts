@@ -276,10 +276,12 @@ export type HostFrame =
   /**
    * A shot the host decided, sent to everyone, the shooter included: who fired (`p`), where the bolt
    * ended (`e`), `SHOT_FLAG` bits for what became of it (`f`) and the machine it struck, or 0 (`h`).
+   * A turret's shot names the cell the turret stands in (`c`) and no player (`p` is `NO_PLAYER`).
    */
   | {
       readonly t: 'sh';
       readonly p: PlayerId;
+      readonly c?: readonly [x: number, y: number, z: number];
       readonly e: readonly [x: number, y: number, z: number];
       readonly f: number;
       readonly h: number;

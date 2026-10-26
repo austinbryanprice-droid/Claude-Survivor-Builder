@@ -6,6 +6,7 @@ import { colorForSlot } from '../shared/player-colors';
 import { createPlayerSample, type PlayerId } from '../shared/protocol';
 import type { RayWorld } from '../shared/raycast';
 import { SHOT_FLAG, createShotTrace, muzzleOf, traceShot, type ShotEvent } from '../shared/shot';
+import { turretMuzzle } from '../shared/turret';
 import { BLASTER, hitboxOf } from '../systems/survival/balance';
 import type { LocalPlayer } from './player-sync';
 
@@ -31,10 +32,13 @@ export interface ShotEffectsOptions {
   rayWorld(): RayWorld | null;
   /** The local player, whose gun is held where they stand and look. */
   player: Pick<LocalPlayer, 'read'>;
+  /** A turret in cell (x, y, z) fired at (tx, ty, tz): the head of the model that stands there turns to it. */
+  aimTurret?(x: number, y: number, z: number, tx: number, ty: number, tz: number): void;
 }
 
 /** One shot as it was drawn, for the browser tests and a curious console. */
 export interface ShotLogEntry {
+  /** The player who fired, or `NO_PLAYER` for a turret's shot. */
   readonly by: PlayerId;
   /** `SHOT_FLAG` bits: what the bolt struck, as this screen drew it (a click) or as the host said (a report). */
   readonly flags: number;
@@ -44,6 +48,8 @@ export interface ShotLogEntry {
   readonly z: number;
   /** True for the player's own click, drawn before the host had answered. */
   readonly predicted: boolean;
+  /** The cell of the turret that fired it, for a turret's shot. */
+  readonly turret?: readonly [x: number, y: number, z: number];
 }
 
 export interface ShotEffects {
@@ -74,6 +80,7 @@ export function createShotEffects({
   session,
   rayWorld,
   player,
+  aimTurret,
 }: ShotEffectsOptions): ShotEffects {
   const sample = createPlayerSample();
   const gun: Vec3 = { x: 0, y: 0, z: 0 };
@@ -110,11 +117,13 @@ export function createShotEffects({
     return false;
   };
 
-  /** Draws a bolt from the gun of `by` to `mark`, and what it does there once it lands. Returns the seconds it takes to. */
-  const fly = (by: PlayerId, flags: number, aim: Vec3 | null): number => {
-    const color = colorOf(by);
+  /**
+   * Draws a bolt in `color` from the gun in `gun` (where `armed`) to `mark`, and what it does there
+   * once it lands. Returns the seconds it takes to.
+   */
+  const draw = (color: string, flags: number, aim: Vec3 | null, armed: boolean): number => {
     let arrives = 0;
-    if (takeGun(by)) {
+    if (armed) {
       const length = Math.hypot(mark.x - gun.x, mark.y - gun.y, mark.z - gun.z);
       if (length > 0.01) {
         way.x = (mark.x - gun.x) / length;
@@ -133,8 +142,36 @@ export function createShotEffects({
     return arrives;
   };
 
-  const remember = (by: PlayerId, flags: number, predicted: boolean): void => {
-    shots.push({ by, flags, x: mark.x, y: mark.y, z: mark.z, predicted });
+  /** Draws a bolt from the gun of `by` to `mark`. Returns the seconds it takes to. */
+  const fly = (by: PlayerId, flags: number, aim: Vec3 | null): number =>
+    draw(colorOf(by), flags, aim, takeGun(by));
+
+  /**
+   * Draws a turret's bolt to `mark`, from the muzzle of the turret in `cell`: where every screen
+   * works it out from the cell and the end of the bolt, so the bolt leaves the barrel the head is
+   * turned along. Returns the seconds it takes to.
+   */
+  const flyFromTurret = (cell: readonly [number, number, number], flags: number): number => {
+    turretMuzzle(cell[0], cell[1], cell[2], mark.x, mark.y, mark.z, gun);
+    aimTurret?.(cell[0], cell[1], cell[2], mark.x, mark.y, mark.z);
+    return draw(FX_COLOR.turret, flags, null, true);
+  };
+
+  const remember = (
+    by: PlayerId,
+    flags: number,
+    predicted: boolean,
+    turret?: readonly [number, number, number],
+  ): void => {
+    shots.push({
+      by,
+      flags,
+      x: mark.x,
+      y: mark.y,
+      z: mark.z,
+      predicted,
+      ...(turret ? { turret } : {}),
+    });
     if (shots.length > REMEMBERED_SHOTS) shots.shift();
   };
 
@@ -163,6 +200,12 @@ export function createShotEffects({
       mark.x = shot.x;
       mark.y = shot.y;
       mark.z = shot.z;
+      if (shot.turret) {
+        const arrives = flyFromTurret(shot.turret, shot.flags);
+        if (shot.flags & SHOT_FLAG.kill) fx.burst(mark, arrives);
+        remember(shot.by, shot.flags, false, shot.turret);
+        return;
+      }
       if (shot.by === session.localId) {
         // The click drew this bolt already. What the host adds is the end of a machine, which falls
         // when the bolt that felled it lands: on a fast link the word can come back before that.

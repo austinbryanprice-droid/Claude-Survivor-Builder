@@ -109,6 +109,20 @@ function readEvent(raw: unknown): WorldEvent | null {
   return { type: 'set', x, y, z, state, by };
 }
 
+/** The three whole numbers of a cell, each in the range a cell coordinate has. */
+function readCell(raw: unknown): [number, number, number] | null {
+  if (!Array.isArray(raw) || raw.length !== 3) return null;
+  const [x, y, z] = raw as unknown[];
+  if (
+    !isInt(x, CELL_MIN, CELL_MAX) ||
+    !isInt(y, CELL_MIN, CELL_MAX) ||
+    !isInt(z, CELL_MIN, CELL_MAX)
+  ) {
+    return null;
+  }
+  return [x, y, z];
+}
+
 /** Three finite numbers, each no larger than `limit` in size. */
 function readVec3(raw: unknown, limit: number): [number, number, number] | null {
   if (!Array.isArray(raw) || raw.length !== 3) return null;
@@ -420,9 +434,16 @@ export function decodeHostFrame(text: string): HostFrame | null {
     }
     case 'sh': {
       const end = readVec3(raw.e, NET.move.limit);
-      if (!end || !isInt(raw.p, 1, MAX_U16) || !isInt(raw.h, 0, MAX_U16)) return null;
+      if (!end || !isInt(raw.h, 0, MAX_U16)) return null;
       if (!isInt(raw.f, 0, SHOT_FLAGS_MASK)) return null;
-      return { t: 'sh', p: raw.p, e: end, f: raw.f, h: raw.h };
+      // A player's shot names the player and no cell; a turret's names its cell and no player.
+      if (raw.c === undefined) {
+        if (!isInt(raw.p, 1, MAX_U16)) return null;
+        return { t: 'sh', p: raw.p, e: end, f: raw.f, h: raw.h };
+      }
+      const cell = readCell(raw.c);
+      if (!cell || raw.p !== 0) return null;
+      return { t: 'sh', p: 0, c: cell, e: end, f: raw.f, h: raw.h };
     }
     case 'pings': {
       if (!Array.isArray(raw.p) || raw.p.length > NET.maxPlayers) return null;

@@ -29,6 +29,7 @@ export type IconId =
   | 'lock'
   | 'research'
   | 'terminal'
+  | 'turret'
   | 'block-scrap'
   | 'block-composite'
   | 'block-alloy'
@@ -64,6 +65,7 @@ export const ICON_IDS: readonly IconId[] = [
   'lock',
   'research',
   'terminal',
+  'turret',
   'block-scrap',
   'block-composite',
   'block-alloy',
@@ -439,6 +441,19 @@ const SPRITE_BODY = /* html */ `
   <path d="M16.8 21.8 H25" stroke="#ffffff" stroke-opacity="0.85" stroke-width="1.1" stroke-linecap="round"/>
   <rect x="13.4" y="34" width="21.2" height="2.6" rx="1.3" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="1.1"/>
   <path d="M12.2 17 H35.8" stroke="#f6faff" stroke-opacity="0.7" stroke-width="1" stroke-linecap="round"/>
+</symbol>
+
+<symbol id="ph-i-turret" viewBox="0 0 48 48">
+  <path d="M8.4 43.2 H39.6 Q41.4 43.2 41 41.6 L40.2 38.2 H7.8 L7 41.6 Q6.6 43.2 8.4 43.2 Z" fill="url(#ph-steel-dark)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M18.6 38.2 V31 H29.4 V38.2 Z" fill="url(#ph-steel)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
+  <rect x="12.4" y="38.4" width="23.2" height="1.8" rx="0.9" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="0.9"/>
+  <rect x="27" y="15.6" width="15.6" height="4.6" rx="1.7" fill="url(#ph-steel-dark)" stroke="${INK}" stroke-width="1.5"/>
+  <rect x="39.8" y="13.8" width="4.6" height="8.2" rx="1.7" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="1.3"/>
+  <path d="M7.8 31 V19.4 Q7.8 13.8 13.4 13.8 H27.8 Q31 13.8 31 17 V28.4 Q31 31 28.4 31 Z" fill="url(#ph-steel)" stroke="${INK}" stroke-width="1.7" stroke-linejoin="round"/>
+  <rect x="21.4" y="16.8" width="6.6" height="4.6" rx="1.6" fill="#1b2a36" stroke="${INK}" stroke-width="1.1"/>
+  <rect x="22.6" y="17.9" width="4.2" height="2.4" rx="1" fill="url(#ph-core)"/>
+  <path d="M11 16.8 H19.6" stroke="#f6faff" stroke-opacity="0.75" stroke-width="1.1" stroke-linecap="round"/>
+  <path d="M10.4 26.8 H26.4" stroke="${INK}" stroke-opacity="0.45" stroke-width="1.3" stroke-linecap="round"/>
 </symbol>
 ${BLOCK_SYMBOLS}
 ${SHAPE_SYMBOLS}

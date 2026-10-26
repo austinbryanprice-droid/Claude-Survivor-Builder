@@ -550,6 +550,7 @@ export class GuestSession implements GameSession {
           z: frame.e[2],
           flags: frame.f,
           enemy: frame.f & SHOT_FLAG.enemy ? frame.h : 0,
+          ...(frame.c ? { turret: frame.c } : {}),
         });
         break;
       case 'pings':

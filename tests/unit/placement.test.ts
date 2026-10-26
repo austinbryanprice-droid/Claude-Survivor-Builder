@@ -226,6 +226,27 @@ describe('placing a module', () => {
     expect(place(MODULE_FACINGS, 1, 0)).toBe(place(0, 1, 0));
   });
 
+  it("puts a gun's front the way the player looks, where a console's is toward them", () => {
+    const aimed = (module: number, lookX: number, lookZ: number): number =>
+      moduleFacing(orientShape('module', 0, ON_TOP, lookX, lookZ, module));
+    // Looking toward +x, the turret's barrel points toward +x and the Terminal's screens toward -x.
+    expect(aimed(MODULE.turret, 1, 0)).toBe(0);
+    expect(aimed(MODULE.terminal, 1, 0)).toBe(2);
+    // Whatever way the player looks, the two stand back to back.
+    for (const [x, z] of [
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+      [0, -1],
+    ] as const) {
+      expect((aimed(MODULE.turret, x, z) + 2) % MODULE_FACINGS).toBe(aimed(MODULE.terminal, x, z));
+    }
+    // The turn key moves it from there a quarter turn at a time.
+    for (let turn = 0; turn < MODULE_FACINGS; turn++) {
+      expect(moduleFacing(orientShape('module', turn, ON_TOP, 1, 0, MODULE.turret))).toBe(turn);
+    }
+  });
+
   it('stands the same on a floor, a wall or a ceiling: it is the support rule that decides', () => {
     for (const surface of [ON_TOP, UNDER, side(0.2), side(0.8)]) {
       expect(place(1, 0, 1, surface)).toBe(place(1, 0, 1));

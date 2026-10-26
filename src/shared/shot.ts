@@ -24,7 +24,7 @@ export const SHOT_FLAGS_MASK = SHOT_FLAG.enemy | SHOT_FLAG.kill | SHOT_FLAG.worl
 
 /** What the host says about one shot, to everyone in the room. */
 export interface ShotEvent {
-  /** Who fired it. */
+  /** Who fired it: a player, or `NO_PLAYER` for a turret's shot. */
   readonly by: number;
   /** Where the bolt ended, in blocks. */
   readonly x: number;
@@ -34,6 +34,8 @@ export interface ShotEvent {
   readonly flags: number;
   /** The machine it struck, or 0. */
   readonly enemy: number;
+  /** The turret that fired it, as the cell it stands in. Absent for a player's shot. */
+  readonly turret?: readonly [x: number, y: number, z: number];
 }
 
 /** A box a machine presents to a bolt: square, standing on its feet. */
