@@ -80,8 +80,23 @@ interface Meters {
 
 const run = (page: Page): Promise<Run> => read<Run>(page, 'mp.clock()');
 const meters = (page: Page): Promise<Meters> => read<Meters>(page, 'mp.vitals()');
+
+/**
+ * Fells the player and holds the run there, and returns the Health the fall took. The Core brings a
+ * player back after six seconds of the run's clock, which keeps time while a frame (and every check
+ * below waits for one) can take longer than that here. Letting go of the pointer pauses a run played
+ * alone, and a tenth of a second on its clock is the step in which the Core sees the player down, or
+ * the crew with no one left. All of it happens in one task, so nothing is missed in between.
+ */
 const fell = (page: Page): Promise<number> =>
-  page.evaluate(() => window.__ashbound?.mp?.hurtPlayer(1000) ?? 0);
+  page.evaluate(() => {
+    const mp = window.__ashbound?.mp;
+    if (!mp) return 0;
+    const hurt = mp.hurtPlayer(1000);
+    document.exitPointerLock();
+    mp.warp(0.1);
+    return hurt;
+  });
 
 test.describe('going down and coming back', () => {
   test('a player at no Health lies where they fell, the Core brings them back at the base shaken for a charge, and with none left the run ends', async ({
@@ -162,7 +177,6 @@ test.describe('going down and coming back', () => {
       expect(back.returnIn).toBe(0);
       expect(back.energy).toBeLessThanOrEqual(VITALS.maxEnergy * RESPAWN.energy);
       expect(back.energy).toBeGreaterThanOrEqual(VITALS.maxEnergy * RESPAWN.energy - 3);
-      // The run is live and a frame takes seconds here, so some of the debuff may be gone already.
       expect(back.shaken).toBeGreaterThan(0);
       expect(back.shaken).toBeLessThanOrEqual(RESPAWN.shaken.seconds);
       expect((await run(page)).respawns).toBe(RESPAWN.startPerPlayer - 1);
