@@ -15,6 +15,7 @@ describe('view URL switches', () => {
     expect(v.stats).toBe(true);
     expect(v.waves).toBe(true);
     expect(v.stock).toBeNull();
+    expect(v.research).toBeNull();
     expect(v.freeze).toBe(false);
     expect(v.terrain).toBe('surface-nets');
     expect(v.scale).toBeNull();
@@ -88,6 +89,17 @@ describe('view URL switches', () => {
     }
     expect(readViewFlags('?stock').stock).toBeNull();
     expect(readViewFlags('?night=3&stock=40')).toMatchObject({ night: 3, stock: 40 });
+  });
+
+  it('opens the run with the research it is asked for, and earns it by surviving when it is not', () => {
+    expect(readViewFlags('?research=55').research).toBe(55);
+    expect(readViewFlags('?research=0').research).toBe(0);
+    expect(readViewFlags('?research=9999').research).toBe(9999);
+    for (const bad of ['-1', '1.5', 'lots', '', '10000', '1e3', '0x10']) {
+      expect(readViewFlags(`?research=${bad}`).research, bad).toBeNull();
+    }
+    expect(readViewFlags('?research').research).toBeNull();
+    expect(readViewFlags('?stock=40&research=100')).toMatchObject({ stock: 40, research: 100 });
   });
 
   it('picks the presets the benchmark runs, once each and in the order given', () => {

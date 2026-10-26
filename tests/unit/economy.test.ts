@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
 import { createEconomyReading, type DebrisNode } from '../../src/shared/economy';
 import { DEBRIS, POOL } from '../../src/systems/economy/balance';
-import { DEBRIS_IN_THE_WAY, notEnough } from '../../src/systems/economy/build-rules';
+import { DEBRIS_IN_THE_WAY, needsResearch, notEnough } from '../../src/systems/economy/build-rules';
 import { Economy, cellKey, evenStock, stripYield } from '../../src/systems/economy/economy';
+import { RESEARCH_STEPS } from '../../src/systems/economy/research';
 
 function heap(index: number, overrides: Partial<DebrisNode> = {}): DebrisNode {
   return {
@@ -200,12 +201,33 @@ describe('the economy paying for blocks', () => {
 
   it('refuses a block the pool cannot pay for, in words that name the material', () => {
     const economy = new Economy(5, field());
+    economy.research.set(RESEARCH_STEPS[0]!.points);
     expect(economy.placementRefusal(0, 20, 0, scrapBlock)).toBeNull();
     expect(economy.placementRefusal(0, 20, 0, compositeBlock)).toBe(
       notEnough('Reinforced Composite'),
     );
     economy.pool.set(MATERIAL.scrap, 0);
     expect(economy.placementRefusal(0, 20, 0, scrapBlock)).toBe('not enough Scrap');
+  });
+
+  it('refuses a material the crew has not researched, before it asks about the pool', () => {
+    const economy = new Economy(5, field(), evenStock(50));
+    const alloyBlock = packState(SHAPE.cube, MATERIAL.alloy);
+    expect(economy.placementRefusal(0, 20, 0, compositeBlock)).toBe(
+      needsResearch('Reinforced Composite'),
+    );
+    expect(economy.placementRefusal(0, 20, 0, scrapBlock)).toBeNull();
+    economy.research.set(RESEARCH_STEPS[0]!.points);
+    expect(economy.placementRefusal(0, 20, 0, compositeBlock)).toBeNull();
+    expect(economy.placementRefusal(0, 20, 0, alloyBlock)).toBe(needsResearch('Advanced Alloy'));
+    economy.research.set(RESEARCH_STEPS[1]!.points);
+    expect(economy.placementRefusal(0, 20, 0, alloyBlock)).toBeNull();
+    // Locked outranks short: a closed material with nothing in the pool says "needs research".
+    economy.research.set(0);
+    economy.pool.set(MATERIAL.composite, 0);
+    expect(economy.placementRefusal(0, 20, 0, compositeBlock)).toBe(
+      needsResearch('Reinforced Composite'),
+    );
   });
 
   it('refuses a block in the room a heap that is lying there keeps clear, and no other', () => {
@@ -274,5 +296,117 @@ describe('a dawn over ground the crew has built on', () => {
     expect(economy.leftOf(2)).toBe(0);
     expect(economy.dawn(2, () => false)).toBe(0);
     expect(economy.leftOf(2)).toBe(0);
+  });
+});
+
+describe('heaps of a better grade', () => {
+  const better = (index: number, grade: number, harvests: number) =>
+    heap(index, { grade, harvests });
+
+  it('give their own material at their own yield', () => {
+    const economy = new Economy(5, [
+      better(0, MATERIAL.composite, 3),
+      better(1, MATERIAL.alloy, 2),
+    ]);
+    const composite = economy.harvest(0, 1);
+    expect(composite.ok && composite.event.material).toBe(MATERIAL.composite);
+    const worth = stripYield(5, 0, 0, MATERIAL.composite);
+    expect(worth).toBeGreaterThanOrEqual(5);
+    expect(worth).toBeLessThanOrEqual(7);
+    expect(composite.ok && composite.event.gained).toBe(worth);
+    expect(economy.pool.amount(MATERIAL.composite)).toBe(worth);
+    expect(economy.pool.amount(MATERIAL.scrap)).toBe(POOL.start[MATERIAL.scrap]);
+    const alloy = economy.harvest(1, 1);
+    expect(alloy.ok && alloy.event.material).toBe(MATERIAL.alloy);
+    expect(economy.pool.amount(MATERIAL.alloy)).toBe(stripYield(5, 1, 0, MATERIAL.alloy));
+    expect(economy.gathered).toBe(worth + stripYield(5, 1, 0, MATERIAL.alloy));
+  });
+
+  it('say what the next strip is worth in their own terms', () => {
+    const economy = new Economy(11, [better(0, MATERIAL.alloy, 2)]);
+    expect(economy.nextYield(0)).toBe(stripYield(11, 0, 0, MATERIAL.alloy));
+    economy.harvest(0, 1);
+    expect(economy.nextYield(0)).toBe(stripYield(11, 0, 1, MATERIAL.alloy));
+  });
+
+  it('are worth a whole number inside the span the table gives their grade, and every number in it turns up', () => {
+    for (const grade of DEBRIS.grades) {
+      const seen = new Set<number>();
+      for (let node = 0; node < 60; node++) {
+        for (let strip = 0; strip < 3; strip++)
+          seen.add(stripYield(5, node, strip, grade.material));
+      }
+      expect(Math.min(...seen)).toBe(grade.yield.min);
+      expect(Math.max(...seen)).toBe(grade.yield.max);
+      expect(seen.size).toBe(grade.yield.max - grade.yield.min + 1);
+    }
+  });
+
+  it('take Scrap as the grade where none is said', () => {
+    expect(stripYield(5, 3, 1)).toBe(stripYield(5, 3, 1, MATERIAL.scrap));
+  });
+});
+
+describe('a dawn and what the crew has researched', () => {
+  /** A heap of Scrap from the start, then one of each better grade due at night 2 and 3, and a Scrap heap due at 3. */
+  function mixed(): DebrisNode[] {
+    return [
+      heap(0),
+      heap(1, { from: 2, grade: MATERIAL.composite, harvests: 3 }),
+      heap(2, { from: 3, grade: MATERIAL.alloy, harvests: 2 }),
+      heap(3, { from: 3, harvests: 2 }),
+    ];
+  }
+  const left = (economy: Economy) => [0, 1, 2, 3].map((i) => economy.leftOf(i));
+
+  it('leaves a heap of a closed tier in the ground while the Scrap of the same dawn comes up', () => {
+    const economy = new Economy(5, mixed());
+    expect(economy.dawn(3)).toBe(1);
+    expect(left(economy)).toEqual([3, 0, 0, 2]);
+  });
+
+  it('brings it up at the first dawn after the research is done, tier by tier', () => {
+    const economy = new Economy(5, mixed());
+    economy.dawn(3);
+    economy.research.set(RESEARCH_STEPS[0]!.points);
+    expect(economy.dawn(4)).toBe(1);
+    expect(left(economy)).toEqual([3, 3, 0, 2]);
+    economy.research.set(RESEARCH_STEPS[1]!.points);
+    expect(economy.dawn(5)).toBe(1);
+    expect(left(economy)).toEqual([3, 3, 2, 2]);
+  });
+
+  it('brings no heap up before the night it is due, whatever the crew has researched', () => {
+    const economy = new Economy(5, mixed());
+    economy.research.set(RESEARCH_STEPS[2]!.points);
+    expect(economy.dawn(1)).toBe(0);
+    expect(economy.dawn(2)).toBe(1);
+    expect(left(economy)).toEqual([3, 3, 0, 0]);
+  });
+
+  it('asks whether the ground is built over only for the heaps whose tier is open', () => {
+    const economy = new Economy(5, mixed());
+    const asked: number[] = [];
+    economy.dawn(3, (node) => {
+      asked.push(node.index);
+      return false;
+    });
+    expect(asked).toEqual([3]);
+  });
+
+  it('does not change its version for a dawn that brings nothing up', () => {
+    const economy = new Economy(5, [heap(0), heap(1, { from: 2, grade: MATERIAL.composite })]);
+    const before = economy.version;
+    expect(economy.dawn(2)).toBe(0);
+    expect(economy.version).toBe(before);
+  });
+});
+
+describe('the research an economy keeps', () => {
+  it('shows its points and the tier they open when it is read', () => {
+    const economy = new Economy(5, field());
+    expect(economy.read(createEconomyReading())).toMatchObject({ research: 0, tier: 1 });
+    economy.research.set(60);
+    expect(economy.read(createEconomyReading())).toMatchObject({ research: 60, tier: 3 });
   });
 });

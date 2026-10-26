@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MATERIAL } from '../../src/shared/blocks';
 import { DEBRIS } from '../../src/systems/economy/balance';
 import { debrisBand, debrisField } from '../../src/systems/economy/field';
+import { harvestsOfGrade } from '../../src/systems/economy/grades';
 import { valleyNavigation } from '../../src/systems/survival/valley-nav';
 import { LAKE, WATER_LEVEL } from '../../src/world/terrain/field';
 import { createWorld } from '../../src/world/voxels/world';
@@ -28,20 +29,41 @@ describe('the field of debris on open ground', () => {
     expect(nights).toEqual([...nights].sort((a, b) => a - b));
   });
 
-  it('gives the heaps what the table says: two to four strips of Scrap, a size and a way they lie', () => {
+  it('gives the heaps what the table says: strips by grade, a size and a way they lie', () => {
     for (const node of field) {
-      expect(node.harvests).toBeGreaterThanOrEqual(DEBRIS.harvests.min);
-      expect(node.harvests).toBeLessThanOrEqual(DEBRIS.harvests.max);
-      expect(node.grade).toBe(MATERIAL.scrap);
+      const span = harvestsOfGrade(node.grade);
+      expect(node.harvests).toBeGreaterThanOrEqual(span.min);
+      expect(node.harvests).toBeLessThanOrEqual(span.max);
       expect(node.scale).toBeGreaterThanOrEqual(DEBRIS.size.min);
       expect(node.scale).toBeLessThanOrEqual(DEBRIS.size.max);
       expect(node.yaw).toBeGreaterThanOrEqual(0);
       expect(node.yaw).toBeLessThan(Math.PI * 2);
     }
-    // All three strip counts turn up: the field is not a stamp.
-    expect(new Set(field.map((node) => node.harvests)).size).toBe(
+    // All three strip counts turn up in the Scrap: the field is not a stamp.
+    const scrap = field.filter((node) => node.grade === MATERIAL.scrap);
+    expect(new Set(scrap.map((node) => node.harvests)).size).toBe(
       DEBRIS.harvests.max - DEBRIS.harvests.min + 1,
     );
+  });
+
+  it('makes the first batch and every heap the table does not name Scrap', () => {
+    for (const node of field.filter((n) => n.from === 0)) expect(node.grade).toBe(MATERIAL.scrap);
+    const better = DEBRIS.grades.reduce((sum, grade) => sum + (DEBRIS.dawns - grade.from + 1), 0);
+    expect(field.filter((node) => node.grade !== MATERIAL.scrap)).toHaveLength(better);
+    expect(field.filter((node) => node.grade === MATERIAL.scrap)).toHaveLength(TOTAL - better);
+  });
+
+  it('gives each better grade its place in every batch from the dawn the table names', () => {
+    for (const grade of DEBRIS.grades) {
+      const made = field.filter((node) => node.grade === grade.material);
+      expect(made.map((node) => node.from)).toEqual(
+        Array.from({ length: DEBRIS.dawns - grade.from + 1 }, (_, i) => grade.from + i),
+      );
+      for (const node of made) {
+        const batch = field.filter((other) => other.from === node.from);
+        expect(batch.indexOf(node)).toBe(grade.slot);
+      }
+    }
   });
 
   it('keeps every heap in the band of its batch round the Core', () => {

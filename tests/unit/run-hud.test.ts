@@ -327,6 +327,27 @@ describe('the results of a lost run', () => {
     ]);
   });
 
+  it('add the research the crew earned after the materials, when the screen has an economy to ask', () => {
+    const lost = withCore(720 + DAY_SECONDS + 90, 0, true);
+    lost.gathered = 460;
+    const labels = (research: number | null) =>
+      resultsForHud(lost, research)?.stats.map((stat) => stat.label);
+    expect(labels(null)).not.toContain('Research earned');
+    expect(labels(55)).toEqual([
+      'Time held',
+      'Machines destroyed',
+      'Blocks placed',
+      'Materials gathered',
+      'Research earned',
+      'Respawns used',
+    ]);
+    expect(resultsForHud(lost, 55)?.stats).toContainEqual({
+      label: 'Research earned',
+      value: '55',
+    });
+    expect(resultsForHud(lost, 0)?.stats).toContainEqual({ label: 'Research earned', value: '0' });
+  });
+
   it('show a crew that did nothing as zeros, not as gaps', () => {
     const stats = resultsForHud(withCore(DAY_SECONDS + 30, 0, true))?.stats ?? [];
     expect(stats.map((stat) => stat.value)).toEqual(['8:30', '0', '0', '0', '0']);

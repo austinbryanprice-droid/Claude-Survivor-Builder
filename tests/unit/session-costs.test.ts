@@ -7,6 +7,7 @@ import { createReading } from '../../src/shared/survival-state';
 import { createVitalsReading } from '../../src/shared/vitals-state';
 import { POOL } from '../../src/systems/economy/balance';
 import { DEBRIS_IN_THE_WAY } from '../../src/systems/economy/build-rules';
+import { RESEARCH_STEPS } from '../../src/systems/economy/research';
 import { VITALS } from '../../src/systems/survival/balance';
 import { FLOOR, arena, sim, type Room } from './helpers/arena';
 import { at, helloText, makeRoom, rawGuest } from './helpers/net';
@@ -89,7 +90,7 @@ describe('the host placing and breaking blocks', () => {
   });
 
   it('charges and refunds the material of the piece, each its own', () => {
-    const { room } = arena({}, { stock: 10 });
+    const { room } = arena({}, { stock: 10, research: 100 });
     room.host.sendCommand(place(0, COMPOSITE));
     room.host.sendCommand(place(1, packState(SHAPE.slab, MATERIAL.composite)));
     room.host.sendCommand(place(2, SCRAP));
@@ -99,7 +100,7 @@ describe('the host placing and breaking blocks', () => {
   });
 
   it('refuses a block the pool cannot pay for, in words that name what is short, and takes nothing', () => {
-    const { room, hostWorld } = arena({}, { stock: 0 });
+    const { room, hostWorld } = arena({}, { stock: 0, research: 100 });
     const seen = reasons(room.host);
     const before = energy(room);
     room.host.sendCommand(place(0));
@@ -110,6 +111,35 @@ describe('the host placing and breaking blocks', () => {
     // A refused block costs the player nothing, and the run does not count it.
     expect(energy(room)).toBe(before);
     expect(placed(room)).toBe(0);
+  });
+
+  it('refuses a material the crew has not researched, in words that name it, and takes nothing', () => {
+    const { room, hostWorld } = arena({}, { stock: 10 });
+    const seen = reasons(room.host);
+    const before = energy(room);
+    room.host.sendCommand(place(0, COMPOSITE));
+    room.host.sendCommand(place(1, packState(SHAPE.wedge, MATERIAL.alloy)));
+    expect(seen).toEqual(['Reinforced Composite needs research', 'Advanced Alloy needs research']);
+    expect(hostWorld.cells.size).toBe(0);
+    expect(stock(room.host.economy)).toEqual([10, 10, 10, 10]);
+    expect(energy(room)).toBe(before);
+    expect(placed(room)).toBe(0);
+  });
+
+  it('opens a material to the crew the moment its research is done, and not one tier further', () => {
+    const { room, hostWorld } = arena({}, { stock: 10 });
+    const seen = reasons(room.host);
+    const research = economyResearch(room);
+    research.set(RESEARCH_STEPS[0]!.points);
+    room.host.sendCommand(place(0, COMPOSITE));
+    room.host.sendCommand(place(1, packState(SHAPE.cube, MATERIAL.alloy)));
+    expect(seen).toEqual(['Advanced Alloy needs research']);
+    expect(hostWorld.cells.size).toBe(1);
+    research.set(RESEARCH_STEPS[1]!.points);
+    room.host.sendCommand(place(1, packState(SHAPE.cube, MATERIAL.alloy)));
+    expect(seen).toHaveLength(1);
+    expect(hostWorld.cells.size).toBe(2);
+    expect(stock(room.host.economy)).toEqual([10, 9, 9, 10]);
   });
 
   it('runs the pool down to nothing and then refuses', () => {
@@ -156,6 +186,10 @@ describe('the host placing and breaking blocks', () => {
 
 function economyPool(room: Room) {
   return sim(room).economy!.pool;
+}
+
+function economyResearch(room: Room) {
+  return sim(room).economy!.research;
 }
 
 describe('guests placing and breaking blocks', () => {

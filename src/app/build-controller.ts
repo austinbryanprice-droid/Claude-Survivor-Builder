@@ -71,6 +71,8 @@ export interface BuildHudState {
   readonly kill: boolean;
   /** Strips left of the heap of debris the cursor is on and the player can reach (the interact key strips one), or 0 when it is on none. */
   readonly salvage: number;
+  /** The material that heap gives, as a `MATERIAL` id; 0 when the cursor is on none. */
+  readonly salvageGrade: number;
 }
 
 /** Where the player is looking from, as the camera has it this frame. */
@@ -161,6 +163,7 @@ export class BuildController {
     hits: number;
     kill: boolean;
     salvage: number;
+    salvageGrade: number;
   } = {
     selected: 0,
     buildMode: false,
@@ -173,6 +176,7 @@ export class BuildController {
     hits: 0,
     kill: false,
     salvage: 0,
+    salvageGrade: 0,
   };
 
   constructor(private readonly ports: BuildPorts) {}
@@ -384,6 +388,8 @@ export class BuildController {
     state.hits = this.hitCount;
     state.kill = this.lastKill;
     state.salvage = this.down ? 0 : this.heap.left;
+    state.salvageGrade =
+      state.salvage > 0 ? (this.ports.economy().debris.nodes[this.heap.index]?.grade ?? 0) : 0;
     if (this.armed) state.crosshair = 'blaster';
     else if (!aim.hasPlace) state.crosshair = 'none';
     else if (!aim.placeRefusal) state.crosshair = 'place';

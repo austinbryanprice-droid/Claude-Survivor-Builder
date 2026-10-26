@@ -33,15 +33,21 @@ jobs:
   # The browser tests run against the production build, software-rendered, and the two projects are
   # independent (the multiplayer one only waits for the other locally, to have the machine to
   # itself). Side by side they take the time of the longer one, which kept the run well inside its
-  # limit as the game grew; in one job they were at ten and a half of fifteen minutes.
+  # limit as the game grew; in one job they were at ten and a half of fifteen minutes. The Chromium
+  # project then grew to thirteen and a half minutes on a good runner, and the same tests took one
+  # and a half times as long on a slow one, so it runs as two halves. Playwright cuts them by test,
+  # in file order, and the halves come out within a minute of each other.
   browser:
-    name: browser (${{ matrix.project }})
+    name: browser (${{ matrix.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        project: [chromium, multiplayer]
+        include:
+          - { name: chromium 1/2, project: chromium, shard: 1/2 }
+          - { name: chromium 2/2, project: chromium, shard: 2/2 }
+          - { name: multiplayer, project: multiplayer, shard: 1/1 }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -53,12 +59,12 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
       - name: Browser tests
-        run: npx playwright test --project=${{ matrix.project }} --no-deps
+        run: npx playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }} --no-deps
       - name: Upload test report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report-${{ matrix.project }}
+          name: playwright-report-${{ matrix.project }}-${{ strategy.job-index }}
           path: |
             playwright-report/
             test-results/

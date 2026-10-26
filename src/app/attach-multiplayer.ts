@@ -37,6 +37,8 @@ export interface AttachOptions {
   waves: boolean;
   /** Open the pool with this much of every material (the `?stock=` switch), or null for the table's opening stock. */
   stock: number | null;
+  /** Open the run with this many research points (the `?research=` switch), or null to earn them by surviving nights. */
+  research: number | null;
   /** The sky follows the run's clock. False when the page holds a moment or runs its own demo clock. */
   skyFollowsClock: boolean;
 }
@@ -60,6 +62,7 @@ export function attachMultiplayer({
   night,
   waves,
   stock,
+  research,
   skyFollowsClock,
 }: AttachOptions): Multiplayer {
   const multiplayer = createMultiplayer({
@@ -105,6 +108,7 @@ export function attachMultiplayer({
           seed: game.world.seed,
           waves,
           stock,
+          research,
         }),
     },
     groundAt: (x, z) => game.world.groundAt(x, z),

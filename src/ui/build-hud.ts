@@ -12,9 +12,11 @@ import {
   type ShapeKind,
 } from '../shared/blocks';
 import { AIM_REFUSAL } from '../shared/build-aim';
+import { needsResearch } from '../systems/economy/build-rules';
 import { VITALS } from '../systems/survival/balance';
 import type { HotbarSlot, HudInteract, HudPrompt } from './player-hud/player-hud';
 import type { IconId } from './player-hud/icons';
+import { lockText, type HudLock } from './research-hud';
 
 /**
  * How the HUD shows the building hands: the block icons of the hotbar, the words for why a click
@@ -40,6 +42,8 @@ export interface BuildHudInput {
   readonly kill: boolean;
   /** Strips left of the heap of debris the cursor is on and the player can reach, or 0 when it is on none. */
   readonly salvage: number;
+  /** The material that heap gives, as a `MATERIAL` id; 0 when the cursor is on none. */
+  readonly salvageGrade: number;
 }
 
 export interface BuildHudSource {
@@ -118,13 +122,18 @@ export function refusalText(code: string): string {
 /** The key that strips a heap of debris, as its cap reads. */
 export const INTERACT_KEY = 'E';
 
-/** What the cursor on a heap of debris tells the player: the key, what it does, and how many strips the heap has left. */
-export function interactPrompt(strips: number): HudInteract | null {
+/**
+ * What the cursor on a heap of debris tells the player: the key, what it does, and how many strips
+ * the heap has left. A heap of anything but Scrap says what it gives, since it looks like the others.
+ */
+export function interactPrompt(strips: number, grade: number = MATERIAL.scrap): HudInteract | null {
   if (!(strips > 0)) return null;
+  const left = strips === 1 ? 'last strip' : `${strips} strips left`;
+  const material = grade === MATERIAL.scrap ? undefined : MATERIALS.find((m) => m.id === grade);
   return {
     key: INTERACT_KEY,
     label: 'Strip debris',
-    detail: strips === 1 ? 'last strip' : `${strips} strips left`,
+    detail: material ? `${material.name} · ${left}` : left,
   };
 }
 
@@ -157,7 +166,9 @@ export const BUILD_KEYS: readonly KeyRow[] = [
 /**
  * Works out the caption above the hotbar. It names what is in hand (a piece with its cost, or the
  * blaster with what a shot takes), in Build Mode and for a moment after the choice changes, and
- * shows why a click would do nothing, in red, for as long as the controller reports it.
+ * shows why a click would do nothing, in red, for as long as the controller reports it. A piece of
+ * a material the crew has not researched says how many points it has and how many open it (`lock`),
+ * in place of the host's words for the same thing.
  */
 export class BuildPromptTracker {
   private lastSelected = -1;
@@ -170,7 +181,7 @@ export class BuildPromptTracker {
   };
 
   /** Advances the timers by `dt` seconds and returns the caption to show, or null for none. The object is reused. */
-  update(dt: number, state: BuildHudInput): HudPrompt | null {
+  update(dt: number, state: BuildHudInput, lock: HudLock | null = null): HudPrompt | null {
     if (state.selected !== this.lastSelected || state.piece !== this.lastPiece) {
       // The first look at the controller is not a change: the page just opened.
       if (this.lastSelected >= 0) this.nameLeft = NAME_SECONDS;
@@ -182,9 +193,18 @@ export class BuildPromptTracker {
 
     const name = state.blaster ? BLASTER_NAME : pieceName(state.piece);
     const prompt = this.prompt;
-    if (state.refusal !== null) {
+    const closed = lock !== null && !state.blaster && name !== '';
+    // The host's words for a closed material are the same news as the lock, which says it better.
+    const refusal = closed && state.refusal === needsResearch(lock.name) ? null : state.refusal;
+    if (refusal !== null) {
       prompt.title = name;
-      prompt.detail = refusalText(state.refusal);
+      prompt.detail = refusalText(refusal);
+      prompt.tone = 'warn';
+      return prompt;
+    }
+    if (closed && (state.buildMode || this.nameLeft > 0 || state.refusal !== null)) {
+      prompt.title = name;
+      prompt.detail = lockText(lock);
       prompt.tone = 'warn';
       return prompt;
     }

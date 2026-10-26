@@ -37,6 +37,17 @@ export function notEnough(name: string): string {
 /** The words for a block that would bury a heap. */
 export const DEBRIS_IN_THE_WAY = 'debris is in the way';
 
+/** The words for a material the crew has not researched yet: the host sends them and the ghost shows them. */
+export function needsResearch(name: string): string {
+  return `${name} needs research`;
+}
+
+/** Why `state` may not be placed by a crew that has researched up to `tier`, or null when its material is open to them. */
+export function lockedRefusal(tier: number, state: CellState): string | null {
+  const material = materialOf(state);
+  return material && material.tier > tier ? needsResearch(material.name) : null;
+}
+
 /**
  * Why a pool that holds `amountOf(material)` of each material cannot pay for `state`, or null when
  * it can. The words name the material that is short.
@@ -109,10 +120,11 @@ export interface PlacementEconomy {
 }
 
 /**
- * Why the economy refuses a piece at a cell, in the host's order (a heap in the way, then a pool
- * that is short), read from the economy as this screen has it. Null when it would accept. Where there
- * is no pool to read (`cap` is 0: a host without a run, or the guest's first moment before the host
- * has said) nothing is charged, as the host charges nothing there.
+ * Why the economy refuses a piece at a cell, in the host's order (a heap in the way, a material the
+ * crew has not researched, then a pool that is short), read from the economy as this screen has it.
+ * Null when it would accept. Where there is no pool to read (`cap` is 0: a host without a run, or the
+ * guest's first moment before the host has said) nothing is charged and nothing is locked, as the
+ * host charges and locks nothing there.
  */
 export function placementRefusal(
   economy: PlacementEconomy,
@@ -125,5 +137,8 @@ export function placementRefusal(
   if (heapInTheWay(economy.debris, x, y, z)) return DEBRIS_IN_THE_WAY;
   const pool = economy.read(scratch);
   if (pool.cap <= 0) return null;
-  return shortfall((material) => pool.stock[poolSlot(material)] ?? 0, state);
+  return (
+    lockedRefusal(pool.tier, state) ??
+    shortfall((material) => pool.stock[poolSlot(material)] ?? 0, state)
+  );
 }

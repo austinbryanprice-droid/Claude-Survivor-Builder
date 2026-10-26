@@ -39,8 +39,9 @@ async function open(page: Page): Promise<string[]> {
   });
   page.on('pageerror', (error) => problems.push(`page error: ${error.message}`));
   // Blocks cost the crew's pool something now, and a run opens with a little Scrap and none of the
-  // dearer materials, so this page opens with plenty of each: what a block costs is tested in costs.spec.ts.
-  await page.goto('./?debug&quality=low&freeze=1&stats=0&stock=50');
+  // dearer materials, which have to be researched too, so this page opens with plenty of each and
+  // every material researched: what a block costs is tested in costs.spec.ts, and the research in research.spec.ts.
+  await page.goto('./?debug&quality=low&freeze=1&stats=0&stock=50&research=100');
   await wait(page.locator('html')).toHaveAttribute('data-ready', 'true');
   // The session arrives with the network code, a moment after the game is up.
   await page.waitForFunction(() => !!window.__ashbound?.mp, null, { timeout: STATE_TIMEOUT });
@@ -278,7 +279,7 @@ test.describe('building by hand', () => {
       page,
       'Promise.all([game.world.view.structures.warmUp(), game.world.view.ghost.precompile()])',
     );
-    const firstIcon = page.locator('.ph-slot').first().locator('use');
+    const firstIcon = page.locator('.ph-slot').first().locator('.ph-slot-icon use');
     await wait(firstIcon).toHaveAttribute('href', '#ph-i-block-scrap');
 
     const settled = async (pitch: number, yaw = 0): Promise<Aim> => {
@@ -294,7 +295,7 @@ test.describe('building by hand', () => {
     await test.step('Q picks the slab: the hotbar, the caption and the ghost change to a slab', async () => {
       await page.keyboard.press('KeyQ');
       await wait(firstIcon).toHaveAttribute('href', '#ph-i-slab-scrap');
-      await wait(page.locator('.ph-slot').nth(3).locator('use')).toHaveAttribute(
+      await wait(page.locator('.ph-slot').nth(3).locator('.ph-slot-icon use')).toHaveAttribute(
         'href',
         '#ph-i-slab-energy',
       );

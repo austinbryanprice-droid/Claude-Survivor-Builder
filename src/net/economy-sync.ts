@@ -13,6 +13,7 @@ import type { HostFrame } from '../shared/protocol';
 import type { Unsubscribe } from '../shared/survival-state';
 import { encodeFrame } from '../shared/wire';
 import type { Economy } from '../systems/economy/economy';
+import { tierAt } from '../systems/economy/research';
 import { Emitter } from './emitter';
 
 /**
@@ -81,6 +82,7 @@ export class HostEconomyReport {
   private readonly scratch = createEconomyReading();
   private sentStock: number[] = [];
   private sentCap = -1;
+  private sentResearch = -1;
   private sentAt = -Infinity;
   private listDirty = true;
 
@@ -118,6 +120,7 @@ export class HostEconomyReport {
     this.runs++;
     this.sentStock = [];
     this.sentCap = -1;
+    this.sentResearch = -1;
     this.sentAt = -Infinity;
     this.listDirty = true;
   }
@@ -145,10 +148,12 @@ export class HostEconomyReport {
     economy.read(this.scratch);
     const changed =
       this.scratch.cap !== this.sentCap ||
+      this.scratch.research !== this.sentResearch ||
       this.scratch.stock.some((amount, i) => amount !== this.sentStock[i]);
     if (changed && now - this.sentAt >= NET.poolIntervalMs) {
       this.sentAt = now;
       this.sentCap = this.scratch.cap;
+      this.sentResearch = this.scratch.research;
       this.sentStock = [...this.scratch.stock];
       frames.push(this.poolFrame(economy));
     }
@@ -157,7 +162,12 @@ export class HostEconomyReport {
 
   private poolFrame(economy: Economy): string {
     economy.read(this.scratch);
-    const frame: HostFrame = { t: 'ec', pl: [...this.scratch.stock], cap: this.scratch.cap };
+    const frame: HostFrame = {
+      t: 'ec',
+      pl: [...this.scratch.stock],
+      cap: this.scratch.cap,
+      rp: this.scratch.research,
+    };
     return encodeFrame(frame);
   }
 
@@ -216,28 +226,33 @@ export class DebrisMirror implements DebrisView {
   }
 }
 
-/** A guest's copy of the economy: the pool as the host last said it, and the heaps. */
+/** A guest's copy of the economy: the pool and the research points as the host last said them, and the heaps. */
 export class EconomyMirror implements EconomyView {
   private readonly stock = new Array<number>(POOL_SLOTS).fill(0);
   private cap = 0;
+  private research = 0;
   readonly debris = new DebrisMirror();
 
-  /** The pool as the host last said it. */
-  applyPool(stock: readonly number[], cap: number): void {
+  /** The pool and the research points as the host last said them. */
+  applyPool(stock: readonly number[], cap: number, research: number): void {
     for (let i = 0; i < POOL_SLOTS; i++) this.stock[i] = stock[i] ?? 0;
     this.cap = cap;
+    this.research = research;
   }
 
   /** A new run: nothing is known until the host speaks. */
   reset(): void {
     this.stock.fill(0);
     this.cap = 0;
+    this.research = 0;
     this.debris.clear();
   }
 
   read(out: EconomyReading): EconomyReading {
     for (let i = 0; i < POOL_SLOTS; i++) out.stock[i] = this.stock[i] as number;
     out.cap = this.cap;
+    out.research = this.research;
+    out.tier = tierAt(this.research);
     return out;
   }
 }
