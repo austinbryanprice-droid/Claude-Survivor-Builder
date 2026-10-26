@@ -69,6 +69,7 @@ export const MODULE_SINK = 0.25;
 export const MODULE = {
   terminal: 1,
   turret: 2,
+  generator: 3,
 } as const;
 
 /**
@@ -123,11 +124,12 @@ export interface MaterialDef {
 }
 
 /**
- * The modules, in the order of their ids. The Research Terminal is the first (Phase 5d) and the Basic
- * Turret the second (5f); the generator, node, storage, bed and light follow them (5g, 5h). The costs
- * of building one are Scrap only (about 40 and 25), because the notes price them in Composite, which
- * the Terminal itself unlocks (docs/decisions.md); the Turret's two steps up are paid in the better
- * materials (5f2).
+ * The modules, in the order of their ids. The Research Terminal is the first (Phase 5d), the Basic
+ * Turret the second (5f) and the Generator the third (5g); the node, storage, bed and light follow
+ * them (5g, 5h). The costs of building one are Scrap only (about 40, 25 and 40), because the notes
+ * price them in Composite, which the Terminal itself unlocks (docs/decisions.md); the Turret's two
+ * steps up are paid in the better materials (5f2). What opens the Generator is a group of research
+ * points, not a material (`RESEARCH.groups`).
  */
 export const MODULES: readonly ModuleDef[] = [
   {
@@ -149,6 +151,14 @@ export const MODULES: readonly ModuleDef[] = [
     cost: { material: MATERIAL.scrap, amount: 25 },
     body: [0.14, 0, 0.14, 0.86, 0.78, 0.86],
     facesPlayer: false,
+  },
+  {
+    id: MODULE.generator,
+    name: 'Generator',
+    raises: [],
+    cost: { material: MATERIAL.scrap, amount: 40 },
+    body: [0.12, 0, 0.12, 0.88, 0.85, 0.88],
+    facesPlayer: true,
   },
 ];
 

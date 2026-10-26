@@ -180,9 +180,19 @@ function tube(
   return geometry;
 }
 
-/** A round post standing upright, `height` tall and `radius` thick, centered at (x, y, z): a stem or an axle. */
-function post(height: number, radius: number, x: number, y: number, z: number): BufferGeometry {
-  const geometry = new CylinderGeometry(radius, radius, height, 12);
+/**
+ * A round post standing upright, `height` tall and `radius` thick, centered at (x, y, z): a stem, an axle
+ * or, with more `sides`, a drum.
+ */
+function post(
+  height: number,
+  radius: number,
+  x: number,
+  y: number,
+  z: number,
+  sides = 12,
+): BufferGeometry {
+  const geometry = new CylinderGeometry(radius, radius, height, sides);
   geometry.translate(x, y, z);
   return geometry;
 }
@@ -455,10 +465,71 @@ function turret(level: number): Build {
   return { body: turretBody(level), head: { pivot: TURRET_GUN.pivot, parts: head() } };
 }
 
+/**
+ * The Generator: a field reactor on a steel pad. An upright drum with a band of cyan light round it stands
+ * toward the back, a control box on its front carries a gauge and three amber lamps (the side a player
+ * sees), radiator panels hug its sides, and a mast on top carries a blinking amber beacon. The band means
+ * it is running, which it always is: it burns nothing, and what it gives is a field round it.
+ */
+function generator(): Parts {
+  const x = -0.07;
+  const sides = [-1, 1] as const;
+  const corners = sides.flatMap((sx) => sides.map((sz) => [sx, sz] as const));
+  // The radiator panels: a backing plate hugging the drum on each side, ribbed with slats, on two brackets.
+  const slatHeights = [0.27, 0.33, 0.39, 0.45, 0.51];
+  const radiators = sides.map((side) => ({
+    backing: box(0.24, 0.28, 0.03, x, 0.38, side * 0.3, 0),
+    brackets: [0.25, 0.53].map((y) => box(0.06, 0.04, 0.09, x, y, side * 0.265, 0)),
+    slats: slatHeights.map((y) => box(0.26, 0.022, 0.06, x, y, side * 0.3, 0)),
+  }));
+  return {
+    plate: [
+      // The foundation under the pad: it meets the ground where the module floats over it.
+      box(0.56, 0.78, 0.56, 0, -0.59, 0, 0),
+      box(0.76, 0.36, 0.76, 0, -0.12, 0),
+      box(0.68, 0.14, 0.68, 0, 0.13, 0),
+      post(0.46, 0.235, x, 0.43, 0, 16),
+      post(0.07, 0.1, x, 0.735, 0),
+      box(0.16, 0.3, 0.38, 0.26, 0.35, 0, 0.2),
+      tube(0.1, 0.035, 0.17, 0.3, 0, 8),
+      tube(0.12, 0.03, -0.31, 0.3, 0, 8),
+      ...radiators.flatMap(({ backing, brackets }) => [backing, ...brackets]),
+    ],
+    trim: [
+      box(0.72, 0.03, 0.72, 0, 0.2, 0, 0.4),
+      post(0.05, 0.27, x, 0.225, 0, 16),
+      post(0.04, 0.255, x, 0.68, 0, 16),
+      post(0.02, 0.11, x, 0.775, 0),
+      post(0.16, 0.016, x, 0.855, 0, 6),
+      box(0.17, 0.025, 0.4, 0.26, 0.5, 0, 0.4),
+      tube(0.03, 0.045, -0.375, 0.3, 0, 8),
+      ...corners.map(([sx, sz]) => box(0.07, 0.04, 0.07, sx * 0.3, 0.21, sz * 0.3, 0)),
+      ...radiators.flatMap(({ slats }) => slats),
+    ],
+    amber: [
+      post(0.018, 0.242, x, 0.35, 0, 16),
+      post(0.018, 0.242, x, 0.51, 0, 16),
+      ...[-0.09, 0, 0.09].map((z) => box(0.016, 0.03, 0.04, 0.338, 0.285, z, 0)),
+      box(0.07, 0.014, 0.07, x, 0.935, 0, 0),
+    ],
+    lights: [
+      // The band round the drum, the strip round the pad, and what the gauge shows: a bar and two shorter ones.
+      post(0.1, 0.245, x, 0.43, 0, 16),
+      box(0.76, 0.02, 0.76, 0, 0.075, 0, 0),
+      box(0.006, 0.014, 0.16, 0.347, 0.435, 0, 0),
+      box(0.006, 0.014, 0.1, 0.347, 0.405, -0.03, 0),
+      box(0.006, 0.014, 0.13, 0.347, 0.375, -0.015, 0),
+    ],
+    screen: [box(0.014, 0.1, 0.22, 0.337, 0.41, 0, 0)],
+    beacon: [box(0.045, 0.035, 0.045, x, 0.955, 0, 0)],
+  };
+}
+
 /** The models, by module id. */
 const BUILDERS: Readonly<Record<number, (level: number) => Build>> = {
   [MODULE.terminal]: () => ({ body: terminal() }),
   [MODULE.turret]: turret,
+  [MODULE.generator]: () => ({ body: generator() }),
 };
 
 /** One merged geometry for each look the parts use. */

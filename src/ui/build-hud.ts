@@ -86,6 +86,7 @@ const BLOCK_ICONS: Readonly<Record<BlockKind, Readonly<Record<number, IconId>>>>
 const MODULE_ICONS: Readonly<Record<number, IconId>> = {
   [MODULE.terminal]: 'terminal',
   [MODULE.turret]: 'turret',
+  [MODULE.generator]: 'generator',
 };
 
 /**
