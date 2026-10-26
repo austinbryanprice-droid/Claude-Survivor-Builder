@@ -21,7 +21,8 @@ import { moduleGhostGeometry } from './module-models';
  * click would work, and an outline around the block a click would break. The ghost is the very
  * beveled piece the mesher makes (so it shows the shape that will appear, a slab or a wedge turned
  * the way it will be, or a module's model facing the way it will), drawn translucent with a bright
- * rim; the outline follows the shape of the block it marks (a module's, its body). Both sit exactly on the grid cell, which is what makes the snap readable.
+ * rim; the outline follows the shape of the block it marks (a module's, its body). Both sit exactly
+ * on the grid cell, which is what makes the snap readable.
  */
 
 /** Linear colors (they go into a bloom threshold of 1, so the outline glows a little). */
