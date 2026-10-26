@@ -53,6 +53,8 @@ export interface ShotLogEntry {
   readonly predicted: boolean;
   /** The cell of the turret that fired it, for a turret's shot. */
   readonly turret?: readonly [x: number, y: number, z: number];
+  /** How heavy the bolt was drawn, for a turret's shot: the weight of the gun of the level this screen has in that cell. */
+  readonly heft?: number;
 }
 
 export interface ShotEffects {
@@ -156,15 +158,22 @@ export function createShotEffects({
   const fly = (by: PlayerId, flags: number, aim: Vec3 | null): number =>
     draw(colorOf(by), flags, aim, takeGun(by));
 
+  /** How heavy the gun of the turret in `cell` draws its bolt: its level's heft (`TURRET`), by the level this screen sees there, or the first level's where none is known. */
+  const heftOf = (cell: readonly [number, number, number]): number =>
+    turretLevel(levelOfTurret?.(cell[0], cell[1], cell[2]) ?? 1).heft;
+
   /**
    * Draws a turret's bolt to `mark`, from the muzzle of the turret in `cell`: where every screen
    * works it out from the cell and the end of the bolt, so the bolt leaves the barrel the head is
-   * turned along, and as heavy as the gun of its level (`TURRET`). Returns the seconds it takes to.
+   * turned along, and as heavy as the gun of its level. Returns the seconds it takes to.
    */
-  const flyFromTurret = (cell: readonly [number, number, number], flags: number): number => {
+  const flyFromTurret = (
+    cell: readonly [number, number, number],
+    flags: number,
+    heft: number,
+  ): number => {
     turretMuzzle(cell[0], cell[1], cell[2], mark.x, mark.y, mark.z, gun);
     aimTurret?.(cell[0], cell[1], cell[2], mark.x, mark.y, mark.z);
-    const heft = turretLevel(levelOfTurret?.(cell[0], cell[1], cell[2]) ?? 1).heft;
     return draw(FX_COLOR.turret, flags, null, true, heft);
   };
 
@@ -172,7 +181,7 @@ export function createShotEffects({
     by: PlayerId,
     flags: number,
     predicted: boolean,
-    turret?: readonly [number, number, number],
+    turret?: { readonly cell: readonly [number, number, number]; readonly heft: number },
   ): void => {
     shots.push({
       by,
@@ -181,7 +190,7 @@ export function createShotEffects({
       y: mark.y,
       z: mark.z,
       predicted,
-      ...(turret ? { turret } : {}),
+      ...(turret ? { turret: turret.cell, heft: turret.heft } : {}),
     });
     if (shots.length > REMEMBERED_SHOTS) shots.shift();
   };
@@ -212,9 +221,10 @@ export function createShotEffects({
       mark.y = shot.y;
       mark.z = shot.z;
       if (shot.turret) {
-        const arrives = flyFromTurret(shot.turret, shot.flags);
+        const heft = heftOf(shot.turret);
+        const arrives = flyFromTurret(shot.turret, shot.flags, heft);
         if (shot.flags & SHOT_FLAG.kill) fx.burst(mark, arrives);
-        remember(shot.by, shot.flags, false, shot.turret);
+        remember(shot.by, shot.flags, false, { cell: shot.turret, heft });
         return;
       }
       if (shot.by === session.localId) {

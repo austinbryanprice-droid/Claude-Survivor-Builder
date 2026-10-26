@@ -471,8 +471,9 @@ describe('a turret’s shot, drawn when the host reports it', () => {
     expect(asked).toEqual([[...CELL], [...OTHER]]);
     expect(turretLevel(3).heft).toBeGreaterThan(turretLevel(1).heft);
     expect(calls.boltHeft).toEqual([turretLevel(3).heft, turretLevel(1).heft]);
-    // The flash at the muzzle is as heavy as the bolt that leaves it.
+    // The flash at the muzzle is as heavy as the bolt that leaves it, and the record of the shot says how heavy.
     expect(calls.muzzleHeft).toEqual(calls.boltHeft);
+    expect(effects.debug().shots.map((shot) => shot.heft)).toEqual(calls.boltHeft);
   });
 
   it('draws a turret it cannot read the level of as the first, and a player’s shot as a player’s', () => {
@@ -486,5 +487,6 @@ describe('a turret’s shot, drawn when the host reports it', () => {
     expect(unasked.calls.boltHeft).toEqual([turretLevel(1).heft]);
     expect(player.calls.boltHeft).toEqual([1]);
     expect(player.calls.muzzleHeft).toEqual([1]);
+    expect(player.effects.debug().shots[0]).not.toHaveProperty('heft');
   });
 });
