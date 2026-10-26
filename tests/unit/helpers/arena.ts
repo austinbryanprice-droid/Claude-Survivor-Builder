@@ -52,6 +52,8 @@ export function arena(
         blocks: hostWorld,
         ground: { distance: (x, y, z) => Math.min(y - FLOOR, outpostDistance(core, x, y, z)) },
       },
+      // The turrets among the host world's blocks shoot, as the game's do.
+      modules: (visit) => hostWorld.forEachEdit((x, y, z, state) => visit({ x, y, z, state })),
       ...run,
     },
   });

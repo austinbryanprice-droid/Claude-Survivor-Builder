@@ -8,6 +8,7 @@ import { colorForSlot } from '../../src/shared/player-colors';
 import type { PlayerSample, RemotePose } from '../../src/shared/protocol';
 import type { RayWorld } from '../../src/shared/raycast';
 import { SHOT_FLAG, muzzleOf } from '../../src/shared/shot';
+import { TURRET_GUN, turretMuzzle } from '../../src/shared/turret';
 import { BLASTER } from '../../src/systems/survival/balance';
 
 interface At {
@@ -83,7 +84,12 @@ function remote(id: number, slot: number, x: number, z: number): RemotePose {
 }
 
 function setup(
-  options: { enemies?: EnemyPose[]; remotes?: RemotePose[]; ground?: RayWorld | null } = {},
+  options: {
+    enemies?: EnemyPose[];
+    remotes?: RemotePose[];
+    ground?: RayWorld | null;
+    aimTurret?: (x: number, y: number, z: number, tx: number, ty: number, tz: number) => void;
+  } = {},
 ) {
   const { fx, calls } = fakeFx();
   const me = { ...ME };
@@ -101,6 +107,7 @@ function setup(
     fx,
     session,
     rayWorld: () => (options.ground === undefined ? FLAT : options.ground),
+    ...(options.aimTurret ? { aimTurret: options.aimTurret } : {}),
     player: {
       read(out) {
         Object.assign(out, me);
@@ -366,5 +373,77 @@ describe('the record of shots', () => {
     effects.update(0.016);
     effects.update(0.02);
     expect(calls.update).toEqual([0.016, 0.02]);
+  });
+});
+
+describe('a turret’s shot, drawn when the host reports it', () => {
+  const CELL = [4, FLOOR, -6] as const;
+  /** A bolt that ends on a machine 9 blocks west of the turret, level with its chest. */
+  const END = { x: -4.5, y: FLOOR + 0.5, z: -5.5 };
+
+  it('flies from the muzzle of the turret, worked out from its cell and the end of the bolt, in amber', () => {
+    const { effects, calls } = setup();
+    effects.hear({ by: 0, ...END, flags: 0, enemy: 0, turret: CELL });
+    const muzzle = turretMuzzle(...CELL, END.x, END.y, END.z, { x: 0, y: 0, z: 0 });
+    expect(calls.bolt).toEqual([{ from: muzzle, to: END, color: FX_COLOR.turret }]);
+    expect(calls.muzzle).toHaveLength(1);
+    expect(calls.muzzle[0]?.at).toEqual(muzzle);
+    expect(calls.muzzle[0]?.color).toBe(FX_COLOR.turret);
+    // The muzzle is the gun's reach from the head's pivot, toward the target.
+    expect(
+      Math.hypot(muzzle.x - 4.5, muzzle.y - (FLOOR + TURRET_GUN.pivot), muzzle.z + 5.5),
+    ).toBeCloseTo(TURRET_GUN.reach, 6);
+    expect(calls.muzzle[0]?.dir.x).toBeCloseTo(-1, 1);
+    expect(calls.impact).toHaveLength(0);
+    expect(effects.debug().shots[0]).toMatchObject({ by: 0, predicted: false, turret: CELL });
+  });
+
+  it('needs no player: it is drawn whether or not the local player can be read', () => {
+    const { effects, calls, leave } = setup();
+    leave();
+    effects.hear({ by: 0, ...END, flags: 0, enemy: 0, turret: CELL });
+    expect(calls.bolt).toHaveLength(1);
+  });
+
+  it('throws amber sparks off a machine, and bursts it when it falls, as the bolt lands', () => {
+    const { effects, calls } = setup();
+    effects.hear({ by: 0, ...END, flags: SHOT_FLAG.enemy, enemy: 9, turret: CELL });
+    expect(calls.impact).toHaveLength(1);
+    expect(calls.impact[0]?.color).toBe(FX_COLOR.hit);
+    expect(calls.burst).toHaveLength(0);
+    effects.hear({
+      by: 0,
+      ...END,
+      flags: SHOT_FLAG.enemy | SHOT_FLAG.kill,
+      enemy: 9,
+      turret: CELL,
+    });
+    const bolt = calls.bolt[1] as (typeof calls.bolt)[number];
+    expect(calls.burst).toHaveLength(1);
+    expect(calls.burst[0]?.at).toEqual(END);
+    expect(calls.burst[0]?.delay).toBeCloseTo(flightOf(bolt), 6);
+  });
+
+  it('throws sparks in amber off a block or the ground that stopped it', () => {
+    const { effects, calls } = setup();
+    effects.hear({ by: 0, ...END, flags: SHOT_FLAG.world, enemy: 0, turret: CELL });
+    expect(calls.impact[0]?.color).toBe(FX_COLOR.turret);
+  });
+
+  it('turns the head of the turret toward the end of the bolt', () => {
+    const turned: number[][] = [];
+    const { effects } = setup({ aimTurret: (...args) => turned.push(args) });
+    effects.hear({ by: 0, ...END, flags: 0, enemy: 0, turret: CELL });
+    expect(turned).toEqual([[...CELL, END.x, END.y, END.z]]);
+  });
+
+  it('does not turn a head for a player’s shot', () => {
+    const turned: number[][] = [];
+    const { effects } = setup({
+      remotes: [remote(2, 2, 4, 0)],
+      aimTurret: (...args) => turned.push(args),
+    });
+    effects.hear({ by: 2, x: 4, y: 11.62, z: -25, flags: 0, enemy: 0 });
+    expect(turned).toEqual([]);
   });
 });

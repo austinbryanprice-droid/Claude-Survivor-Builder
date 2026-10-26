@@ -8,9 +8,11 @@ import { createEnemyState, type EnemyPose } from '../../src/shared/enemy-state';
 import type { Vec3 } from '../../src/shared/look';
 import { PLAYER } from '../../src/shared/movement';
 import { NET } from '../../src/shared/net-config';
-import { HOST_PLAYER_ID, type HostFrame } from '../../src/shared/protocol';
+import { MODULE, moduleShape, packState } from '../../src/shared/blocks';
+import { HOST_PLAYER_ID, NO_PLAYER, type HostFrame } from '../../src/shared/protocol';
 import { SHOT_FLAG, type ShotEvent } from '../../src/shared/shot';
 import { BLASTER, ENEMIES, VITALS } from '../../src/systems/survival/balance';
+import { turretLevel } from '../../src/systems/survival/turrets';
 import { SurvivalSim } from '../../src/systems/survival/sim';
 import { FLOOR, arena, play, sim, type Room } from './helpers/arena';
 import { SCRAP } from './helpers/nav-world';
@@ -425,6 +427,89 @@ describe('the host’s own shot', () => {
     expect(heard).toEqual([]);
     room.host.fire({ x: 0, y: FLOOR + 1, z: 0 }, { x: 0, y: 0, z: 1 });
     expect(heard).toHaveLength(1);
+  });
+});
+
+/** A turret standing south-east of the Core, on the flat ground, with the crawler's road in reach of it. */
+const TURRET_CELL = { x: 11, y: FLOOR, z: -6 };
+const TURRET_STATE = packState(moduleShape(MODULE.turret, 0), 1);
+
+describe('a turret’s shot', () => {
+  function withTurret(crew = 2) {
+    return range(crew, {}, (world) => {
+      world.setBlock(TURRET_CELL.x, TURRET_CELL.y, TURRET_CELL.z, TURRET_STATE);
+    });
+  }
+
+  it('is decided by the host and told to everyone, with the cell of the turret and no player', async () => {
+    const { room, guests, id } = await withTurret(2);
+    const [ada, bo] = guests as [(typeof guests)[0], (typeof guests)[0]];
+    const heardByAda = listen(ada.session);
+    const heardByBo = listen(bo.session);
+    const heardByHost = listen(room.host);
+    await play(room, 1);
+
+    expect(heardByHost.length).toBeGreaterThanOrEqual(1);
+    for (const shot of heardByHost) {
+      expect(shot.by).toBe(NO_PLAYER);
+      expect(shot.turret).toEqual([TURRET_CELL.x, TURRET_CELL.y, TURRET_CELL.z]);
+      expect(shot.flags & SHOT_FLAG.enemy).toBe(SHOT_FLAG.enemy);
+      expect(shot.enemy).toBe(id);
+      // The bolt ends near the machine, a little above its feet.
+      expect(shot.y).toBeGreaterThan(FLOOR);
+      expect(shot.y).toBeLessThan(FLOOR + 1.5);
+      for (const value of [shot.x, shot.y, shot.z]) {
+        expect(Math.abs(value * 100 - Math.round(value * 100))).toBeLessThan(1e-6);
+      }
+    }
+    expect(heardByAda).toEqual(heardByHost);
+    expect(heardByBo).toEqual(heardByHost);
+    // The shots are the host's: the crawler is hurt by them, once each.
+    const full = 255;
+    const damage = turretLevel(1).damage * heardByHost.length;
+    expect(healthOf(room)).toBe(
+      Math.round(((ENEMIES.crawler.health - damage) / ENEMIES.crawler.health) * full),
+    );
+  });
+
+  it('comes at the turret’s pace, and the last shot of a kill tells it', async () => {
+    const { room, machines, guests, id } = await withTurret(1);
+    const heard = listen(guests[0]!.session);
+    await play(room, turretLevel(1).interval * 14);
+    expect(machines().count).toBe(0);
+    const needed = Math.ceil(ENEMIES.crawler.health / turretLevel(1).damage);
+    expect(heard).toHaveLength(needed);
+    expect(heard.slice(0, -1).every((shot) => (shot.flags & SHOT_FLAG.kill) === 0)).toBe(true);
+    expect(heard[needed - 1]?.flags).toBe(SHOT_FLAG.enemy | SHOT_FLAG.kill);
+    expect(heard.every((shot) => shot.enemy === id)).toBe(true);
+    // It counts with the machines the crew felled.
+    expect(sim(room).felled).toBe(1);
+  });
+
+  it('is told on the wire with the turret’s cell and player zero, and the frame of a player’s shot has no cell', async () => {
+    const { room, code } = await withTurret(0);
+    const raw = await rawGuest(room, code);
+    raw.link.sendControl(helloText());
+    await room.settle(100);
+    room.host.publishState(at(seatFor(0).x, FLOOR, seatFor(0).z));
+    await play(room, 0.5);
+    const words = raw.frames.filter(
+      (frame): frame is Extract<HostFrame, { t: 'sh' }> => frame.t === 'sh',
+    );
+    expect(words.length).toBeGreaterThanOrEqual(1);
+    for (const word of words) {
+      expect(word.p).toBe(NO_PLAYER);
+      expect(word.c).toEqual([TURRET_CELL.x, TURRET_CELL.y, TURRET_CELL.z]);
+    }
+    expect(raw.garbage).toEqual([]);
+  });
+
+  it('stops when the turret is taken away from the world', async () => {
+    const { room, guests } = await withTurret(1);
+    const heard = listen(guests[0]!.session);
+    room.hostWorld.setBlock(TURRET_CELL.x, TURRET_CELL.y, TURRET_CELL.z, 0);
+    await play(room, 1);
+    expect(heard).toEqual([]);
   });
 });
 
