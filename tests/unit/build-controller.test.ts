@@ -25,9 +25,11 @@ import {
   SHAPE_KINDS,
   isUpsideDown,
   moduleFacing,
+  moduleOfShape,
   moduleShape,
   packState,
   slabShape,
+  stateMaterial,
   stateShape,
   wedgeFacing,
   wedgeShape,
@@ -1118,7 +1120,7 @@ describe('the module slot', () => {
     const { controller } = rig();
     expect(MODULE_SLOT).toBe(BLASTER_SLOT + 1);
     expect(MODULE_SLOT).toBeLessThan(HOTBAR_SLOTS);
-    expect(HOTBAR_MODULES).toEqual([MODULE.terminal]);
+    expect(HOTBAR_MODULES).toEqual([MODULE.terminal, MODULE.turret]);
     for (let slot = 0; slot < HOTBAR_SLOTS; slot++) {
       controller.selectSlot(slot);
       expect(controller.modular, `slot ${slot}`).toBe(slot === MODULE_SLOT);
@@ -1157,9 +1159,9 @@ describe('the module slot', () => {
       expect(controller.turn).toBeLessThan(MODULE_FACINGS);
     }
     expect(turns.size).toBe(MODULE_FACINGS);
-    // With one module to choose from, the shape key leaves it chosen, and the block kind alone.
+    // The shape key chooses the next module and starts its turn over, and leaves the block kind alone.
     controller.cycleShape();
-    expect(controller.module).toBe(MODULE.terminal);
+    expect(controller.module).toBe(MODULE.turret);
     expect(controller.turn).toBe(0);
     expect(controller.kind).toBe('slab');
     controller.selectSlot(0);
@@ -1223,6 +1225,44 @@ describe('the module slot', () => {
     r.controller.update(0.016, r.lookDown(3));
     expect(r.controller.hudState().refusal).toBeNull();
     expect(r.controller.hudState().crosshair).toBe('place');
+  });
+
+  it('chooses the Basic Turret with the shape key, at its first level, and goes round to the Terminal again', () => {
+    const { controller } = rig();
+    controller.selectSlot(MODULE_SLOT);
+    expect(controller.module).toBe(MODULE.terminal);
+    controller.cycleShape();
+    expect(controller.module).toBe(MODULE.turret);
+    expect(controller.piece).toBe(packState(moduleShape(MODULE.turret, 0), 1));
+    expect(controller.choice).toEqual({
+      material: 1,
+      kind: 'module',
+      turn: 0,
+      module: MODULE.turret,
+    });
+    controller.cycleShape();
+    expect(controller.module).toBe(MODULE.terminal);
+  });
+
+  it('charges 25 Scrap for a turret, and sends the turret the aim shows', () => {
+    const r = rig();
+    r.pool.cap = 400;
+    r.pool.stock.splice(0, 4, 24, 9, 9, 9);
+    r.controller.selectSlot(MODULE_SLOT);
+    r.controller.cycleShape();
+    r.controller.toggleBuildMode();
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBe(notEnough('Scrap'));
+    r.pool.stock[0] = 25;
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBeNull();
+    const shown = r.controller.target.state;
+    expect(moduleOfShape(stateShape(shown))?.id).toBe(MODULE.turret);
+    expect(stateMaterial(shown)).toBe(1);
+    const { x, y, z } = r.controller.target.place;
+    r.controller.press('secondary');
+    r.controller.release('secondary');
+    expect(r.sent).toEqual([{ type: 'place', x, y, z, state: shown }]);
   });
 
   it('is never locked by a tier', () => {

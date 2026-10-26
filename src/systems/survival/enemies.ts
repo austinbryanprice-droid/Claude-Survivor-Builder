@@ -169,6 +169,17 @@ export class EnemySim {
     return this.byId.has(id);
   }
 
+  /**
+   * Calls `visit` with the id, kind and feet of every enemy alive, in the order they came. `visit`
+   * must not wound or remove an enemy: that changes the list under the loop.
+   */
+  forEach(visit: (id: number, kind: number, x: number, y: number, z: number) => void): void {
+    for (let i = 0; i < this.list.length; i++) {
+      const enemy = this.list[i] as Enemy;
+      visit(enemy.id, enemy.kind, enemy.x, enemy.y, enemy.z);
+    }
+  }
+
   /** Wounds an enemy; true when this blow killed it. Nothing happens for an enemy that is not here. */
   hurt(id: number, amount: number): boolean {
     const enemy = this.byId.get(id);

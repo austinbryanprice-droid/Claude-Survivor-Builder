@@ -68,6 +68,7 @@ export const MODULE_SINK = 0.25;
 /** The functional modules (SPEC section 9). Ids are stored in saves and sent on the wire, so they never change. */
 export const MODULE = {
   terminal: 1,
+  turret: 2,
 } as const;
 
 export interface ModuleDef {
@@ -100,9 +101,10 @@ export interface MaterialDef {
 }
 
 /**
- * The modules, in the order of their ids. The Research Terminal is the first (Phase 5d); the turret,
- * generator, node, storage, bed and light follow it (5f to 5h). The cost is Scrap only (about 40),
- * because the notes price it in Composite, which the Terminal itself unlocks (docs/decisions.md).
+ * The modules, in the order of their ids. The Research Terminal is the first (Phase 5d) and the Basic
+ * Turret the second (5f); the generator, node, storage, bed and light follow them (5g, 5h). The costs
+ * are Scrap only (about 40 and 25), because the notes price them in Composite, which the Terminal
+ * itself unlocks (docs/decisions.md).
  */
 export const MODULES: readonly ModuleDef[] = [
   {
@@ -111,6 +113,13 @@ export const MODULES: readonly ModuleDef[] = [
     levels: 1,
     cost: { material: MATERIAL.scrap, amount: 40 },
     body: [0.1, 0, 0.1, 0.9, 0.9, 0.9],
+  },
+  {
+    id: MODULE.turret,
+    name: 'Basic Turret',
+    levels: 1,
+    cost: { material: MATERIAL.scrap, amount: 25 },
+    body: [0.14, 0, 0.14, 0.86, 0.78, 0.86],
   },
 ];
 
