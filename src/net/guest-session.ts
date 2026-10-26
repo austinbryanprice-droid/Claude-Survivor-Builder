@@ -499,6 +499,7 @@ export class GuestSession implements GameSession {
           frame.st[1],
           frame.st[2],
           frame.st[3],
+          frame.st[4],
         );
         break;
       case 'run':

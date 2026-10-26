@@ -123,6 +123,7 @@ export class SurvivalSim {
   private felledCount = 0;
   private placedCount = 0;
   private revivedCount = 0;
+  private upgradedCount = 0;
   /** The Core has been wounded since night fell: the dawn then pays no bonus for a clean night. */
   private hurtTonight = false;
   private readonly core: Outpost | null;
@@ -232,6 +233,11 @@ export class SurvivalSim {
 
   get revived(): number {
     return this.revivedCount;
+  }
+
+  /** Pieces the crew has upgraded in place: what the results screen counts as upgrades completed. */
+  get upgraded(): number {
+    return this.upgradedCount;
   }
 
   /** Materials the crew has gathered: what the results screen counts. */
@@ -347,6 +353,13 @@ export class SurvivalSim {
     if (placed && !this.over) this.placedCount++;
   }
 
+  /** A player upgraded a piece in place: it costs them the Energy an edit does, and counts toward the run's upgrades. */
+  playerUpgraded(id: number): void {
+    if (!this.players.has(id)) return;
+    this.spendEnergy(id, VITALS.energy.perEdit);
+    if (!this.over) this.upgradedCount++;
+  }
+
   /**
    * A player fires the blaster. The bolt leaves `origin` along the unit vector `dir`, stops at the
    * first block, hill or Core in its way and hurts the first of the first `count` of `bodies` it
@@ -435,6 +448,7 @@ export class SurvivalSim {
     out.placed = this.placedCount;
     out.revived = this.revivedCount;
     out.gathered = this.gathered;
+    out.upgraded = this.upgradedCount;
     return out;
   }
 

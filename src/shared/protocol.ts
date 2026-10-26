@@ -24,8 +24,19 @@ export type BlockCommand =
     }
   | { readonly type: 'break'; readonly x: number; readonly y: number; readonly z: number }
   /** Strip the heap of debris whose middle is in this cell (Phase 5a); it changes the pool and the heap, not a block. */
-  | { readonly type: 'harvest'; readonly x: number; readonly y: number; readonly z: number };
-// Phase 5e adds { type: 'upgrade'; x; y; z }.
+  | { readonly type: 'harvest'; readonly x: number; readonly y: number; readonly z: number }
+  /**
+   * Upgrade the piece in this cell in place (Phase 5e). `state` is the piece the player was shown
+   * it would become, which the host checks against the one it works out itself, so a block that was
+   * upgraded, broken or rebuilt since the player looked is turned away and nothing is paid twice.
+   */
+  | {
+      readonly type: 'upgrade';
+      readonly x: number;
+      readonly y: number;
+      readonly z: number;
+      readonly state: CellState;
+    };
 
 /** What happened to the world. State based and idempotent: place, break (state 0) and upgrade are all `set`. */
 export interface BlockSetEvent {
@@ -178,7 +189,7 @@ export type HostFrame =
    * Where the run stands: the host's step count (20 a second), whether the clock is running, the
    * Outpost Core's health and full health in whole points, whether the run has ended and why, the
    * crew's respawn charges and the most it can hold, and what the run has come to (machines felled,
-   * blocks placed, charges spent, materials gathered), which the results screen shows once the run is over. Sent about
+   * blocks placed, charges spent, materials gathered, pieces upgraded), which the results screen shows once the run is over. Sent about
    * twice a second while the clock runs, whenever it stops or starts, within a fifth of a second of
    * the Core's health changing, whenever an event is announced, and to every newcomer, so a guest
    * can show the time, the Core and the charges and move the sky between frames.
@@ -192,7 +203,13 @@ export type HostFrame =
       /** What ended the run; present once it has ended. */
       readonly why?: OverrunCause;
       readonly rc: readonly [charges: number, max: number];
-      readonly st: readonly [felled: number, placed: number, revived: number, gathered: number];
+      readonly st: readonly [
+        felled: number,
+        placed: number,
+        revived: number,
+        gathered: number,
+        upgraded: number,
+      ];
     }
   /**
    * The host started the run over (Retry or New Run): build the valley for `seed` with nothing on

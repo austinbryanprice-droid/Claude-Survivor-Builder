@@ -21,6 +21,7 @@ import {
   lockedRefusal,
   pieceCost,
   shortfall,
+  upgradeRefusal,
 } from './build-rules';
 import { yieldOfGrade } from './grades';
 import { Pool } from './pool';
@@ -189,6 +190,15 @@ export class Economy {
       lockedRefusal(this.research.tier, state) ??
       shortfall((material) => this.pool.amount(material), state)
     );
+  }
+
+  /**
+   * Why the crew cannot upgrade the piece `state` in place now, in the host's words, or null when it
+   * can: nothing is there or nothing is better, the better material is not researched, or the pool
+   * cannot pay for it (Phase 5e). The crew pays the better piece's price with `pay`.
+   */
+  upgradeRefusal(state: CellState): string | null {
+    return upgradeRefusal(this.research.tier, (material) => this.pool.amount(material), state);
   }
 
   /** The crew pays for a piece it has placed. False, and nothing taken, when the pool cannot pay. */

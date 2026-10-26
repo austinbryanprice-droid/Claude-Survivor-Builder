@@ -5,6 +5,7 @@ import {
   materialOf,
   moduleOfShape,
   stateShape,
+  withMaterial,
 } from '../../shared/blocks';
 import {
   poolSlot,
@@ -172,4 +173,74 @@ export function placementRefusal(
     lockedRefusal(pool.tier, state) ??
     shortfall((material) => pool.stock[poolSlot(material)] ?? 0, state)
   );
+}
+
+/** The words for an upgrade aimed at a cell with nothing in it. */
+export const NOTHING_TO_UPGRADE = 'nothing to upgrade there';
+
+/** The words for a piece that has no better material to become. */
+export const FULLY_UPGRADED = 'already fully upgraded';
+
+/** What an upgrade in place makes of a piece, and what it takes from the pool. */
+export interface UpgradeStep {
+  /** The piece as it stands. */
+  readonly from: CellState;
+  /** The same piece in the next material up: the same shape, facing and half of the cell. */
+  readonly to: CellState;
+  /** The price of the better piece. The block it replaces is used up, so nothing comes back for it. */
+  readonly cost: PieceCost;
+}
+
+/**
+ * What upgrading `state` in place makes of it, or null when it cannot be upgraded: nothing stands
+ * there, the material is the best there is (Energy-Infused), or it is a module, whose levels come
+ * with the modules that have more than one (the turret, 5f). The better piece costs what a new one
+ * of the same shape costs.
+ */
+export function upgradeStep(state: CellState): UpgradeStep | null {
+  if (state === 0 || moduleOfShape(stateShape(state))) return null;
+  const material = materialOf(state);
+  const better = material && MATERIALS.find((m) => m.tier === material.tier + 1);
+  if (!better) return null;
+  const to = withMaterial(state, better.id);
+  const cost = pieceCost(to);
+  return cost ? { from: state, to, cost } : null;
+}
+
+/** Why `state` could not be upgraded whatever the crew holds: nothing is there, or it is as good as it gets. Null when it has a better self. */
+export function upgradeBlocker(state: CellState): string | null {
+  if (state === 0) return NOTHING_TO_UPGRADE;
+  return upgradeStep(state) ? null : FULLY_UPGRADED;
+}
+
+/**
+ * Why a crew that has researched up to `tier`, with a pool that holds `amountOf(material)` of each,
+ * cannot upgrade the piece `state` now, or null when it can. The host asks it of the cell a command
+ * names, and the screen of the cell under the cursor. In that order: nothing there or nothing
+ * better, the better material not yet researched, then a pool too short for its price.
+ */
+export function upgradeRefusal(
+  tier: number,
+  amountOf: (material: number) => number,
+  state: CellState,
+): string | null {
+  const step = upgradeStep(state);
+  if (!step) return upgradeBlocker(state);
+  return lockedRefusal(tier, step.to) ?? shortfall(amountOf, step.to);
+}
+
+/**
+ * What the screen asks before it offers an upgrade: the same rules as the host's, read from the
+ * economy as this screen has it. Where there is no pool to read (`cap` is 0) nothing is charged and
+ * nothing is locked, as the host charges and locks nothing there, but a piece with no better self
+ * is still refused.
+ */
+export function upgradeRefusalOnScreen(
+  economy: Pick<PlacementEconomy, 'read'>,
+  scratch: EconomyReading,
+  state: CellState,
+): string | null {
+  const pool = economy.read(scratch);
+  if (pool.cap <= 0) return upgradeBlocker(state);
+  return upgradeRefusal(pool.tier, (material) => pool.stock[poolSlot(material)] ?? 0, state);
 }

@@ -89,6 +89,9 @@ function readCommand(raw: unknown): BlockCommand | null {
   if (raw.type === 'place' && isInt(raw.state, 1, MAX_U16)) {
     return { type: 'place', x, y, z, state: raw.state };
   }
+  if (raw.type === 'upgrade' && isInt(raw.state, 1, MAX_U16)) {
+    return { type: 'upgrade', x, y, z, state: raw.state };
+  }
   return null;
 }
 
@@ -312,13 +315,14 @@ export function decodeHostFrame(text: string): HostFrame | null {
       if (!Array.isArray(raw.rc) || raw.rc.length !== 2) return null;
       const [charges, chargeMax] = raw.rc as unknown[];
       if (!isInt(chargeMax, 0, MAX_U16) || !isInt(charges, 0, chargeMax)) return null;
-      if (!Array.isArray(raw.st) || raw.st.length !== 4) return null;
-      const [felled, placed, revived, gathered] = raw.st as unknown[];
+      if (!Array.isArray(raw.st) || raw.st.length !== 5) return null;
+      const [felled, placed, revived, gathered, upgraded] = raw.st as unknown[];
       if (
         !isInt(felled, 0, MAX_U31) ||
         !isInt(placed, 0, MAX_U31) ||
         !isInt(revived, 0, MAX_U31) ||
-        !isInt(gathered, 0, MAX_U31)
+        !isInt(gathered, 0, MAX_U31) ||
+        !isInt(upgraded, 0, MAX_U31)
       ) {
         return null;
       }
@@ -332,7 +336,7 @@ export function decodeHostFrame(text: string): HostFrame | null {
         core: [health, max] as const,
         over: raw.over,
         rc: [charges, chargeMax] as const,
-        st: [felled, placed, revived, gathered] as const,
+        st: [felled, placed, revived, gathered, upgraded] as const,
       };
       return why ? { ...frame, why } : frame;
     }

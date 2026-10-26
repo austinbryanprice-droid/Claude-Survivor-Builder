@@ -62,6 +62,8 @@ export interface SurvivalReading {
   revived: number;
   /** Materials the crew has gathered this run, all kinds together. Counted until the run is over, then final. */
   gathered: number;
+  /** Pieces the crew has upgraded in place this run (Phase 5e). Counted until the run is over, then final. */
+  upgraded: number;
 }
 
 export function createReading(): SurvivalReading {
@@ -83,6 +85,7 @@ export function createReading(): SurvivalReading {
     placed: 0,
     revived: 0,
     gathered: 0,
+    upgraded: 0,
   };
 }
 
