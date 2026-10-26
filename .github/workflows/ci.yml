@@ -56,8 +56,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # Only the browser: the runner image already has every library Chromium loads. `--with-deps` also
+      # runs apt-get against the Ubuntu mirror, which on some runners crawls for six to seventeen minutes
+      # (a few fonts and upgrades, at 50 kB/s) and uses up the job's limit; the browser itself downloads
+      # in seconds.
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - name: Browser tests
         run: npx playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }} --no-deps
       - name: Upload test report
