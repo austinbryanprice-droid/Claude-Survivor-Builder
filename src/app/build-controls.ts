@@ -61,6 +61,8 @@ export interface BuildControlsDebug {
   hands(): BuildHudState;
   /** Whether the ghost block and the break outline are on screen, and the shape id each is drawn in. */
   ghost(): { ghost: boolean; target: boolean; ghostShape: number; targetShape: number };
+  /** The ring that shows how far a module's power reaches: the cell it is drawn round and its radius, or null while it is not on screen. */
+  reach(): { x: number; y: number; z: number; radius: number } | null;
   /** How fast a held mouse button repeats, as a fraction of normal; low Energy slows it. */
   handScale(): number;
   /** Whether the player is down, which leaves the hands idle. */
@@ -177,9 +179,11 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
     const world = valley();
     if (!world) return;
     const ghost = world.view.ghost;
+    const reach = world.view.reach;
     if (!input.locked || game.sweep.active) {
       ghost.setGhost(null);
       ghost.setTarget(null);
+      reach.show(null);
       return;
     }
     camera.getWorldDirection(forward);
@@ -208,9 +212,13 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
         aim.breakRefusal === null,
         stateShape(aim.targetState),
       );
+      // A module that gives by radius shows how far, where it would stand if it is in hand, else where it stands.
+      const { cell, radius } = controller.reach;
+      reach.show(cell, radius);
     } else {
       ghost.setGhost(null);
       ghost.setTarget(null);
+      reach.show(null);
     }
   });
 
@@ -243,6 +251,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
     handScale: () => controller.handScale,
     isDown: () => controller.isDown,
     salvage: () => ({ ...controller.salvageTarget }),
+    reach: () => valley()?.view.reach.shown ?? null,
     ghost: () => {
       const shown = valley()?.view.ghost.shown;
       return {

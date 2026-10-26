@@ -38,6 +38,7 @@ import {
   type UpgradeStep,
 } from '../systems/economy/build-rules';
 import { BLASTER } from '../systems/survival/balance';
+import { reachOfModule } from '../systems/survival/power';
 
 /**
  * The player's hands: which hotbar slot is selected, which kind of shape it makes and how that is
@@ -181,6 +182,8 @@ export class BuildController {
   private salvageCooldown = 0;
   /** The heap of debris the cursor was on at the last `update`. */
   private readonly heap: DebrisAim = createDebrisAim();
+  /** What `reach` hands out. */
+  private readonly ring: { cell: Cell | null; radius: number } = { cell: null, radius: 0 };
   /** Whether the ladder of a Research Terminal is open, and the cell of the Terminal it was opened on. */
   private ladderUp = false;
   private readonly ladderCell: Cell = { x: 0, y: 0, z: 0 };
@@ -324,6 +327,26 @@ export class BuildController {
   /** The heap of debris the cursor was on at the last `update` (`index` is -1 for none). */
   get salvageTarget(): Readonly<DebrisAim> {
     return this.heap;
+  }
+
+  /**
+   * The cell whose power the screen rings on the ground, and how far it reaches, as of the last `update`:
+   * the module in hand where a click would put it (a Generator), else the module of that kind the cursor
+   * is on. `cell` is null and `radius` 0 when neither gives by radius. The object is reused.
+   */
+  get reach(): Readonly<{ cell: Cell | null; radius: number }> {
+    const aim = this.aim;
+    const ring = this.ring;
+    ring.cell = null;
+    ring.radius = this.modular ? reachOfModule(this.module) : 0;
+    if (ring.radius > 0 && aim.hasPlace) {
+      ring.cell = aim.place;
+      return ring;
+    }
+    const module = aim.on === 'block' ? moduleOfShape(stateShape(aim.targetState)) : undefined;
+    ring.radius = module ? reachOfModule(module.id) : 0;
+    if (ring.radius > 0) ring.cell = aim.target;
+    return ring;
   }
 
   /** Whether the research ladder of a Terminal is open. */

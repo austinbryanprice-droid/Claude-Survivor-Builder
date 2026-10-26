@@ -39,14 +39,14 @@ import type { DebrisNode } from '../../src/shared/economy';
 import type { Vec3 } from '../../src/shared/look';
 import { turnCount } from '../../src/shared/placement';
 import type { BlockCommand } from '../../src/shared/protocol';
-import { DEBRIS } from '../../src/systems/economy/balance';
+import { DEBRIS, RESEARCH } from '../../src/systems/economy/balance';
 import {
   DEBRIS_IN_THE_WAY,
   FULLY_UPGRADED,
   needsResearch,
   notEnough,
 } from '../../src/systems/economy/build-rules';
-import { BLASTER } from '../../src/systems/survival/balance';
+import { BLASTER, POWER } from '../../src/systems/survival/balance';
 import { createTerrainGround } from '../../src/world/terrain/collision';
 import { createWorld, type VoxelWorld } from '../../src/world/voxels/world';
 import { TEST_SEED, terrain } from './helpers/valley';
@@ -68,9 +68,10 @@ interface Rig {
   readonly heaps: { nodes: DebrisNode[]; left: Record<number, number> };
   /**
    * The crew's pool in the fake economy: with no ceiling (`cap` 0) there is no pool, and nothing costs
-   * anything or is locked. `tier` is the highest material the crew has researched (all of them, unless a test says less).
+   * anything or is locked. `tier` is the highest material the crew has researched (all of them, unless a test says less),
+   * and `claimed` the points a Terminal has read (enough for every group of modules, unless a test says less).
    */
-  readonly pool: { cap: number; stock: number[]; tier: number; research: number };
+  readonly pool: { cap: number; stock: number[]; tier: number; research: number; claimed: number };
   /** The ground height at the spot. */
   readonly surface: number;
   /** A view from `height` above the ground at the spot, looking straight down. */
@@ -87,7 +88,7 @@ function rig(): Rig {
   const shots: { origin: Vec3; dir: Vec3 }[] = [];
   const gun = { ready: true };
   const heaps: Rig['heaps'] = { nodes: [], left: {} };
-  const pool: Rig['pool'] = { cap: 0, stock: [], tier: 4, research: 0 };
+  const pool: Rig['pool'] = { cap: 0, stock: [], tier: 4, research: 0, claimed: 9999 };
   const ports: BuildPorts = {
     blocks: () => world,
     ground: () => ground,
@@ -119,6 +120,7 @@ function rig(): Rig {
         out.cap = pool.cap;
         out.tier = pool.tier;
         out.research = pool.research;
+        out.claimed = pool.claimed;
         return out;
       },
       debris: { nodes: heaps.nodes, leftOf: (index) => heaps.left[index] ?? 0 },
@@ -1277,6 +1279,128 @@ describe('the module slot', () => {
     r.controller.update(0.016, r.lookDown(3));
     r.controller.press('secondary');
     expect(r.sent).toHaveLength(1);
+  });
+
+  it('holds the Generator back until a Terminal has read the Power points, in the words of a closed material', () => {
+    const power = RESEARCH.groups[0].points;
+    const r = rig();
+    r.pool.cap = 400;
+    r.pool.stock.splice(0, 4, 100, 0, 0, 0);
+    r.pool.claimed = power - 1;
+    r.controller.selectSlot(MODULE_SLOT);
+    r.controller.cycleShape();
+    r.controller.cycleShape();
+    expect(r.controller.module).toBe(MODULE.generator);
+    r.controller.toggleBuildMode();
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBe(needsResearch('Generator'));
+    expect(r.controller.hudState().crosshair).toBe('blocked');
+    r.controller.press('secondary');
+    r.controller.release('secondary');
+    expect(r.sent).toEqual([]);
+    // The Terminal reads the points (and the refusal of the click has been on the screen long enough): the same click goes.
+    r.pool.claimed = power;
+    r.controller.update(NOTICE_SECONDS + 0.1, r.lookDown(3));
+    expect(r.controller.hudState().refusal).toBeNull();
+    expect(r.controller.hudState().crosshair).toBe('place');
+    const shown = r.controller.target.state;
+    expect(moduleOfShape(stateShape(shown))?.id).toBe(MODULE.generator);
+    const { x, y, z } = r.controller.target.place;
+    r.controller.press('secondary');
+    r.controller.release('secondary');
+    expect(r.sent).toEqual([{ type: 'place', x, y, z, state: shown }]);
+  });
+
+  it('does not hold a Terminal or a turret back for the Power points', () => {
+    const r = rig();
+    r.pool.cap = 400;
+    r.pool.stock.splice(0, 4, 100, 0, 0, 0);
+    r.pool.claimed = 0;
+    r.controller.selectSlot(MODULE_SLOT);
+    r.controller.toggleBuildMode();
+    for (let i = 0; i < 2; i++) {
+      r.controller.update(0.016, r.lookDown(3));
+      expect(r.controller.hudState().refusal, `module ${r.controller.module}`).toBeNull();
+      r.controller.cycleShape();
+    }
+  });
+});
+
+describe('the ring on the ground that shows how far power reaches', () => {
+  const generator = packState(moduleShape(MODULE.generator, 0), 1);
+  const terminal = packState(moduleShape(MODULE.terminal, 0), 1);
+
+  /** The Generator in the module slot, the cursor looking down at the spot from 3 blocks up. */
+  function holdingGenerator() {
+    const r = rig();
+    r.controller.selectSlot(MODULE_SLOT);
+    r.controller.cycleShape();
+    r.controller.cycleShape();
+    expect(r.controller.module).toBe(MODULE.generator);
+    return r;
+  }
+
+  it('is round the cell a Generator in hand would stand in', () => {
+    const r = holdingGenerator();
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.target.hasPlace).toBe(true);
+    const { place } = r.controller.target;
+    expect(r.controller.reach.cell).toEqual({ x: place.x, y: place.y, z: place.z });
+    expect(r.controller.reach.radius).toBe(POWER.generator.radius);
+  });
+
+  it('is nowhere while the cursor is on nothing a Generator could stand on', () => {
+    const r = holdingGenerator();
+    // Looking straight up at the sky.
+    const origin = { x: SPOT.x + 0.5, y: r.surface + 3, z: SPOT.z + 0.5 };
+    r.controller.update(0.016, { origin, dir: { x: 0, y: 1, z: 0 }, eye: origin });
+    expect(r.controller.target.hasPlace).toBe(false);
+    expect(r.controller.reach).toEqual({ cell: null, radius: 0 });
+  });
+
+  it('is nowhere for a module that gives nothing by radius, or a block', () => {
+    const r = rig();
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.reach).toEqual({ cell: null, radius: 0 });
+    r.controller.selectSlot(MODULE_SLOT);
+    expect(r.controller.module).toBe(MODULE.terminal);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.reach).toEqual({ cell: null, radius: 0 });
+    r.controller.cycleShape();
+    expect(r.controller.module).toBe(MODULE.turret);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.reach).toEqual({ cell: null, radius: 0 });
+  });
+
+  it('is round a Generator the cursor is on, whatever is in hand', () => {
+    const r = rig();
+    const y = Math.floor(r.surface);
+    r.world.setBlock(SPOT.x, y, SPOT.z, generator);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.target.on).toBe('block');
+    expect(r.controller.reach.cell).toEqual({ x: SPOT.x, y, z: SPOT.z });
+    expect(r.controller.reach.radius).toBe(POWER.generator.radius);
+    r.controller.selectSlot(BLASTER_SLOT);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.reach.cell).toEqual({ x: SPOT.x, y, z: SPOT.z });
+  });
+
+  it('is not round a Terminal the cursor is on', () => {
+    const r = rig();
+    r.world.setBlock(SPOT.x, Math.floor(r.surface), SPOT.z, terminal);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.target.on).toBe('block');
+    expect(r.controller.reach).toEqual({ cell: null, radius: 0 });
+  });
+
+  it('is round the one in hand where it would stand, not the one the cursor is on', () => {
+    const r = holdingGenerator();
+    r.world.setBlock(SPOT.x, Math.floor(r.surface), SPOT.z, generator);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.target.hasPlace).toBe(true);
+    const { place, target } = r.controller.target;
+    expect(place).not.toEqual(target);
+    expect(r.controller.reach.cell).toEqual({ x: place.x, y: place.y, z: place.z });
   });
 });
 
