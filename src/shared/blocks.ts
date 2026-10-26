@@ -55,6 +55,16 @@ export interface ShapeDef {
 /** How many ways a module can face: the way its front looks, toward +x, +z, -x or -z. */
 export const MODULE_FACINGS = 4;
 
+/**
+ * How a module meets the ground, which cuts through a cell at any height. A module stands on a
+ * foundation that reaches down into the ground, so its cell may float up to `MODULE_FOOT` over the
+ * ground at its middle; and where the ground reaches higher than `MODULE_SINK` of a cell, the cursor
+ * puts the module in the cell above it, rather than bury it. The host's rule and the cursor share
+ * both, so a click that passes one passes the other.
+ */
+export const MODULE_FOOT = 0.9;
+export const MODULE_SINK = 0.25;
+
 /** The functional modules (SPEC section 9). Ids are stored in saves and sent on the wire, so they never change. */
 export const MODULE = {
   terminal: 1,

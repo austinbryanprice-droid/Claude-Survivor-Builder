@@ -10,6 +10,7 @@ import { BackdropRenderer } from './backdrop-render';
 import { CoreRenderer } from './core-render';
 import { bakeFoliageTextures, type FoliageTextures } from './foliage-textures';
 import { GhostRenderer } from './ghost-render';
+import { ModuleRenderer } from './module-render';
 import { bakeGroundMaps, TerrainRenderer } from './terrain-render';
 import { VegetationRenderer } from './vegetation-render';
 import { VoxelRenderer } from './voxel-render';
@@ -26,8 +27,8 @@ export interface ValleyBuildTimings {
 
 /**
  * The valley as the stage draws it: the terrain mesh, the distant hills, the lake, the trees and
- * grass scattered over the ground, the Outpost Core at the crash site, and the blocks players have
- * built on it. It follows the stage's
+ * grass scattered over the ground, the Outpost Core at the crash site, and the blocks and modules
+ * players have built on it. It follows the stage's
  * quality preset and gets a callback before every frame to hide what is out of range and to mesh
  * the blocks that changed. Everything is built for one terrain, so a new seed means a new view.
  */
@@ -37,6 +38,8 @@ export class ValleyView {
   readonly water: WaterRenderer | null;
   readonly vegetation: VegetationRenderer;
   readonly structures: VoxelRenderer;
+  /** The functional modules standing on the ground: the Research Terminal and the ones to come. */
+  readonly modules: ModuleRenderer;
   /** The ghost block and the outline of the block a click would break. */
   readonly ghost: GhostRenderer;
   /** The Outpost Core at the crash site; null in a world that has none. */
@@ -87,6 +90,7 @@ export class ValleyView {
     );
     this.buildMs = { mesh: this.terrain.stats.meshMs, scatter: performance.now() - t0 };
     this.structures = new VoxelRenderer(stage, voxels);
+    this.modules = new ModuleRenderer(world, registry, voxels);
     this.ghost = new GhostRenderer(stage);
     this.core = voxels.outpost ? new CoreRenderer(world, registry, voxels.outpost) : null;
     this.vegetation.setObstacles(voxels);
@@ -122,6 +126,7 @@ export class ValleyView {
     this.vegetation.update(camera);
     this.structures.update(camera);
     this.core?.update(this.stage.animTime);
+    this.modules.update(this.stage.animTime);
   }
 
   dispose(): void {
@@ -129,6 +134,7 @@ export class ValleyView {
     this.stopRender();
     this.stage.pipeline.beforeScene = null;
     this.core?.dispose();
+    this.modules.dispose();
     this.ghost.dispose();
     this.structures.dispose();
     this.vegetation.dispose();

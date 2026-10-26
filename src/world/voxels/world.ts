@@ -1,5 +1,6 @@
 import type { BlockWorld, CellState } from '../../shared/block-world';
 import {
+  MODULE_FOOT,
   SHAPE,
   isCellState,
   isKnownState,
@@ -228,7 +229,7 @@ export class VoxelWorld implements BlockWorld {
     if (highest < 0) return 'buried';
     if (lowest <= TOUCH_DISTANCE) return null;
     // A module stands on something, as a console does: a block hung on a wall would float.
-    if (moduleOfShape(stateShape(state))) return this.carries(x, y - 1, z) ? null : 'unsupported';
+    if (moduleOfShape(stateShape(state))) return this.stands(x, y, z) ? null : 'unsupported';
     return this.touchesBlock(x, y, z) ? null : 'unsupported';
   }
 
@@ -318,6 +319,16 @@ export class VoxelWorld implements BlockWorld {
   private carries(x: number, y: number, z: number): boolean {
     const shape = stateShape(this.getBlock(x, y, z));
     return shape === SHAPE.cube || shape === slabShape(true);
+  }
+
+  /**
+   * True when a module can stand in a cell the ground does not cut: on a block under it, or on the
+   * ground, which its foundation reaches when the floor of the cell is no more than `MODULE_FOOT` over it.
+   */
+  private stands(x: number, y: number, z: number): boolean {
+    return (
+      this.carries(x, y - 1, z) || y - this.terrain.grid.groundAt(x + 0.5, z + 0.5) <= MODULE_FOOT
+    );
   }
 
   private moduleChanged(

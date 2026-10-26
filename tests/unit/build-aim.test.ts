@@ -12,6 +12,7 @@ import {
 import {
   MATERIAL,
   MODULE,
+  MODULE_SINK,
   SHAPE,
   isUpsideDown,
   moduleFacing,
@@ -518,6 +519,33 @@ describe('aiming with a module in hand', () => {
     };
     const aim = aimIn(blocks, { x: 3.2, y: 4, z: 4.5 }, { x: 1, y: -3, z: 0 }, HELD);
     expect(aim.placeRefusal).toBe('unsupported');
+  });
+
+  it('stands the module on the ground, not in it: in the cell above where the ground cuts high up', () => {
+    const flat = (height: number): AimInput['ground'] => ({ distance: (_x, y) => y - height });
+    const from = { x: 4.5, y: 6, z: 4.5 };
+    // The ground low in its cell: the module goes in it, and sinks a little.
+    expect(aimIn(cells([]), from, DOWN, HELD, flat(2 + MODULE_SINK - 0.05)).place).toEqual({
+      x: 4,
+      y: 2,
+      z: 4,
+    });
+    // Higher up the cell than MODULE_SINK: the cell above, so that it is not buried.
+    const high = aimIn(cells([]), from, DOWN, HELD, flat(2 + MODULE_SINK + 0.05));
+    expect(high.on).toBe('terrain');
+    expect(high.place).toEqual({ x: 4, y: 3, z: 4 });
+    expect(high.state).toBe(terminal(2));
+    // A block is where the ground cuts, at any height, and a slab picks its half.
+    expect(aimIn(cells([]), from, DOWN, BLOCK, flat(2 + MODULE_SINK + 0.05)).place.y).toBe(2);
+  });
+
+  it('puts a module on the face of a block as it always does, and does not lift it under a ceiling of ground', () => {
+    const blocks = cells([[4, 0, 4, wall]]);
+    expect(aimIn(blocks, { x: 4.5, y: 4, z: 4.5 }, DOWN, HELD).place).toEqual({ x: 4, y: 1, z: 4 });
+    const ceiling: AimInput['ground'] = { distance: (_x, y) => 5.5 - y };
+    const under = aimIn(cells([]), { x: 4.5, y: 2, z: 4.5 }, { x: 0, y: 1, z: 0 }, HELD, ceiling);
+    expect(under.on).toBe('terrain');
+    expect(under.place).toEqual({ x: 4, y: 5, z: 4 });
   });
 
   it('aims at a module by its body: the cursor passes through the gap between body and cell edge', () => {

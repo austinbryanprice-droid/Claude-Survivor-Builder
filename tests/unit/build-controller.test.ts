@@ -1176,11 +1176,12 @@ describe('the module slot', () => {
     const shown = r.controller.target.state;
     expect(moduleFacing(stateShape(shown))).toBeGreaterThanOrEqual(0);
     expect(stateShape(shown)).toBeGreaterThanOrEqual(SHAPE.module);
+    // On the ground a module goes in the cell the ground cuts, or the one above it, as the aim decides.
+    const { x, y, z } = r.controller.target.place;
+    expect([Math.floor(r.surface), Math.floor(r.surface) + 1]).toContain(y);
     r.controller.press('secondary');
     r.controller.release('secondary');
-    expect(r.sent).toEqual([
-      { type: 'place', x: SPOT.x, y: Math.floor(r.surface), z: SPOT.z, state: shown },
-    ]);
+    expect(r.sent).toEqual([{ type: 'place', x, y, z, state: shown }]);
   });
 
   it('breaks with a left click as a block does, and fires nothing', () => {

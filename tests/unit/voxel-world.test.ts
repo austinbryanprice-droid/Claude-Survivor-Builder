@@ -3,6 +3,7 @@ import type { BlockWorld, CellState } from '../../src/shared/block-world';
 import {
   MATERIAL,
   MODULE,
+  MODULE_FOOT,
   SHAPE,
   moduleShape,
   packState,
@@ -30,6 +31,22 @@ function groundCell(world: VoxelWorld): { x: number; y: number; z: number } {
   const x = 8;
   const z = -4;
   return { x, y: Math.floor(world.terrain.grid.groundAt(x + 0.5, z + 0.5)), z };
+}
+
+/** A column in the valley where the ground stands between `from` and `to` of the way up its cell, found by looking. */
+function columnWithGroundAt(
+  world: VoxelWorld,
+  from: number,
+  to: number,
+): { x: number; y: number; z: number } {
+  for (let x = 4; x < 40; x++) {
+    for (let z = -30; z < 30; z++) {
+      const ground = world.terrain.grid.groundAt(x + 0.5, z + 0.5);
+      const part = ground - Math.floor(ground);
+      if (part >= from && part <= to) return { x, y: Math.floor(ground), z };
+    }
+  }
+  throw new Error(`No column has its ground between ${from} and ${to} of a cell`);
 }
 
 function dirtyCoords(world: VoxelWorld): string[] {
@@ -362,6 +379,21 @@ describe('VoxelWorld modules', () => {
     }
     expect(world.checkPlace(x, y - 3, z, TERMINAL)).toBe('buried');
     expect(world.checkPlace(x, y + 3, z, TERMINAL)).toBe('unsupported');
+  });
+
+  it('stand on the ground through their foundation: a cell the ground does not reach is fine while it floats less than MODULE_FOOT over it', () => {
+    const world = newWorld();
+    // The ground stands half way up its cell: the cell above floats half a cell over it.
+    const half = columnWithGroundAt(world, 0.45, 0.55);
+    expect(world.checkPlace(half.x, half.y + 1, half.z, TERMINAL)).toBeNull();
+    expect(world.checkPlace(half.x, half.y + 2, half.z, TERMINAL)).toBe('unsupported');
+    // The ground right at the floor of its cell: the cell above floats a whole cell over it, past the foundation.
+    const flush = columnWithGroundAt(world, 0, 1 - MODULE_FOOT - 0.01);
+    expect(world.checkPlace(flush.x, flush.y + 1, flush.z, TERMINAL)).toBe('unsupported');
+    // The cell the ground cuts is always fine, however high up it the ground reaches.
+    expect(world.checkPlace(flush.x, flush.y, flush.z, TERMINAL)).toBeNull();
+    const deep = columnWithGroundAt(world, 0.9, 0.99);
+    expect(world.checkPlace(deep.x, deep.y, deep.z, TERMINAL)).toBeNull();
   });
 
   it('need something under them: a block, or a slab with its flat side up, but not one beside them', () => {

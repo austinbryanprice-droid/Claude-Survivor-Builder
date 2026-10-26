@@ -1,5 +1,5 @@
 import type { BlockWorld, CellState } from './block-world';
-import { packState } from './blocks';
+import { MODULE_SINK, packState } from './blocks';
 import type { GroundQuery } from './ground';
 import type { Vec3 } from './look';
 import { PLAYER } from './movement';
@@ -163,6 +163,16 @@ export function updateAim(aim: Aim, input: AimInput): void {
   );
 
   if (piece === null) return;
+  // A module stands on the ground, not in it: where the ground cuts high up the cell the cursor is on,
+  // it goes in the cell above, and its foundation reaches down to the ground.
+  if (
+    piece.kind === 'module' &&
+    hit.kind === 'terrain' &&
+    hit.ny > 0 &&
+    start.y + dir.y * hit.distance - placeY > MODULE_SINK
+  ) {
+    placeY += 1;
+  }
   aim.hasPlace = true;
   aim.place.x = placeX;
   aim.place.y = placeY;
