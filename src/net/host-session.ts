@@ -937,8 +937,10 @@ export class HostSession implements GameSession {
     }
     // The crew's pool pays for a block that was placed (the refusal checked that it could) and gets back one that was broken.
     const economy = this.sim?.economy;
-    if (command.type === 'place') economy?.pay(command.state);
-    else economy?.refund(broken);
+    if (command.type === 'place') {
+      economy?.pay(command.state);
+      economy?.placed(command.state);
+    } else economy?.refund(broken);
     this.sim?.playerBuilt(member.id, command.type === 'place');
   }
 

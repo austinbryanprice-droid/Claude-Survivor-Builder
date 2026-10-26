@@ -5,8 +5,9 @@ import { RESEARCH } from './balance';
  * Research (SPEC sections 9 and 10): the points the crew earns by surviving nights and the ladder of
  * what they open. A point is never spent, so the ladder is read by the total: a step is open for good
  * once the points reach it. Pure and without a clock; the survival simulation tells it when a night
- * has been survived. In Phase 5c the points open the material tiers at the dawn they are reached;
- * from 5d a Research Terminal has to stand for the crew to claim what they have earned.
+ * has been survived. The points are only earned, though: what they open is what a Research Terminal
+ * has read, so the ladder is worked out from the points the crew has claimed (5d2), and a crew that
+ * has not built a Terminal holds its points unread.
  */
 
 /** One row of the ladder: the total points that open it, and the material tier it unlocks. */
@@ -56,6 +57,7 @@ export function researchLock(
 /** One run's research as the host keeps it. */
 export class Research {
   private total = 0;
+  private claimedTotal = 0;
   private lastNight = 0;
 
   /** The points the crew has earned. */
@@ -63,9 +65,26 @@ export class Research {
     return this.total;
   }
 
-  /** The highest material tier the points have opened. */
+  /** The points a Research Terminal has read. What the ladder opens is worked out from these, never from the points earned. */
+  get claimed(): number {
+    return this.claimedTotal;
+  }
+
+  /** The highest material tier the claimed points have opened. */
   get tier(): number {
-    return tierAt(this.total);
+    return tierAt(this.claimedTotal);
+  }
+
+  /** True while the crew holds points that no Terminal has read. */
+  get waiting(): boolean {
+    return this.total > this.claimedTotal;
+  }
+
+  /** A standing Terminal reads every point the crew has earned, for good. Returns how many it had not read. */
+  claim(): number {
+    const read = this.total - this.claimedTotal;
+    this.claimedTotal = this.total;
+    return read;
   }
 
   /**
@@ -84,9 +103,13 @@ export class Research {
     return this.total - before;
   }
 
-  /** Sets the total outright, from 0 to the most. For the `?research=` switch, tests and the debug page. */
-  set(points: number): void {
+  /**
+   * Sets the total outright, from 0 to the most, and has it read unless `claim` is false (a test of
+   * the points that wait). For the `?research=` switch, tests and the debug page.
+   */
+  set(points: number, claim = true): void {
     if (!Number.isFinite(points)) return;
     this.total = Math.min(RESEARCH.max, Math.max(0, Math.floor(points)));
+    this.claimedTotal = claim ? this.total : Math.min(this.claimedTotal, this.total);
   }
 }

@@ -16,6 +16,7 @@ import {
   heapInTheWay,
   keepsClear,
   lockedRefusal,
+  moduleStands,
   needsResearch,
   notEnough,
   pieceCost,
@@ -297,5 +298,29 @@ describe('the words for a material that is not researched', () => {
     for (let tier = 1; tier <= 4; tier++) {
       expect(lockedRefusal(tier, packState(moduleShape(MODULE.terminal, 0), 1))).toBeNull();
     }
+  });
+});
+
+describe('whether a module stands in the world', () => {
+  const TERMINAL = packState(moduleShape(MODULE.terminal, 2), 1);
+  /** A world of the given cells, handing them over the way the block world does. */
+  const worldOf = (cells: readonly number[]) => ({
+    forEachEdit(visit: (x: number, y: number, z: number, state: number) => void) {
+      cells.forEach((state, i) => visit(i, 10, 0, state));
+    },
+  });
+
+  it('finds a Terminal among other cells, whichever way it faces', () => {
+    expect(moduleStands(worldOf([SCRAP, COMPOSITE, TERMINAL]), MODULE.terminal)).toBe(true);
+    for (let facing = 0; facing < 4; facing++) {
+      const turned = packState(moduleShape(MODULE.terminal, facing), 1);
+      expect(moduleStands(worldOf([turned]), MODULE.terminal)).toBe(true);
+    }
+  });
+
+  it('finds none in a world of blocks, or of nothing, or of another module', () => {
+    expect(moduleStands(worldOf([]), MODULE.terminal)).toBe(false);
+    expect(moduleStands(worldOf([SCRAP, COMPOSITE, ALLOY]), MODULE.terminal)).toBe(false);
+    expect(moduleStands(worldOf([TERMINAL]), MODULE.terminal + 1)).toBe(false);
   });
 });

@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
+import { MATERIAL, MODULE, SHAPE, moduleShape, packState } from '../../src/shared/blocks';
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../src/shared/daycycle';
 import { createEconomyReading, type EconomyView } from '../../src/shared/economy';
 import type { HostFrame } from '../../src/shared/protocol';
 import { RESEARCH } from '../../src/systems/economy/balance';
+import { moduleStands } from '../../src/systems/economy/build-rules';
 import { RESEARCH_STEPS } from '../../src/systems/economy/research';
 import { FLOOR, arena, sim, type Room } from './helpers/arena';
+import type { TestWorld } from './helpers/net';
 import { at, helloText, rawGuest } from './helpers/net';
 
 const CLEAN = RESEARCH.perNight + RESEARCH.cleanNight;
@@ -124,5 +126,82 @@ describe('a guest building with a material the crew has not researched', () => {
     await room.settle(300);
     expect(hostWorld.cells.size).toBe(1);
     expect(reading(room.host.economy).stock).toEqual([10, 9, 10, 10]);
+  });
+});
+
+describe('a Research Terminal placed in the room', () => {
+  const TERMINAL = packState(moduleShape(MODULE.terminal, 0), 1);
+  const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
+  const UNREAD = RESEARCH_STEPS[0]!.points + 2;
+
+  /** A crew with Scrap for a Terminal and points earned that nothing has read, in a world that knows what stands in it. */
+  async function crew(stock = 50) {
+    const held: { world?: TestWorld } = {};
+    const built = arena(
+      {},
+      { stock, standing: (module) => !!held.world && moduleStands(held.world, module) },
+    );
+    held.world = built.hostWorld;
+    const code = await built.room.openRoom();
+    const ada = await built.room.join(code, 'Ada');
+    ada.session.publishState(at(SPOT.x - 2, SPOT.y, SPOT.z));
+    await built.room.settle(100);
+    sim(built.room).economy!.research.set(UNREAD, false);
+    return { ...built, ada };
+  }
+  const place = (ada: Awaited<ReturnType<typeof crew>>['ada'], state: number) =>
+    ada.session.sendCommand({ type: 'place', x: SPOT.x, y: SPOT.y, z: SPOT.z, state });
+
+  it('reads the points the crew has earned the moment it stands, and opens what they reach', async () => {
+    const { room, hostWorld, ada } = await crew();
+    expect(reading(room.host.economy)).toMatchObject({ research: UNREAD, claimed: 0, tier: 1 });
+    place(ada, TERMINAL);
+    await room.settle(300);
+    expect(hostWorld.cells.size).toBe(1);
+    expect(reading(room.host.economy)).toMatchObject({
+      research: UNREAD,
+      claimed: UNREAD,
+      tier: 2,
+    });
+  });
+
+  it('reads nothing for a Terminal the host refuses, such as one the pool cannot pay for', async () => {
+    const { room, hostWorld, ada } = await crew(39);
+    const seen: string[] = [];
+    ada.session.onRejected((rejection) => seen.push(rejection.reason));
+    place(ada, TERMINAL);
+    await room.settle(300);
+    expect(seen).toEqual(['not enough Scrap']);
+    expect(hostWorld.cells.size).toBe(0);
+    expect(reading(room.host.economy)).toMatchObject({ claimed: 0, tier: 1 });
+  });
+
+  it('reads nothing for a block', async () => {
+    const { room, hostWorld, ada } = await crew();
+    place(ada, SCRAP);
+    await room.settle(300);
+    expect(hostWorld.cells.size).toBe(1);
+    expect(reading(room.host.economy)).toMatchObject({ research: UNREAD, claimed: 0, tier: 1 });
+  });
+
+  it('reads the next dawn’s points while it stands, and keeps what it read when it is broken', async () => {
+    const { room, ada } = await crew();
+    place(ada, TERMINAL);
+    await room.settle(300);
+    toDawn(room);
+    expect(reading(room.host.economy)).toMatchObject({
+      research: UNREAD + CLEAN,
+      claimed: UNREAD + CLEAN,
+    });
+
+    ada.session.sendCommand({ type: 'break', x: SPOT.x, y: SPOT.y, z: SPOT.z });
+    await room.settle(300);
+    sim(room).warp(CYCLE_SECONDS);
+    // The Terminal is gone: the second night's points are earned and nobody has read them.
+    expect(reading(room.host.economy)).toMatchObject({
+      research: UNREAD + 2 * CLEAN,
+      claimed: UNREAD + CLEAN,
+      tier: 2,
+    });
   });
 });

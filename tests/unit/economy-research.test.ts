@@ -84,9 +84,11 @@ describe('what a material needs', () => {
 });
 
 describe('the research a run keeps', () => {
-  it('begins with nothing earned', () => {
+  it('begins with nothing earned and nothing read', () => {
     const research = new Research();
     expect(research.points).toBe(0);
+    expect(research.claimed).toBe(0);
+    expect(research.waiting).toBe(false);
     expect(research.tier).toBe(1);
   });
 
@@ -115,15 +117,50 @@ describe('the research a run keeps', () => {
     expect(research.points).toBe(0);
   });
 
-  it('opens the tiers as the points reach their rows', () => {
+  it('opens the tiers as a Terminal reads points that reach their rows, and not before', () => {
     const research = new Research();
     research.credit(1, false);
-    expect(research.tier).toBe(1);
     research.credit(2, false);
     expect(research.points).toBe(2 * RESEARCH.perNight);
+    // Earned and unread: the row is reached and nothing is open.
+    expect(tierAt(research.points)).toBe(2);
+    expect(research.tier).toBe(1);
+    expect(research.claim()).toBe(2 * RESEARCH.perNight);
     expect(research.tier).toBe(tierAt(2 * RESEARCH.perNight));
     research.set(RESEARCH_STEPS[2]!.points);
     expect(research.tier).toBe(4);
+  });
+
+  it('holds the points of a night unread until a Terminal reads them, and a reading is for good', () => {
+    const research = new Research();
+    research.credit(1, true);
+    expect(research.waiting).toBe(true);
+    expect(research.claimed).toBe(0);
+    expect(research.claim()).toBe(research.points);
+    expect(research.claimed).toBe(research.points);
+    expect(research.waiting).toBe(false);
+    // A Terminal that reads again finds nothing new.
+    expect(research.claim()).toBe(0);
+    // The next night's points wait in their turn; what was read stays read.
+    const read = research.claimed;
+    research.credit(2, false);
+    expect(research.waiting).toBe(true);
+    expect(research.claimed).toBe(read);
+    expect(research.points).toBe(read + RESEARCH.perNight);
+  });
+
+  it('reads what is set outright unless told to leave it unread, and never holds more read than earned', () => {
+    const research = new Research();
+    research.set(55);
+    expect(research.claimed).toBe(55);
+    research.set(70, false);
+    expect(research.points).toBe(70);
+    expect(research.claimed).toBe(55);
+    expect(research.waiting).toBe(true);
+    research.set(30, false);
+    expect(research.points).toBe(30);
+    expect(research.claimed).toBe(30);
+    expect(research.waiting).toBe(false);
   });
 
   it('holds no more than the most, and says how much a late night really added', () => {

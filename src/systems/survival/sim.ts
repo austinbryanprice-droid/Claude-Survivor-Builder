@@ -1,3 +1,4 @@
+import { MODULE } from '../../shared/blocks';
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../shared/daycycle';
 import type { DebrisNode } from '../../shared/economy';
 import type { EnemyPose } from '../../shared/enemy-state';
@@ -61,9 +62,15 @@ export interface SurvivalOptions {
   /**
    * The research points the crew opens the run with, for the `?research=` switch and for tests; the
    * points of the nights a later start has already had when absent. The points open the material
-   * tiers, so a run can open with Composite or Alloy researched.
+   * tiers, so a run can open with Composite or Alloy researched. Both are given as read.
    */
   research?: number | null;
+  /**
+   * Whether a module of this kind (a `MODULE` id) stands in the world now. A standing Research
+   * Terminal reads the crew's points at each dawn; without this no Terminal is known to stand, and
+   * the points a run earns wait unread (the Terminal reads them the moment it is placed).
+   */
+  standing?: ((module: number) => boolean) | null;
 }
 
 /** How a shot of the blaster ended. One object is filled by every call to `fire`. */
@@ -124,6 +131,7 @@ export class SurvivalSim {
   private readonly machines: EnemySim | null;
   private readonly waves: WaveDirector | null;
   private readonly wealth: Economy | null;
+  private readonly standing: ((module: number) => boolean) | null;
   /** The players the machines can go after in this step, kept between steps so a step allocates nothing. */
   private readonly targets: Target[] = [];
   private readonly feet = { x: 0, y: 0, z: 0 };
@@ -157,10 +165,13 @@ export class SurvivalSim {
             options.stock == null ? undefined : evenStock(options.stock),
           )
         : null;
-    // A run that starts at a later night has had the dawns before it: their research (which the
-    // `?research=` switch then replaces) and the heaps they uncovered, the better grades included.
+    this.standing = options.standing ?? null;
+    // A run that starts at a later night has had the dawns before it: their research, read as the
+    // run goes on from there (which the `?research=` switch then replaces) and the heaps they
+    // uncovered, the better grades included.
     if (this.wealth) {
       for (let night = 1; night < this.cycle; night++) this.wealth.research.credit(night, false);
+      this.wealth.research.claim();
       if (options.research != null) this.wealth.research.set(options.research);
       for (let night = 1; night < this.cycle; night++) this.wealth.dawn(night);
     }
@@ -449,8 +460,10 @@ export class SurvivalSim {
     } else if (inCycle === 0) {
       this.pending.push({ k: 'dawn', n: this.cycle - 1 });
       this.grantDawnCharges();
-      // The night is survived: its research comes first, so the heaps it opens rise at this dawn.
+      // The night is survived: its research comes first, and a standing Terminal reads it at once,
+      // so the heaps it opens rise at this dawn.
       this.wealth?.research.credit(this.cycle - 1, !this.hurtTonight);
+      if (this.standing?.(MODULE.terminal)) this.wealth?.research.claim();
       this.wealth?.dawn(this.cycle - 1, (node) => this.builtOverHeap(node));
     }
     if (beginsByDay) {

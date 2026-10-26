@@ -3,15 +3,24 @@ import { MATERIAL } from '../../src/shared/blocks';
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../src/shared/daycycle';
 import { nightStart } from '../../src/shared/survival-state';
 import { DEBRIS, RESEARCH } from '../../src/systems/economy/balance';
-import { RESEARCH_STEPS } from '../../src/systems/economy/research';
+import { MODULE } from '../../src/shared/blocks';
+import { RESEARCH_STEPS, tierAt } from '../../src/systems/economy/research';
 import { SurvivalSim, type SurvivalOptions } from '../../src/systems/survival/sim';
 import { flatWorld } from './helpers/nav-world';
 
 const CLEAN = RESEARCH.perNight + RESEARCH.cleanNight;
 
+/** A run in which a Research Terminal stands, unless the options say what stands. */
 function run(options: Partial<SurvivalOptions> = {}): SurvivalSim {
   const flat = flatWorld();
-  return new SurvivalSim({ core: flat.core, nav: flat.world, seed: 3, waves: false, ...options });
+  return new SurvivalSim({
+    core: flat.core,
+    nav: flat.world,
+    seed: 3,
+    waves: false,
+    standing: () => true,
+    ...options,
+  });
 }
 
 const points = (sim: SurvivalSim) => sim.economy!.research.points;
@@ -158,5 +167,91 @@ describe('the heaps research waits on', () => {
     for (let night = 1; night <= alloy.from; night++) playCycle(sim, false);
     expect(tier(sim)).toBe(3);
     expect(sim.economy!.leftOf(alloy.index)).toBe(alloy.harvests);
+  });
+});
+
+describe('the research a Terminal has to read', () => {
+  const claimed = (sim: SurvivalSim) => sim.economy!.research.claimed;
+
+  it('holds a night’s points unread at its dawn when no Terminal stands, and opens nothing', () => {
+    const sim = run({ standing: () => false });
+    playCycle(sim, false);
+    expect(points(sim)).toBe(CLEAN);
+    expect(claimed(sim)).toBe(0);
+    expect(tier(sim)).toBe(1);
+  });
+
+  it('asks about the Terminal and nothing else', () => {
+    const asked: number[] = [];
+    const sim = run({
+      standing: (module) => {
+        asked.push(module);
+        return false;
+      },
+    });
+    playCycle(sim, false);
+    expect(asked).toEqual([MODULE.terminal]);
+  });
+
+  it('reads every point that was waiting at the first dawn a Terminal stands for', () => {
+    let terminal = false;
+    const sim = run({ standing: () => terminal });
+    playCycle(sim, false);
+    playCycle(sim, false);
+    // 24 points, past the row at 20, and not one of them has opened anything.
+    expect(points(sim)).toBe(2 * CLEAN);
+    expect(claimed(sim)).toBe(0);
+    expect(tier(sim)).toBe(1);
+    terminal = true;
+    playCycle(sim, false);
+    expect(claimed(sim)).toBe(3 * CLEAN);
+    expect(tier(sim)).toBe(tierAt(3 * CLEAN));
+    expect(tier(sim)).toBe(2);
+  });
+
+  it('keeps what a Terminal read when it is gone, and reads nothing more until another stands', () => {
+    let terminal = true;
+    const sim = run({ standing: () => terminal });
+    playCycle(sim, false);
+    expect(claimed(sim)).toBe(CLEAN);
+    terminal = false;
+    for (let night = 2; night <= 5; night++) playCycle(sim, false);
+    expect(points(sim)).toBe(5 * CLEAN);
+    expect(claimed(sim)).toBe(CLEAN);
+    expect(tier(sim)).toBe(1);
+    terminal = true;
+    playCycle(sim, false);
+    expect(claimed(sim)).toBe(6 * CLEAN);
+    expect(tier(sim)).toBe(3);
+  });
+
+  it('keeps a better heap in the ground while its research is unread, and raises it at the dawn after a Terminal reads', () => {
+    let terminal = false;
+    const sim = run({ standing: () => terminal });
+    const composite = firstOf(sim, MATERIAL.composite)!;
+    for (let night = 1; night <= composite.from; night++) playCycle(sim, false);
+    // The points are there (two clean nights make 24), but nothing has read them.
+    expect(points(sim)).toBeGreaterThanOrEqual(RESEARCH_STEPS[0]!.points);
+    expect(sim.economy!.leftOf(composite.index)).toBe(0);
+    terminal = true;
+    playCycle(sim, false);
+    expect(sim.economy!.leftOf(composite.index)).toBe(composite.harvests);
+  });
+
+  it('reads the nights a later start has behind it, and the points it is given, with no Terminal standing', () => {
+    const later = run({ startAt: nightStart(3), standing: () => false });
+    expect(claimed(later)).toBe(2 * RESEARCH.perNight);
+    expect(tier(later)).toBe(2);
+    const given = run({ research: 55, standing: () => false });
+    expect(claimed(given)).toBe(55);
+    expect(tier(given)).toBe(3);
+  });
+
+  it('knows no Terminal where it was told nothing about the world', () => {
+    const flat = flatWorld();
+    const sim = new SurvivalSim({ core: flat.core, nav: flat.world, seed: 3, waves: false });
+    playCycle(sim, false);
+    expect(points(sim)).toBe(CLEAN);
+    expect(claimed(sim)).toBe(0);
   });
 });
