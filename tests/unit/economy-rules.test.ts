@@ -86,6 +86,27 @@ describe('what a piece costs', () => {
     expect(pieceCost(packState(moduleShape(MODULE.terminal, 0), 1))?.amount).toBe(40);
   });
 
+  it('is the price of the level for a module that has a ladder, in the material that step is paid in', () => {
+    const at = (level: number, facing = 0) =>
+      pieceCost(packState(moduleShape(MODULE.turret, facing), level));
+    expect(at(1)).toEqual({ material: MATERIAL.scrap, name: 'Scrap', amount: 25 });
+    for (let facing = 0; facing < 4; facing++) {
+      expect(at(2, facing)).toEqual({
+        material: MATERIAL.composite,
+        name: 'Reinforced Composite',
+        amount: 10,
+      });
+      expect(at(3, facing)).toEqual({
+        material: MATERIAL.alloy,
+        name: 'Advanced Alloy',
+        amount: 10,
+      });
+    }
+    // A level the module does not have is not a piece.
+    expect(at(4)).toBeNull();
+    expect(at(0)).toBeNull();
+  });
+
   it('tells which material is short, by name', () => {
     expect(notEnough('Scrap')).toBe('not enough Scrap');
     expect(shortfall(() => 0, SCRAP)).toBe('not enough Scrap');
@@ -304,10 +325,21 @@ describe('the words for a material that is not researched', () => {
     expect(lockedRefusal(1, packState(SHAPE.cube, 99))).toBeNull();
   });
 
-  it('lock no module: its material byte is a level, not a material', () => {
+  it('lock no module as it is built: its material byte is a level, and it is paid in Scrap', () => {
     for (let tier = 1; tier <= 4; tier++) {
       expect(lockedRefusal(tier, packState(moduleShape(MODULE.terminal, 0), 1))).toBeNull();
+      expect(lockedRefusal(tier, packState(moduleShape(MODULE.turret, 0), 1))).toBeNull();
     }
+  });
+
+  it('open the steps up a module by the research of the material that pays for them', () => {
+    const turret = (level: number) => packState(moduleShape(MODULE.turret, 2), level);
+    expect(lockedRefusal(1, turret(2))).toBe('Reinforced Composite needs research');
+    expect(lockedRefusal(2, turret(2))).toBeNull();
+    expect(lockedRefusal(2, turret(3))).toBe('Advanced Alloy needs research');
+    expect(lockedRefusal(3, turret(3))).toBeNull();
+    // A level the module does not have names no material, so there is nothing to lock.
+    expect(lockedRefusal(1, turret(4))).toBeNull();
   });
 });
 
@@ -383,10 +415,39 @@ describe('what upgrading a piece makes of it', () => {
     expect(upgradeStep(packState(SHAPE.cube, 99))).toBeNull();
   });
 
-  it('is nothing for a module: its levels come with the modules that have more than one', () => {
+  it('is nothing for a module with no ladder, such as the Terminal', () => {
     for (let facing = 0; facing < 4; facing++) {
       expect(upgradeStep(packState(moduleShape(MODULE.terminal, facing), 1))).toBeNull();
     }
+  });
+
+  it('is the next level for a module with a ladder, facing the way it did, at the price of that level', () => {
+    for (let facing = 0; facing < 4; facing++) {
+      const shape = moduleShape(MODULE.turret, facing);
+      const first = upgradeStep(packState(shape, 1))!;
+      expect(first.from).toBe(packState(shape, 1));
+      expect(first.to).toBe(packState(shape, 2));
+      expect(first.cost).toEqual({
+        material: MATERIAL.composite,
+        name: 'Reinforced Composite',
+        amount: 10,
+      });
+      const second = upgradeStep(first.to)!;
+      expect(second.to).toBe(packState(shape, 3));
+      expect(second.cost).toEqual({
+        material: MATERIAL.alloy,
+        name: 'Advanced Alloy',
+        amount: 10,
+      });
+      expect(second.cost).toEqual(pieceCost(second.to));
+    }
+  });
+
+  it('stops at the top of a module ladder, and at a level the module does not have', () => {
+    const shape = moduleShape(MODULE.turret, 0);
+    expect(upgradeStep(packState(shape, 3))).toBeNull();
+    expect(upgradeStep(packState(shape, 4))).toBeNull();
+    expect(upgradeStep(packState(shape, 0))).toBeNull();
   });
 });
 
@@ -395,15 +456,18 @@ describe('why a piece cannot be upgraded at all', () => {
     expect(upgradeBlocker(0)).toBe(NOTHING_TO_UPGRADE);
   });
 
-  it('says a piece at the top, or a module, is fully upgraded', () => {
+  it('says a piece at the top, or a module with nothing above it, is fully upgraded', () => {
     expect(upgradeBlocker(packState(SHAPE.cube, MATERIAL.energy))).toBe(FULLY_UPGRADED);
     expect(upgradeBlocker(packState(moduleShape(MODULE.terminal, 0), 1))).toBe(FULLY_UPGRADED);
+    expect(upgradeBlocker(packState(moduleShape(MODULE.turret, 0), 3))).toBe(FULLY_UPGRADED);
   });
 
   it('says nothing of a piece that has a better self', () => {
     expect(upgradeBlocker(SCRAP)).toBeNull();
     expect(upgradeBlocker(COMPOSITE)).toBeNull();
     expect(upgradeBlocker(ALLOY)).toBeNull();
+    expect(upgradeBlocker(packState(moduleShape(MODULE.turret, 1), 1))).toBeNull();
+    expect(upgradeBlocker(packState(moduleShape(MODULE.turret, 1), 2))).toBeNull();
   });
 });
 
@@ -435,6 +499,22 @@ describe('whether the crew can upgrade a piece now', () => {
 
   it('asks about the research before the pool', () => {
     expect(upgradeRefusal(1, none, SCRAP)).toBe(needsResearch('Reinforced Composite'));
+  });
+
+  it('raises a turret by the same rules: the better material researched and in the pool', () => {
+    const turret = (level: number) => packState(moduleShape(MODULE.turret, 3), level);
+    expect(upgradeRefusal(1, plenty, turret(1))).toBe(needsResearch('Reinforced Composite'));
+    expect(upgradeRefusal(2, none, turret(1))).toBe(notEnough('Reinforced Composite'));
+    expect(upgradeRefusal(2, plenty, turret(1))).toBeNull();
+    expect(upgradeRefusal(2, plenty, turret(2))).toBe(needsResearch('Advanced Alloy'));
+    expect(upgradeRefusal(3, none, turret(2))).toBe(notEnough('Advanced Alloy'));
+    expect(upgradeRefusal(3, plenty, turret(2))).toBeNull();
+    expect(upgradeRefusal(4, plenty, turret(3))).toBe(FULLY_UPGRADED);
+    // The pool is asked for the better material only: a pool with no Scrap can raise a turret.
+    const onlyComposite = (material: number) => (material === MATERIAL.composite ? 10 : 0);
+    expect(upgradeRefusal(2, onlyComposite, turret(1))).toBeNull();
+    const nine = (material: number) => (material === MATERIAL.composite ? 9 : 0);
+    expect(upgradeRefusal(2, nine, turret(1))).toBe(notEnough('Reinforced Composite'));
   });
 
   it('says what stops a piece that cannot be upgraded, whatever the crew holds', () => {

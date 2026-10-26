@@ -425,6 +425,35 @@ describe('VoxelWorld modules', () => {
     expect(world.checkPlace(BUILD_BOUNDS.maxX + 1, y, z, TERMINAL)).toBe('out-of-bounds');
   });
 
+  it("are placed at their first level only: a higher one is raised in place, not placed, at the first level's price", () => {
+    const world = newWorld();
+    const { x, y, z } = groundCell(world);
+    const turret = (level: number) => packState(moduleShape(MODULE.turret, 0), level);
+    expect(world.checkPlace(x, y, z, turret(1))).toBeNull();
+    expect(world.checkPlace(x, y, z, turret(2))).toBe('unknown-block');
+    expect(world.checkPlace(x, y, z, turret(3))).toBe('unknown-block');
+    expect(world.checkPlace(x, y, z, turret(4))).toBe('unknown-block');
+  });
+
+  it('take a raise in place: the cell keeps its module, and a listener hears the new level', () => {
+    const world = newWorld();
+    const { x, y, z } = groundCell(world);
+    const turret = (level: number) => packState(moduleShape(MODULE.turret, 1), level);
+    const calls: string[] = [];
+    world.onModuleChange((cx, cy, cz, previous, state) =>
+      calls.push(`${cx},${cy},${cz}:${previous}>${state}`),
+    );
+    world.setBlock(x, y, z, turret(1));
+    world.setBlock(x, y, z, turret(2));
+    world.setBlock(x, y, z, turret(3));
+    expect(world.moduleCount).toBe(1);
+    expect(calls).toEqual([
+      `${x},${y},${z}:0>${turret(1)}`,
+      `${x},${y},${z}:${turret(1)}>${turret(2)}`,
+      `${x},${y},${z}:${turret(2)}>${turret(3)}`,
+    ]);
+  });
+
   it('are counted and listed with where they stand and what state they are in', () => {
     const world = newWorld();
     const { x, y, z } = groundCell(world);

@@ -99,15 +99,24 @@ export interface TurretLevel {
  * The turrets, the crew's own guns (Phase 5f): each one that stands shoots the nearest machine it has
  * a clear line to, with no one at the trigger and no Energy spent. A first guess to be tuned by
  * playing (docs/decisions.md, Phase 5f) and by the balance simulator of 5j. The basic turret does a
- * little over a third of what the blaster does; the levels above it come with the upgrades.
+ * little over a third of what the blaster does; the Auto Turret (Tier 2) does two thirds of it and
+ * the Heavy Turret (Tier 3) a good deal more, from farther away (5f2).
  */
 export const TURRET = {
   /** Where on a machine it aims, as a fraction of the height of the box a bolt is judged against. */
   aimHeight: 0.5,
   /** The machines a turret tries for in one step, nearest first, before it gives the step up: the ones behind a wall are not shot. */
   tries: 3,
-  /** What a turret does at each level, from the first. A level this table does not have is the last one it has. */
-  levels: [{ range: 18, damage: 5, interval: 0.5 }] as readonly TurretLevel[],
+  /**
+   * What a turret does at each level, from the first. A level this table does not have is the last one
+   * it has. The level is the material byte of its cell, and the names and prices of the steps are in
+   * the module table (`MODULES`). That is 10, 20 and 40 points a second, against the blaster's 28.6.
+   */
+  levels: [
+    { range: 18, damage: 5, interval: 0.5 },
+    { range: 20, damage: 5, interval: 0.25 },
+    { range: 26, damage: 24, interval: 0.6 },
+  ] as readonly TurretLevel[],
 } as const;
 
 /**

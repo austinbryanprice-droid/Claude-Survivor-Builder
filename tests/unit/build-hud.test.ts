@@ -150,7 +150,9 @@ describe('the module slot', () => {
   it('has no icon for a module the HUD has no picture of, or a level the module does not have', () => {
     expect(moduleSlot(99).icon).toBeNull();
     expect(blockIcon(packState(moduleShape(MODULE.terminal, 0), 9))).toBeNull();
-    expect(blockIcon(packState(moduleShape(MODULE.turret, 0), 2))).toBeNull();
+    // The turret has two levels above the first, and the one icon serves all three.
+    expect(blockIcon(packState(moduleShape(MODULE.turret, 0), 3))).toBe('turret');
+    expect(blockIcon(packState(moduleShape(MODULE.turret, 0), 4))).toBeNull();
   });
 
   it('says what a module costs from the module table', () => {
