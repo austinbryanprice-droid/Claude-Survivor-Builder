@@ -1,9 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
-import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
+import { MATERIAL, MODULE, SHAPE, moduleShape, packState } from '../../src/shared/blocks';
 import { poolSlot } from '../../src/shared/economy';
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../src/shared/daycycle';
 import { DEBRIS, RESEARCH } from '../../src/systems/economy/balance';
 import { needsResearch } from '../../src/systems/economy/build-rules';
+import { TERMINAL_NEEDED } from '../../src/ui/research-hud';
 import { recordToasts, toasts } from './support/toasts';
 
 // Software WebGL is slow, so these tests wait on game state rather than on time, and use a small
@@ -19,6 +20,7 @@ const poll = <T>(read: () => Promise<T>) => expect.poll(read, { timeout: STATE_T
 const QUERY = '?debug&quality=low&freeze=1&stats=0&waves=0';
 
 const COMPOSITE = packState(SHAPE.cube, MATERIAL.composite);
+const TERMINAL = packState(moduleShape(MODULE.terminal, 0), 1);
 const COMPOSITE_SLOT = poolSlot(MATERIAL.composite);
 /** A spot in the crash clearing, where the ground is open and gentle. */
 const SPOT = { x: 8.5, z: -4.5 };
@@ -112,6 +114,7 @@ interface Pool {
   stock: number[];
   cap: number;
   research: number;
+  claimed: number;
   tier: number;
 }
 
@@ -124,6 +127,24 @@ const setPool = (page: Page, material: number, amount: number): Promise<void> =>
   page.evaluate(([m, a]) => window.__ashbound!.mp!.setPool(m!, a!), [material, amount] as const);
 const setResearch = (page: Page, points: number): Promise<void> =>
   page.evaluate((n) => window.__ashbound!.mp!.setResearch(n), points);
+/** Stands a Research Terminal a few blocks from the player, which reads every point the crew has earned and every one a dawn brings after it. */
+async function buildTerminal(page: Page): Promise<void> {
+  await page.evaluate(({ x, z }) => {
+    const game = window.__ashbound?.game;
+    if (game) game.teleport(x, game.world.groundAt(x, z) + 0.05, z, 0);
+  }, SPOT);
+  // The host reaches for the player where it last heard they were; give it a few frames to hear the new place.
+  await frames(page, 3);
+  await setPool(page, MATERIAL.scrap, 100);
+  await poll(async () => (await pool(page)).stock[poolSlot(MATERIAL.scrap)]).toBe(100);
+  await page.evaluate(([state]) => window.__ashbound!.mp!.placeNear(3, 0, state!), [
+    TERMINAL,
+  ] as const);
+  await poll(async () => ({
+    blocks: await read<number>(page, 'mp.blocks().count'),
+    refused: await rejections(page),
+  })).toEqual({ blocks: 1, refused: [] });
+}
 /** The hotbar slot, counting from 0. */
 const slotAt = (page: Page, slot: number) => page.locator('.ph-slot').nth(slot);
 
@@ -261,7 +282,7 @@ test.describe('research', () => {
     expect(problems).toEqual([]);
   });
 
-  test('a night survived earns points, two more for a Core nothing touched, and the dawn that reaches a row opens it', async ({
+  test('a night survived earns points, two more for a Core nothing touched, and the dawn that reaches a row waits for a Terminal to open it', async ({
     page,
   }) => {
     const problems = await open(page);
@@ -272,11 +293,13 @@ test.describe('research', () => {
       expect((await pool(page)).research).toBe(0);
       await toDay(page, 2);
       await wait(page.locator('.ph-clock')).toContainText('Day 2');
-      await poll(() => pool(page)).toMatchObject({ research: CLEAN_NIGHT, tier: 1 });
+      // No Terminal has read them, though they reach no row yet, so there is nothing to wait for.
+      await poll(() => pool(page)).toMatchObject({ research: CLEAN_NIGHT, claimed: 0, tier: 1 });
       await poll(() => toasts(page)).toContain(`Research +${CLEAN_NIGHT}`);
+      expect(await toasts(page)).not.toContain(TERMINAL_NEEDED);
     });
 
-    await test.step('a night the Core is hurt in gives the plain award, and the dawn that reaches 20 opens Composite', async () => {
+    await test.step('a night the Core is hurt in gives the plain award, and the dawn that reaches 20 says a Terminal has to read them', async () => {
       // Ten seconds into the second night, and a scratch on the Core.
       await page.evaluate(
         (to) => {
@@ -289,8 +312,23 @@ test.describe('research', () => {
       await page.evaluate(() => window.__ashbound!.mp!.hurtCore(25));
       await toDay(page, 3);
       await wait(page.locator('.ph-clock')).toContainText('Day 3');
-      await poll(() => pool(page)).toMatchObject({ research: CLEAN_NIGHT + NIGHT, tier: 2 });
+      await poll(() => pool(page)).toMatchObject({
+        research: CLEAN_NIGHT + NIGHT,
+        claimed: 0,
+        tier: 1,
+      });
       await poll(() => toasts(page)).toContain(`Research +${NIGHT}`);
+      await poll(() => toasts(page)).toContain(TERMINAL_NEEDED);
+      expect(await toasts(page)).not.toContain('Reinforced Composite unlocked');
+    });
+
+    await test.step('a Terminal built then reads them, and Composite opens', async () => {
+      await buildTerminal(page);
+      await poll(() => pool(page)).toMatchObject({
+        research: CLEAN_NIGHT + NIGHT,
+        claimed: CLEAN_NIGHT + NIGHT,
+        tier: 2,
+      });
       await poll(() => toasts(page)).toContain('Reinforced Composite unlocked');
     });
 
@@ -339,10 +377,15 @@ test.describe('research', () => {
       ).toBe(false);
     });
 
-    await test.step('the dawn of the night it starts in brings the points, and the Alloy heap that waited rises with that dawn’s own', async () => {
+    await test.step('the dawn of the night it starts in brings the points, which the Terminal standing by then reads, and the Alloy heap that waited rises with that dawn’s own', async () => {
+      await buildTerminal(page);
       await toDay(page, 7);
       await wait(page.locator('.ph-clock')).toContainText('Day 7');
-      await poll(() => pool(page)).toMatchObject({ research: behind + CLEAN_NIGHT, tier: 3 });
+      await poll(() => pool(page)).toMatchObject({
+        research: behind + CLEAN_NIGHT,
+        claimed: behind + CLEAN_NIGHT,
+        tier: 3,
+      });
       await poll(async () => {
         const list = await heaps(page);
         const waited = alloy(list).find((h) => h.from === grade.from);
