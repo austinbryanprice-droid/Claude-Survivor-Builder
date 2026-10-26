@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { CYCLE_SECONDS } from '../../src/shared/daycycle';
 import { ENEMIES, WAVES } from '../../src/systems/survival/balance';
 import { planNight } from '../../src/systems/survival/waves';
+import { recordToasts, toasts } from './support/toasts';
 
 // Software WebGL is slow, so these tests wait on game state rather than on time, and use a small
 // window and the Low preset to go faster. Alone with the mouse free the run is held, so the nights
@@ -25,6 +26,9 @@ async function open(page: Page): Promise<string[]> {
   await wait(page.locator('html')).toHaveAttribute('data-ready', 'true');
   // Playing together loads after the game is up, and the run lives in it.
   await page.waitForFunction(() => !!window.__ashbound?.mp, null, { timeout: STATE_TIMEOUT });
+  // The messages of a night come one after another, each up for under two seconds, so they are read
+  // from what was shown rather than from what is on the screen at the moment of looking.
+  await recordToasts(page);
   return problems;
 }
 
@@ -65,7 +69,7 @@ test.describe('the waves of a night', () => {
       await warp(page, 3.9);
       expect(await machines(page)).toEqual([]);
       await warp(page, 0.1);
-      await wait(page.locator('.toast')).toContainText('Wave 1 of 2: 4 machines in ten seconds');
+      await poll(() => toasts(page)).toContain('Wave 1 of 2: 4 machines in ten seconds');
     });
 
     await test.step('the first comes at fourteen seconds, and the rest a little after one another', async () => {
@@ -100,7 +104,7 @@ test.describe('the waves of a night', () => {
         mp.clearEnemies();
       });
       await warp(page, 0.1);
-      await wait(page.locator('.toast')).toContainText('Wave 2 of 2: 4 machines in ten seconds');
+      await poll(() => toasts(page)).toContain('Wave 2 of 2: 4 machines in ten seconds');
     });
 
     await test.step('what is still standing at dawn falls back', async () => {
@@ -116,7 +120,7 @@ test.describe('the waves of a night', () => {
       }, dawn);
       await poll(async () => (await machines(page)).length).toBe(3);
       await warp(page, 7);
-      await wait(page.locator('.toast')).toContainText('Dawn breaks on day 3');
+      await poll(() => toasts(page)).toContain('Dawn breaks on day 3');
       await poll(async () => (await machines(page)).length).toBe(0);
       expect(await read<boolean>(page, 'mp.clock().over')).toBe(false);
     });

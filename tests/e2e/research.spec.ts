@@ -47,6 +47,9 @@ async function open(page: Page, extra = ''): Promise<string[]> {
   await page.waitForFunction(() => (window.__ashbound?.mp?.heaps().length ?? 0) > 0, null, {
     timeout: STATE_TIMEOUT,
   });
+  // The screen tells of points that arrive after its first look at the pool, so a test that warps
+  // to a dawn at once, on a machine whose frames are slow, can beat that look and see no change.
+  await frames(page, 2);
   return problems;
 }
 
