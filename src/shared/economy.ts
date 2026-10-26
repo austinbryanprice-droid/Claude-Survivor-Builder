@@ -29,12 +29,14 @@ export interface EconomyReading {
   cap: number;
   /** The research points the crew has earned this run. They are never spent. */
   research: number;
-  /** The highest material tier the crew has researched: 1 (Scrap) until the points say more. */
+  /** The points a Research Terminal has read: the part of `research` that has opened anything. */
+  claimed: number;
+  /** The highest material tier the crew has researched: 1 (Scrap) until a Terminal has read points that say more. */
   tier: number;
 }
 
 export function createEconomyReading(): EconomyReading {
-  return { stock: new Array<number>(POOL_SLOTS).fill(0), cap: 0, research: 0, tier: 1 };
+  return { stock: new Array<number>(POOL_SLOTS).fill(0), cap: 0, research: 0, claimed: 0, tier: 1 };
 }
 
 /**
@@ -99,6 +101,7 @@ export const IDLE_ECONOMY: EconomyView = {
     out.stock.fill(0);
     out.cap = 0;
     out.research = 0;
+    out.claimed = 0;
     out.tier = 1;
     return out;
   },

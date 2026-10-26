@@ -1,5 +1,12 @@
 import type { CellState } from '../../shared/block-world';
-import { MATERIAL, MATERIALS, materialTier } from '../../shared/blocks';
+import {
+  MATERIAL,
+  MATERIALS,
+  MODULE,
+  materialTier,
+  moduleOfShape,
+  stateShape,
+} from '../../shared/blocks';
 import {
   createEconomyReading,
   type DebrisNode,
@@ -190,6 +197,14 @@ export class Economy {
     return cost === null || this.pool.take(cost.material, cost.amount);
   }
 
+  /**
+   * A piece the crew paid for now stands. A Research Terminal reads the points the crew has earned
+   * so far, so what they open is open from this moment, and stays open if the Terminal goes.
+   */
+  placed(state: CellState): void {
+    if (moduleOfShape(stateShape(state))?.id === MODULE.terminal) this.research.claim();
+  }
+
   /** A piece the crew broke goes back into the pool, as far as the ceiling allows. Returns what went in. */
   refund(state: CellState): number {
     const cost = pieceCost(state);
@@ -201,6 +216,7 @@ export class Economy {
     this.pool.read(out.stock);
     out.cap = this.pool.cap;
     out.research = this.research.points;
+    out.claimed = this.research.claimed;
     out.tier = this.research.tier;
     return out;
   }

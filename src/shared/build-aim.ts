@@ -109,7 +109,7 @@ export function bodyOverlapsCell(body: Vec3, x: number, y: number, z: number): b
 }
 
 /** How far the eyes are from the middle of a cell. */
-function distanceToCell(eye: Vec3, x: number, y: number, z: number): number {
+export function distanceToCell(eye: Vec3, x: number, y: number, z: number): number {
   return Math.hypot(x + 0.5 - eye.x, y + 0.5 - eye.y, z + 0.5 - eye.z);
 }
 

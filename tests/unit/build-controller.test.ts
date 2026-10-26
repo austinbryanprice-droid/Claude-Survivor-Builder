@@ -5,6 +5,7 @@ import {
   HOTBAR_MATERIALS,
   HOTBAR_MODULES,
   HOTBAR_SLOTS,
+  LADDER_STAY,
   MIN_HAND_SCALE,
   MODULE_SLOT,
   NOTICE_SECONDS,
@@ -1219,5 +1220,152 @@ describe('the module slot', () => {
     r.controller.update(0.016, r.lookDown(3));
     r.controller.press('secondary');
     expect(r.sent).toHaveLength(1);
+  });
+});
+
+describe('the research ladder of a Terminal', () => {
+  const terminal = packState(moduleShape(MODULE.terminal, 0), 1);
+
+  /** A rig with a Research Terminal standing on the ground at the spot, and the cursor on it from `height` above. */
+  function terminalAtSpot(height = 3) {
+    const r = rig();
+    const y = Math.floor(r.surface);
+    r.world.setBlock(SPOT.x, y, SPOT.z, terminal);
+    r.controller.update(0.016, r.lookDown(height));
+    return { ...r, y };
+  }
+
+  it('is offered while the cursor is on a Terminal in reach, and E opens it and shuts it again', () => {
+    const r = terminalAtSpot();
+    expect(r.controller.hudState().terminal).toBe('aimed');
+    expect(r.controller.ladderOpen).toBe(false);
+    r.controller.interact();
+    expect(r.controller.ladderOpen).toBe(true);
+    expect(r.controller.hudState().terminal).toBe('open');
+    r.controller.interact();
+    expect(r.controller.ladderOpen).toBe(false);
+    expect(r.controller.hudState().terminal).toBe('aimed');
+    // It asks the host for nothing.
+    expect(r.sent).toEqual([]);
+  });
+
+  it('is not offered for a plain block, bare ground or a Terminal out of reach', () => {
+    const r = rig();
+    r.world.setBlock(SPOT.x, Math.floor(r.surface), SPOT.z, packState(SHAPE.cube, MATERIAL.scrap));
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.target.on).toBe('block');
+    expect(r.controller.hudState().terminal).toBe('none');
+    r.controller.interact();
+    expect(r.controller.ladderOpen).toBe(false);
+
+    r.world.setBlock(SPOT.x, Math.floor(r.surface), SPOT.z, terminal);
+    r.controller.update(0.016, r.lookDown(BUILD_REACH + 1));
+    expect(r.controller.target.breakRefusal).toBe(AIM_REFUSAL.outOfReach);
+    expect(r.controller.hudState().terminal).toBe('none');
+    r.controller.interact();
+    expect(r.controller.ladderOpen).toBe(false);
+
+    r.world.setBlock(SPOT.x, Math.floor(r.surface), SPOT.z, 0);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.target.on).toBe('terrain');
+    expect(r.controller.hudState().terminal).toBe('none');
+  });
+
+  it('stays open as the player looks away, and shuts when the mouse is freed', () => {
+    const r = terminalAtSpot();
+    r.controller.interact();
+    r.controller.update(0.016, {
+      origin: { x: SPOT.x + 0.5, y: r.surface + 3, z: SPOT.z + 0.5 },
+      dir: { x: 1, y: 0, z: 0 },
+      eye: { x: SPOT.x + 0.5, y: r.surface + 3, z: SPOT.z + 0.5 },
+    });
+    expect(r.controller.target.on).not.toBe('block');
+    expect(r.controller.ladderOpen).toBe(true);
+    r.controller.clearAim();
+    expect(r.controller.ladderOpen).toBe(false);
+  });
+
+  it('keeps showing a little past the reach that opened it, and shuts once the player is well away', () => {
+    const r = terminalAtSpot();
+    r.controller.interact();
+    r.controller.update(0.016, r.lookDown(BUILD_REACH + 0.5));
+    expect(r.controller.ladderOpen).toBe(true);
+    r.controller.update(0.016, r.lookDown(LADDER_STAY + 1.5));
+    expect(r.controller.ladderOpen).toBe(false);
+    expect(r.controller.hudState().terminal).toBe('none');
+  });
+
+  it('shuts when the Terminal is gone, whoever broke it', () => {
+    const r = terminalAtSpot();
+    r.controller.interact();
+    r.world.setBlock(SPOT.x, r.y, SPOT.z, 0);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.ladderOpen).toBe(false);
+  });
+
+  it('shuts for a player who is down, and stays shut until it is opened again', () => {
+    const r = terminalAtSpot();
+    r.controller.interact();
+    r.controller.setDown(true);
+    expect(r.controller.ladderOpen).toBe(false);
+    expect(r.controller.hudState().terminal).toBe('none');
+    r.controller.interact();
+    expect(r.controller.ladderOpen).toBe(false);
+    r.controller.setDown(false);
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState().terminal).toBe('aimed');
+    r.controller.interact();
+    expect(r.controller.ladderOpen).toBe(true);
+  });
+
+  it('is not offered when a heap of debris lies in front of the Terminal, which E strips instead', () => {
+    const r = terminalAtSpot(4);
+    const heap: DebrisNode = {
+      index: 0,
+      x: SPOT.x + 0.5,
+      y: r.surface + 2,
+      z: SPOT.z + 0.5,
+      yaw: 0,
+      scale: 1,
+      harvests: 3,
+      grade: MATERIAL.scrap,
+      from: 0,
+    };
+    r.heaps.nodes.push(heap);
+    r.heaps.left[0] = 3;
+    r.controller.update(0.016, r.lookDown(4));
+    expect(r.controller.salvageTarget.index).toBe(0);
+    expect(r.controller.hudState().terminal).toBe('none');
+    r.controller.interact();
+    expect(r.controller.ladderOpen).toBe(false);
+    expect(r.sent).toHaveLength(1);
+    expect(r.sent[0]).toMatchObject({ type: 'harvest' });
+  });
+
+  it('ignores a heap of debris behind the Terminal', () => {
+    const r = rig();
+    const y = Math.floor(r.surface);
+    // The Terminal is up on a pillar, three blocks over the heap, and the view is from above.
+    r.world.setBlock(SPOT.x, y + 3, SPOT.z, terminal);
+    const heap: DebrisNode = {
+      index: 0,
+      x: SPOT.x + 0.5,
+      y: r.surface,
+      z: SPOT.z + 0.5,
+      yaw: 0,
+      scale: 1,
+      harvests: 3,
+      grade: MATERIAL.scrap,
+      from: 0,
+    };
+    r.heaps.nodes.push(heap);
+    r.heaps.left[0] = 3;
+    r.controller.update(0.016, r.lookDown(6));
+    // The Terminal is the first thing the view meets, so the heap under it is out of sight.
+    expect(r.controller.salvageTarget.index).toBe(-1);
+    expect(r.controller.hudState().terminal).toBe('aimed');
+    r.controller.interact();
+    expect(r.controller.ladderOpen).toBe(true);
+    expect(r.sent).toEqual([]);
   });
 });

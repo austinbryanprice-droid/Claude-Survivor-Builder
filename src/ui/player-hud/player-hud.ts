@@ -9,7 +9,10 @@ import {
   segmentFills,
 } from './format';
 import { ICON_SPRITE, iconMarkup, type IconId } from './icons';
+import { ResearchLadder, type HudLadder } from './research-ladder';
 import './player-hud.css';
+
+export type { HudLadder, HudLadderRow } from './research-ladder';
 
 /** One slot of the hotbar. Everything but the icon is optional. */
 export interface HotbarSlot {
@@ -109,8 +112,10 @@ export interface HudResearch {
   readonly fraction: number;
   /** The words at the end of the pill: "12/20", or the points alone once there is no next row. */
   readonly value: string;
-  /** 'full' once the whole ladder is climbed. */
-  readonly tone: 'rising' | 'full';
+  /** The word in front of the bar: "Research", or "Needs Terminal" while points the crew has earned wait for one to read them. */
+  readonly label: string;
+  /** 'full' once the whole ladder is climbed, 'waiting' while a row the points reach is shut for want of a Terminal. */
+  readonly tone: 'rising' | 'full' | 'waiting';
   /** How many times the points have risen so far: each rise flashes the pill once. */
   readonly gains: number;
 }
@@ -168,6 +173,8 @@ export interface PlayerHudState {
   readonly prompt?: HudPrompt | null;
   /** What the interact key would do for what the cursor is on, under the crosshair; absent or null for nothing. */
   readonly interact?: HudInteract | null;
+  /** The research ladder of the Research Terminal the player has opened, beside the crosshair; absent or null for none. */
+  readonly ladder?: HudLadder | null;
   /** Absent means a plain dot. */
   readonly crosshair?: CrosshairState;
   /** The hit marker; absent never flashes it. */
@@ -242,6 +249,7 @@ export class PlayerHud {
   private readonly chargeValue: HTMLElement;
   private readonly research: HTMLElement;
   private readonly researchFill: HTMLElement;
+  private readonly researchLabel: HTMLElement;
   private readonly researchValue: HTMLElement;
   private readonly down: HTMLElement;
   private readonly downTitle: HTMLElement;
@@ -258,6 +266,7 @@ export class PlayerHud {
   private readonly interactKey: HTMLElement;
   private readonly interactLabel: HTMLElement;
   private readonly interactDetail: HTMLElement;
+  private readonly ladder: ResearchLadder;
   private readonly crosshair: HTMLElement;
   private readonly hitmark: HTMLElement;
   private readonly buildHint: HTMLElement;
@@ -374,13 +383,9 @@ export class PlayerHud {
     const researchTrack = el('i', 'ph-research-track');
     this.researchFill = el('i', 'ph-research-fill');
     researchTrack.append(this.researchFill);
+    this.researchLabel = el('span', 'ph-research-label', 'Research');
     this.researchValue = el('span', 'ph-research-value');
-    this.research.append(
-      researchIcon,
-      el('span', 'ph-research-label', 'Research'),
-      researchTrack,
-      this.researchValue,
-    );
+    this.research.append(researchIcon, this.researchLabel, researchTrack, this.researchValue);
     this.gauges = el('div', 'ph-gauges');
     this.gauges.append(this.core, this.charges, this.research);
 
@@ -431,6 +436,9 @@ export class PlayerHud {
     this.interactDetail = el('span', 'ph-interact-detail');
     this.interact.append(this.interactKey, this.interactLabel, this.interactDetail);
 
+    // The research ladder a Terminal shows, beside the crosshair.
+    this.ladder = new ResearchLadder();
+
     this.crosshair = el('div', 'ph-crosshair');
     // Four ticks that flash round the crosshair on a hit; they sit inside it so they are always centered.
     this.hitmark = el('div', 'ph-hitmark');
@@ -448,6 +456,7 @@ export class PlayerHud {
       this.prompt,
       bar,
       this.interact,
+      this.ladder.root,
       this.crosshair,
     );
     parent.append(this.root);
@@ -680,12 +689,15 @@ export class PlayerHud {
   private updateResearch(state: PlayerHudState): void {
     const research = state.research ?? null;
     const fill = research ? Math.round(clamp01(research.fraction) * 1000) / 10 : -1;
-    const key = research ? `${research.tone}|${research.value}|${fill}|${research.gains}` : '';
+    const key = research
+      ? `${research.tone}|${research.label}|${research.value}|${fill}|${research.gains}`
+      : '';
     if (key === this.lastResearch) return;
     this.lastResearch = key;
     this.research.hidden = research === null;
     if (!research) return;
     this.research.dataset.tone = research.tone;
+    this.researchLabel.textContent = research.label;
     this.researchValue.textContent = research.value;
     this.researchFill.style.width = `${fill}%`;
     // Points earned flash the pill. Two animations take turns, because setting the one that is
@@ -782,6 +794,7 @@ export class PlayerHud {
         this.interactDetail.textContent = interact.detail;
       }
     }
+    this.ladder.update(state.ladder ?? null);
     const crosshair = state.crosshair ?? 'none';
     if (crosshair !== this.lastCrosshair) {
       this.lastCrosshair = crosshair;

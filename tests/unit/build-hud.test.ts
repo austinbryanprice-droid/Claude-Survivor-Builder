@@ -53,6 +53,7 @@ function hands(overrides: Partial<BuildHudInput> = {}): BuildHudInput {
     kill: false,
     salvage: 0,
     salvageGrade: 0,
+    terminal: 'none',
     ...overrides,
   };
 }
@@ -306,7 +307,7 @@ describe('the caption above the hotbar', () => {
 });
 
 describe('the caption of a material that is not researched', () => {
-  const lock = { name: 'Reinforced Composite', have: 12, need: 20 };
+  const lock = { name: 'Reinforced Composite', have: 12, need: 20, terminal: false };
   const composite = packState(SHAPE.cube, MATERIAL.composite);
   const inHand = { selected: 1, piece: composite };
 
@@ -336,6 +337,20 @@ describe('the caption of a material that is not researched', () => {
       title: 'Reinforced Composite Block',
       detail: 'Needs research · 12 of 20',
       tone: 'warn',
+    });
+  });
+
+  it('asks for a Terminal when the points earned are enough and nothing has read them', () => {
+    const tracker = new BuildPromptTracker();
+    const waiting = { ...lock, have: 24, terminal: true };
+    expect(tracker.update(0.016, hands({ ...inHand, buildMode: true }), waiting)).toEqual({
+      title: 'Reinforced Composite Block',
+      detail: 'Needs a Research Terminal',
+      tone: 'warn',
+    });
+    const words = needsResearch('Reinforced Composite');
+    expect(tracker.update(0.016, hands({ ...inHand, refusal: words }), waiting)).toMatchObject({
+      detail: 'Needs a Research Terminal',
     });
   });
 

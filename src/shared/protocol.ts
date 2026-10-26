@@ -212,15 +212,17 @@ export type HostFrame =
   | { readonly t: 'se'; readonly e: SurvivalEvent }
   /**
    * What the crew's shared pool holds: the count of each material in tier order (`pl`), the most
-   * it holds of any one (`cap`) and the research points the crew has earned (`rp`; the tiers they
-   * open are worked out from the points by the same table on every peer). Sent within a fifth of a
-   * second of a change and to every newcomer.
+   * it holds of any one (`cap`), the research points the crew has earned (`rp`) and the part of
+   * them a Research Terminal has read (`cl`, never more than `rp`; the tiers they open are worked
+   * out from `cl` by the same table on every peer). Sent within a fifth of a second of a change and
+   * to every newcomer.
    */
   | {
       readonly t: 'ec';
       readonly pl: readonly number[];
       readonly cap: number;
       readonly rp: number;
+      readonly cl: number;
     }
   /**
    * The run's heaps of debris, all of them, in list order (the index is the name of a heap):

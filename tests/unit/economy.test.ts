@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
+import { MATERIAL, MODULE, SHAPE, moduleShape, packState } from '../../src/shared/blocks';
 import { createEconomyReading, type DebrisNode } from '../../src/shared/economy';
 import { DEBRIS, POOL } from '../../src/systems/economy/balance';
 import { DEBRIS_IN_THE_WAY, needsResearch, notEnough } from '../../src/systems/economy/build-rules';
@@ -403,10 +403,69 @@ describe('a dawn and what the crew has researched', () => {
 });
 
 describe('the research an economy keeps', () => {
-  it('shows its points and the tier they open when it is read', () => {
+  const scrapBlock = packState(SHAPE.cube, MATERIAL.scrap);
+  const compositeBlock = packState(SHAPE.cube, MATERIAL.composite);
+  const terminal = packState(moduleShape(MODULE.terminal, 0), 1);
+
+  it('shows its points, the points read and the tier those open when it is read', () => {
     const economy = new Economy(5, field());
-    expect(economy.read(createEconomyReading())).toMatchObject({ research: 0, tier: 1 });
+    expect(economy.read(createEconomyReading())).toMatchObject({
+      research: 0,
+      claimed: 0,
+      tier: 1,
+    });
     economy.research.set(60);
-    expect(economy.read(createEconomyReading())).toMatchObject({ research: 60, tier: 3 });
+    expect(economy.read(createEconomyReading())).toMatchObject({
+      research: 60,
+      claimed: 60,
+      tier: 3,
+    });
+  });
+
+  it('shows points no Terminal has read as earned and not as open', () => {
+    const economy = new Economy(5, field());
+    economy.research.set(60, false);
+    expect(economy.read(createEconomyReading())).toMatchObject({
+      research: 60,
+      claimed: 0,
+      tier: 1,
+    });
+  });
+
+  it('locks a material the unread points reach, and keeps its heaps down, until a Terminal is placed', () => {
+    const economy = new Economy(5, field(), evenStock(50));
+    economy.research.set(RESEARCH_STEPS[0]!.points, false);
+    expect(economy.placementRefusal(0, 20, 0, compositeBlock)).toBe(
+      needsResearch('Reinforced Composite'),
+    );
+    economy.placed(terminal);
+    expect(economy.placementRefusal(0, 20, 0, compositeBlock)).toBeNull();
+  });
+
+  it('has a placed Research Terminal read every point the crew has earned', () => {
+    const economy = new Economy(5, field());
+    economy.research.set(30, false);
+    expect(economy.research.waiting).toBe(true);
+    economy.placed(terminal);
+    expect(economy.research.waiting).toBe(false);
+    expect(economy.research.claimed).toBe(30);
+    expect(economy.research.tier).toBe(2);
+  });
+
+  it('is not moved by the placing of a block', () => {
+    const economy = new Economy(5, field());
+    economy.research.set(30, false);
+    economy.placed(scrapBlock);
+    economy.placed(compositeBlock);
+    expect(economy.research.waiting).toBe(true);
+  });
+
+  it('leaves what a Terminal read open when the Terminal is broken', () => {
+    const economy = new Economy(5, field(), evenStock(50));
+    economy.research.set(30, false);
+    economy.placed(terminal);
+    economy.refund(terminal);
+    expect(economy.research.tier).toBe(2);
+    expect(economy.placementRefusal(0, 20, 0, compositeBlock)).toBeNull();
   });
 });

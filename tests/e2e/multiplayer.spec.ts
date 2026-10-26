@@ -1454,6 +1454,88 @@ test.describe('multiplayer', () => {
     }
   });
 
+  test("the crew's points wait for a Terminal on every screen: the padlock stays and the pill says so, a guest's Terminal reads them for everyone, and breaking it takes nothing away", async ({
+    browser,
+    baseURL,
+  }) => {
+    // The crew's pool is the host's, and opens with more than the Terminal's price.
+    const host = await openPlayer(browser, baseURL, 'Host', { stock: 200 });
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone: Player[] = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and the picture only changes when one is drawn.
+    const slow = { timeout: 60_000 };
+    const compositeAt = RESEARCH.steps[0]?.points as number;
+    const poolOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.pool());
+    const slotOf = (p: Player, n: number) => p.page.locator('.ph-slot').nth(n);
+    const researchToasts = async (p: Player) =>
+      (await toasts(p.page)).filter(
+        (t) => /^Research \+|unlocked$/.test(t) || t === 'Needs a Research Terminal',
+      );
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) {
+        await recordToasts(p.page);
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+      }
+
+      // The host's points reach both screens and wait: no tier opens, the padlock stays, the pill and
+      // the toasts say that only a Terminal is missing.
+      await host.page.evaluate((n) => window.__ashbound!.mp!.setResearch(n, false), compositeAt);
+      for (const p of everyone) {
+        await expect
+          .poll(() => poolOf(p), { ...slow, message: `${p.name} sees the points` })
+          .toMatchObject({ research: compositeAt, claimed: 0, tier: 1 });
+        await expect(slotOf(p, 1)).toHaveAttribute('data-locked', '', slow);
+        await expect(p.page.locator('.ph-research')).toHaveAttribute('data-tone', 'waiting', slow);
+        await expect(p.page.locator('.ph-research-label')).toHaveText('Needs Terminal', slow);
+        await expect
+          .poll(() => researchToasts(p), { ...slow, message: `${p.name} is told` })
+          .toEqual([`Research +${compositeAt}`, 'Needs a Research Terminal']);
+      }
+
+      // Ada builds a Terminal: the host reads the points the moment it stands, and Composite opens on both
+      // screens, each told what it opened.
+      const cell = await ada.page.evaluate(
+        ([state]) => window.__ashbound!.mp!.placeNear(4, 0, state!),
+        [TERMINAL] as const,
+      );
+      await expectSameWorld(everyone, 1);
+      for (const p of everyone) {
+        await expect
+          .poll(() => poolOf(p), { ...slow, message: `${p.name} sees the reading` })
+          .toMatchObject({ research: compositeAt, claimed: compositeAt, tier: 2 });
+        await expect(slotOf(p, 1)).not.toHaveAttribute('data-locked', '', slow);
+        await expect(p.page.locator('.ph-research')).toHaveAttribute('data-tone', 'rising', slow);
+        await expect
+          .poll(() => researchToasts(p), { ...slow, message: `${p.name} is told` })
+          .toEqual([
+            `Research +${compositeAt}`,
+            'Needs a Research Terminal',
+            'Reinforced Composite unlocked',
+          ]);
+      }
+
+      // The host breaks it: what was read stays open on both screens.
+      await host.page.evaluate(([x, y, z]) => window.__ashbound!.mp!.breakBlock(x!, y!, z!), [
+        cell.x,
+        cell.y,
+        cell.z,
+      ] as const);
+      await expectSameWorld(everyone, 0);
+      for (const p of everyone) {
+        await expect
+          .poll(() => poolOf(p), { ...slow, message: `${p.name} still has the tier` })
+          .toMatchObject({ claimed: compositeAt, tier: 2 });
+        await expect(slotOf(p, 1)).not.toHaveAttribute('data-locked', '', slow);
+      }
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
   test('a guest who is down lies still and is refused, the dawn pays for the Core to bring them back at their seat shaken, and a crew with no charge left loses the run on every screen', async ({
     browser,
     baseURL,

@@ -1,4 +1,4 @@
-import type { CellState } from '../../shared/block-world';
+import type { BlockWorld, CellState } from '../../shared/block-world';
 import {
   MATERIALS,
   isKnownState,
@@ -133,6 +133,15 @@ export function builtOver(
     }
   }
   return false;
+}
+
+/** True when a module of this kind (a `MODULE` id) stands anywhere in the world: a Terminal reads the crew's research only while one does. */
+export function moduleStands(world: Pick<BlockWorld, 'forEachEdit'>, module: number): boolean {
+  let found = false;
+  world.forEachEdit((_x, _y, _z, state) => {
+    if (!found && moduleOfShape(stateShape(state))?.id === module) found = true;
+  });
+  return found;
 }
 
 /** What a screen needs of the economy to tell a player whether the host would accept a block: the pool and the heaps. */

@@ -120,8 +120,8 @@ export interface MultiplayerDebug {
   }[];
   /** The heaps drawn now: how far up out of the ground each is, the share of its strips shown, the flash of a strip and the glow of the cursor. */
   heapsShown(): DebrisShown[];
-  /** The crew's pool as this screen has it: the count of each material in tier order, the most it holds, the research points and the highest tier they have opened. */
-  pool(): { stock: number[]; cap: number; research: number; tier: number };
+  /** The crew's pool as this screen has it: the count of each material in tier order, the most it holds, the research points earned, the part of them a Research Terminal has read and the highest tier those have opened. */
+  pool(): { stock: number[]; cap: number; research: number; claimed: number; tier: number };
   /**
    * Asks the host to strip the heap with this place in the list, as the interact key does but with
    * no aim and no pace of the hands (the host's rules still apply, reach included). Returns false,
@@ -130,8 +130,13 @@ export interface MultiplayerDebug {
   harvest(index: number): boolean;
   /** Sets how much of a material (a `MATERIAL` id) the pool holds, within its ceiling. Only a host (or single-player) can. */
   setPool(material: number, amount: number): void;
-  /** Sets the research points the crew has earned, which opens the material tiers they reach (heaps of a newly opened grade rise at the next dawn). Only a host (or single-player) can. */
-  setResearch(points: number): void;
+  /**
+   * Sets the research points the crew has earned and, unless `claim` is false, has a Terminal read
+   * them, which opens the material tiers they reach (heaps of a newly opened grade rise at the next
+   * dawn); with `claim` false the points wait for a Terminal to read them. Only a host (or
+   * single-player) can.
+   */
+  setResearch(points: number, claim?: boolean): void;
   /** A fingerprint of every player-made block in the world being played. */
   blocks(): BlockDigest;
   block(x: number, y: number, z: number): CellState;
@@ -371,6 +376,7 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
         stock: [...reading.stock],
         cap: reading.cap,
         research: reading.research,
+        claimed: reading.claimed,
         tier: reading.tier,
       };
     },
@@ -389,9 +395,11 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       const session = hub.current;
       if (session instanceof HostSession) session.survivalSim?.economy?.pool.set(material, amount);
     },
-    setResearch: (points) => {
+    setResearch: (points, claim = true) => {
       const session = hub.current;
-      if (session instanceof HostSession) session.survivalSim?.economy?.research.set(points);
+      if (session instanceof HostSession) {
+        session.survivalSim?.economy?.research.set(points, claim);
+      }
     },
     blocks: () => digestBlocks(options.world.world()),
     block: (x, y, z) => options.world.world().getBlock(x, y, z),

@@ -4,6 +4,7 @@ import type { NetFlags } from '../shared/net-flags';
 import type { PlayerSample } from '../shared/protocol';
 import type { RayWorld } from '../shared/raycast';
 import { createReading, nightStart } from '../shared/survival-state';
+import { moduleStands } from '../systems/economy/build-rules';
 import type { NavWorld } from '../systems/survival/nav';
 import { SurvivalSim } from '../systems/survival/sim';
 import type { Outpost } from '../world/outpost';
@@ -109,6 +110,7 @@ export function attachMultiplayer({
           waves,
           stock,
           research,
+          standing: (module) => moduleStands(voxels(), module),
         }),
     },
     groundAt: (x, z) => game.world.groundAt(x, z),

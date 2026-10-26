@@ -183,6 +183,16 @@ From 5d1 the crew can build the Research Terminal, the first functional module (
 - **The screen asks the same questions.** The ghost goes red for the world's rule, a heap's ground and a short pool before a click is sent. Where a module stands on a slope the cursor chooses the cell (`MODULE_SINK`, in `src/shared/build-aim.ts`), and the host's rule is the same file's neighbor `MODULE_FOOT`, so a click that passes one passes the other.
 - **Every screen draws it from its own world.** A screen draws a module from its copy of the world's cells (`ModuleRenderer`), so a Terminal a guest placed appears on the host's screen when the host's event applies and on each guest's when it arrives, as a block does, and a run started over rebuilds the world and the renderer with it.
 
+### Research read by a Terminal (Phase 5d2)
+
+From 5d2 the points the crew earns open nothing until a standing Research Terminal has read them (the rule and the reasons are in [decisions](decisions.md#phase-5d2-an-unlock-needs-a-terminal-2026-10-26)).
+
+- **One new field.** `ec`, the pool's frame, is now `{ pl, cap, rp, cl }`: `cl` is the part of `rp` that a Terminal has read, a whole number from 0 up to `rp` (the codec refuses a `cl` past `rp`). The tier is still not sent: both sides work it out from `cl` with `tierAt`, so a guest's padlocks cannot disagree with the host about what the points are worth. The frame is sent when `cl` changes as it is when `rp` does, within the same 200 milliseconds, and to every newcomer.
+- **Who reads, and when.** Only the host. A Terminal placed reads every point earned so far, in the step that applies the event (`Economy.placed`, called by the session once the pool has paid). A dawn credits the night's points and, when a Terminal stands in the host's world then (`moduleStands`, a scan of the edit list), reads them in the same step, before it picks which heaps rise. What was read stays read: breaking the Terminal refunds its price and takes nothing away, and points earned after that wait for the next one. A run that opens at a later night (`?night=N`) has read the nights behind it, and `?research=` and the `setResearch` hook read what they set unless asked not to.
+- **No new command.** A guest cannot ask for a reading and a Terminal is not "used": the standing of one in the host's world is what counts. The ladder a player opens with E is drawn from the pool's frame and asks the host for nothing.
+- **What the host's words are.** Unchanged: a piece of a material the points have not opened is still refused with `<Material> needs research`. A screen says more (`Needs a Research Terminal`) because it knows the points are there and the reading is not.
+- **Protocol version 12.** `ec` gains `cl`. A host and a guest on different versions refuse each other and say why.
+
 ## URL switches
 
 None are needed to play. They exist for tests, for a private server, and for a host on a strict network.
