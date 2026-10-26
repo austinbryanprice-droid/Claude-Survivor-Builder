@@ -6,6 +6,7 @@ import { needsResearch, notEnough, pieceCost } from '../../src/systems/economy/b
 import { NO_PLAYER } from '../../src/shared/protocol';
 import { SHOT_FLAG } from '../../src/shared/shot';
 import { ENEMIES, RESPAWN, TURRET, VITALS } from '../../src/systems/survival/balance';
+import { hopFromTheCore, standAt } from './support/power';
 import { recordToasts, toasts } from './support/toasts';
 import { barrelOf, sendCrawlerNear } from './support/turrets';
 
@@ -38,6 +39,10 @@ const TERMINAL = packState(moduleShape(MODULE.terminal, 0), 1);
 const TERMINAL_PRICE = MODULES.find((module) => module.id === MODULE.terminal)!.cost.amount;
 const TURRET_STATE = packState(moduleShape(MODULE.turret, 0), 1);
 const TURRET_PRICE = MODULES.find((module) => module.id === MODULE.turret)!.cost.amount;
+const GENERATOR_NAME = MODULES.find((module) => module.id === MODULE.generator)!.name;
+const GENERATOR_STATE = packState(moduleShape(MODULE.generator, 0), 1);
+/** The points that open the Power row of the ladder, which opens the Generator. */
+const POWER_AT = RESEARCH.groups[0].points;
 const SMALL = { width: 480, height: 270 };
 const FRAME_GAP_MS = 1500;
 
@@ -2013,6 +2018,118 @@ test.describe('multiplayer', () => {
       await expectEverywhere(cell, 3, [heavyCost.material, 5], 2);
       expect(await rejectionsOf(host)).toEqual([]);
       expect(await rejectionsOf(bo)).toEqual([]);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
+  test("a Generator charges the guest beside it on her own screen: the crew's points open it, every screen draws it, the host far away is not charged, and breaking it ends the charge", async ({
+    browser,
+    baseURL,
+  }) => {
+    // The crew's pool is the host's, and opens with plenty of every material.
+    const host = await openPlayer(browser, baseURL, 'Host', { stock: 200 });
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone: Player[] = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and the picture and the corner only change when one is drawn.
+    const slow = { timeout: 60_000 };
+    const vitalsOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.vitals());
+    const chargingOf = async (p: Player) => (await vitalsOf(p)).charging;
+    const rejectionsOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.rejections())).map((r) => r.reason);
+    const drawnOf = (p: Player) =>
+      p.page.evaluate(
+        () =>
+          (
+            window.__ashbound!.game.world as unknown as {
+              view: { modules: { count: number } };
+            }
+          ).view.modules.count,
+      );
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      const adaId = (await session(ada)).localId;
+
+      // The Core's own field reaches eight blocks from it, so each of them goes out of it to a ring
+      // thirteen blocks from the Core, to different sides of it: Ada to one, the host to the other,
+      // far enough apart that nothing Ada builds reaches the host. The host works out who is charged
+      // from where it was last told that they stand, so it is first made sure of where Ada is.
+      const adaAt = await hopFromTheCore(ada.page, 13, 0.9);
+      await hopFromTheCore(host.page, 13, -0.9);
+      await expect
+        .poll(
+          async () => {
+            const seen = (await remotes(host)).find((r) => r.name === 'Ada');
+            return !!seen && Math.hypot(seen.x - adaAt.x, seen.z - adaAt.z) < 2;
+          },
+          { ...slow, message: 'the host sees Ada where she stands' },
+        )
+        .toBe(true);
+      for (const p of everyone) {
+        await expect
+          .poll(() => chargingOf(p), { ...slow, message: `${p.name} is out of the Core's field` })
+          .toBe(false);
+      }
+      const buildNear = (dx: number) =>
+        ada.page.evaluate(([x, state]) => window.__ashbound!.mp!.placeNear(x!, 0, state!), [
+          dx,
+          GENERATOR_STATE,
+        ] as const);
+
+      // The Power points are not in: the host turns Ada's Generator away, in words, to Ada alone.
+      await buildNear(3);
+      await expect
+        .poll(() => rejectionsOf(ada), { ...slow, message: 'the host turns Ada down' })
+        .toEqual([needsResearch(GENERATOR_NAME)]);
+      expect(await rejectionsOf(host)).toEqual([]);
+      await expectSameWorld(everyone, 0);
+
+      // The crew's points reach the row, and the same placement stands: in both worlds, and drawn on both screens.
+      await host.page.evaluate((n) => window.__ashbound!.mp!.setResearch(n), POWER_AT);
+      const cell = await buildNear(3);
+      await expectSameWorld(everyone, 1);
+      for (const p of everyone) {
+        await expect.poll(() => drawnOf(p), { ...slow, message: `${p.name} draws it` }).toBe(1);
+      }
+
+      // Her battery is low and she stands three blocks from the Generator: the host tells her screen
+      // that she is charged, and her Energy climbs. The host, far on the other side of the Core, is not.
+      await host.page.evaluate((id) => window.__ashbound!.mp!.setVitals({ energy: 30 }, id), adaId);
+      await standAt(ada.page, cell.x + 0.5 - 3, cell.z + 0.5);
+      await expect.poll(() => chargingOf(ada), { ...slow, message: 'Ada is charged' }).toBe(true);
+      await expect(ada.page.locator('.ph-status-label')).toHaveText('Charging', slow);
+      expect(await chargingOf(host)).toBe(false);
+      await host.page.evaluate(() => window.__ashbound!.mp!.warp(10));
+      await expect
+        .poll(async () => (await vitalsOf(ada)).energy, { ...slow, message: "Ada's Energy climbs" })
+        .toBeGreaterThan(36);
+      expect(await chargingOf(host)).toBe(false);
+
+      // Out of its reach she is not charged, and back within it she is again (a hop of ten blocks, which the host believes).
+      await standAt(ada.page, cell.x + 0.5 - 3 - 10, cell.z + 0.5);
+      await expect
+        .poll(() => chargingOf(ada), { ...slow, message: 'Ada walks out of the reach' })
+        .toBe(false);
+      await standAt(ada.page, cell.x + 0.5 - 3, cell.z + 0.5);
+      await expect
+        .poll(() => chargingOf(ada), { ...slow, message: 'Ada walks back in' })
+        .toBe(true);
+
+      // She breaks it: gone from both worlds and both screens, and the charge stops on her screen.
+      await ada.page.evaluate(([x, y, z]) => window.__ashbound!.mp!.breakBlock(x!, y!, z!), [
+        cell.x,
+        cell.y,
+        cell.z,
+      ] as const);
+      await expectSameWorld(everyone, 0);
+      for (const p of everyone) {
+        await expect.poll(() => drawnOf(p), { ...slow, message: `${p.name} draws none` }).toBe(0);
+      }
+      await expect.poll(() => chargingOf(ada), { ...slow, message: 'the charge ends' }).toBe(false);
+      expect(await rejectionsOf(host)).toEqual([]);
       expectNoProblems(everyone);
     } finally {
       await closeAll(everyone);
