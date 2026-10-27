@@ -343,8 +343,8 @@ export const ENEMIES = {
     speed: 3.6,
     turnRate: 10,
     radius: 0.4,
-    height: 0.55,
-    hitbox: { halfWidth: 0.6, height: 0.7 },
+    height: 0.45,
+    hitbox: { halfWidth: 0.65, height: 0.55 },
     /** It crosses everything, so it has no step to climb. */
     step: 0,
     bite: { player: 5, core: 4, windup: 0.4, interval: 1.3 },

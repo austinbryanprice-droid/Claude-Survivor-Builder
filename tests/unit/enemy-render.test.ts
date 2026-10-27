@@ -29,7 +29,11 @@ function setup(capacity?: number) {
 describe('the machines on screen', () => {
   it('are one mesh for each kind, drawn in one call whatever their number, and hidden when there are none', () => {
     const { renderer, mesh, geometry } = setup();
-    expect(renderer.object.children.map((child) => child.name)).toEqual(['crawlers', 'armored']);
+    expect(renderer.object.children.map((child) => child.name)).toEqual([
+      'crawlers',
+      'armored',
+      'skimmers',
+    ]);
     expect(mesh.visible).toBe(false);
     renderer.update(0.016, [pose(1), pose(2), pose(3)]);
     expect(mesh.visible).toBe(true);
@@ -235,6 +239,97 @@ describe('the machines on screen', () => {
     expect(renderer.trianglesOf(ENEMY_KIND.armored) * 100).toBeLessThan(200_000);
   });
 
+  it('draw the skimmers in a mesh of their own, larger, in the order of the poses among the rest', () => {
+    const { renderer } = setup();
+    const skimmers = renderer.object.children[2] as Mesh;
+    const geometry = skimmers.geometry as InstancedBufferGeometry;
+    const at = (name: string, index: number, width: number): number[] =>
+      Array.from(
+        (geometry.getAttribute(name).array as Float32Array).slice(
+          index * width,
+          index * width + width,
+        ),
+      );
+    renderer.update(0.016, [
+      pose(1),
+      pose(2, { kind: ENEMY_KIND.flyer, x: 5, y: 12.5, z: -3 }),
+      pose(3, { kind: ENEMY_KIND.armored }),
+      pose(4, { kind: ENEMY_KIND.flyer, y: 40 }),
+    ]);
+    expect(geometry.instanceCount).toBe(2);
+    expect(skimmers.visible).toBe(true);
+    // Hovering where the host says, however high.
+    expect(at('iPos', 0, 3)).toEqual([5, 12.5, -3]);
+    expect(at('iPos', 1, 3)[1]).toBe(40);
+    for (const index of [0, 1]) {
+      const size = at('iData', index, 4)[1] as number;
+      expect(size).toBeGreaterThan(0.94 * 1.25);
+      expect(size).toBeLessThan(1.06 * 1.25);
+    }
+    expect(renderer.list().map((machine) => [machine.id, machine.kind])).toEqual([
+      [1, 0],
+      [2, 2],
+      [3, 1],
+      [4, 2],
+    ]);
+    renderer.update(0.016, [pose(1)]);
+    expect(skimmers.visible).toBe(false);
+  });
+
+  it('turn the skimmers’ rotors all the time, however fast they fly, and lean them into a flight as far as it takes them', () => {
+    const { renderer } = setup();
+    const geometry = (renderer.object.children[2] as Mesh).geometry as InstancedBufferGeometry;
+    const data = (index: number, slot: number): number =>
+      (geometry.getAttribute('iData').array as Float32Array)[index * 4 + slot] as number;
+    const flyer = (speed: number) => pose(1, { kind: ENEMY_KIND.flyer, speed });
+    renderer.update(0.05, [flyer(0)]);
+    const start = data(0, 2);
+    renderer.update(0.05, [flyer(0)]);
+    // At rest they still turn: 34 radians a second.
+    expect(data(0, 2) - start).toBeCloseTo(34 * 0.05, 6);
+    expect(data(0, 3)).toBe(0);
+    // At speed they turn no faster: the speed leans the body instead.
+    const before = data(0, 2);
+    renderer.update(0.05, [flyer(3.6)]);
+    expect(data(0, 2) - before).toBeCloseTo(34 * 0.05, 6);
+    for (let i = 0; i < 60; i++) renderer.update(0.016, [flyer(3.6)]);
+    expect(data(0, 3)).toBeGreaterThan(0.99);
+    // Half the speed, half the lean.
+    for (let i = 0; i < 60; i++) renderer.update(0.016, [flyer(1.8)]);
+    expect(data(0, 3)).toBeCloseTo(0.5, 2);
+  });
+
+  it('give the skimmer a body between the crawler’s and the armored one’s, within the budget of a hundred', () => {
+    const { renderer } = setup();
+    const skimmer = renderer.trianglesOf(ENEMY_KIND.flyer);
+    expect(skimmer).toBeGreaterThan(renderer.trianglesPerMachine);
+    expect(skimmer).toBeLessThan(2000);
+    expect(skimmer * 100).toBeLessThan(200_000);
+  });
+
+  it('carry themselves as their kind does, the same for the body and for its shadow', () => {
+    const { renderer } = setup();
+    const motion = (mesh: Mesh): number[] => {
+      const body = (mesh.material as ShaderMaterial).uniforms.uMotion;
+      const shadow = (mesh.customDepthMaterial as ShaderMaterial).uniforms.uMotion;
+      // One set of numbers for the two, so a skimmer's shadow leans as the skimmer does.
+      expect(shadow).toBe(body);
+      return (body!.value as { toArray(): number[] }).toArray();
+    };
+    const [crawlers, armored, skimmers] = renderer.object.children as Mesh[];
+    // The walkers do not lean, bob or dip, and lunge for a bite.
+    expect(motion(crawlers!)).toEqual([0, 0, 0.22, 0]);
+    expect(motion(armored!)).toEqual([0, 0, 0.22, 0]);
+    const [lean, bob, lunge, dip] = motion(skimmers!) as [number, number, number, number];
+    expect(lean).toBeGreaterThan(0);
+    expect(bob).toBeGreaterThan(0);
+    expect(lunge).toBeLessThan(0.22);
+    expect(dip).toBeGreaterThan(0);
+    // Each kind has a shadow material of its own.
+    const shadows = new Set([crawlers, armored, skimmers].map((mesh) => mesh!.customDepthMaterial));
+    expect(shadows.size).toBe(3);
+  });
+
   it('are lit like the rest of the world, and cast a shadow that moves the same way', () => {
     const { mesh, registry } = setup();
     const material = mesh.material as ShaderMaterial;
@@ -254,7 +349,7 @@ describe('the machines on screen', () => {
     renderer.update(0.016, [pose(1)]);
     const materials = Reflect.get(registry, 'materials') as Set<unknown>;
     // One material for each kind: they differ in color.
-    expect(materials.size).toBe(2);
+    expect(materials.size).toBe(3);
     renderer.dispose();
     expect(materials.size).toBe(0);
     expect(renderer.object.children).toHaveLength(0);
