@@ -136,6 +136,16 @@ const placeNear = (page: Page, dx: number, dz: number, state: number): Promise<C
     state,
   ] as const);
 
+/** The lamps the shaders read: how many Lights burn, and how many of them the last frame was lit by (the stage takes the nearest few). */
+const lamps = (page: Page): Promise<{ burning: number; active: number }> =>
+  read<{ burning: number; active: number }>(
+    page,
+    '({ burning: stage.atmosphere.lamps.burning, active: stage.atmosphere.lamps.active })',
+  );
+/** The red of the lamps' color, which is the lens's warm white times how bright it burns for how dark the sky is. */
+const lampRed = (page: Page): Promise<number> =>
+  read<number>(page, 'stage.atmosphere.uniforms.uLampColor.value.r');
+
 /** The small tag under the crosshair that says whether the Light the cursor is on has power. */
 const tag = (page: Page) => page.locator('.ph-power-tag');
 async function expectTag(
@@ -264,6 +274,7 @@ test.describe('the Light', () => {
       expect(group).toMatchObject({ module: MODULE.light, level: 1 });
       await poll(() => powerOf(page, aim.place)).toBe('off');
       await poll(() => lit(page, aim.place)).toBe(false);
+      expect(await lamps(page)).toEqual({ burning: 0, active: 0 });
       expect(await rejections(page)).toEqual([]);
       await page.screenshot({ path: testInfo.outputPath('light-placed.png') });
     });
@@ -285,21 +296,32 @@ test.describe('the Light', () => {
       await wait(tag(page)).toBeHidden();
     });
 
-    await test.step('a Generator placed within its reach gives the Light power: the lamp comes up, the tag says it burns bright, and breaking the Generator puts it low again', async () => {
+    await test.step('a Generator placed within its reach gives the Light power: the lamp comes up and throws light, the tag says it burns bright, and breaking the Generator puts it low and out again', async () => {
       await setScrap(page, 100);
       const generator = await placeNear(page, -2, 0, GENERATOR);
       await poll(() => blockAt(page, generator)).toBe(GENERATOR);
       await poll(() => powerOf(page, aim.place)).toBe('on');
       await poll(() => lit(page, aim.place)).toBe(true);
       await poll(() => lit(page, generator)).toBe(true);
+      await poll(() => lamps(page)).toEqual({ burning: 1, active: 1 });
       await poll(async () => (await aimAtCell(page, aim.place)).on).toBe('block');
       await expectTag(page, 'on', 'Powered', 'Burns bright');
       await page.screenshot({ path: testInfo.outputPath('light-powered.png') });
+
+      // The light is a tenth of itself by day, and all of itself once the sky is dark.
+      const byDay = await lampRed(page);
+      expect(byDay).toBeGreaterThan(0);
+      const held = await read<string | null>(page, 'stage.moment');
+      await page.evaluate(() => window.__ashbound!.stage.setMoment('night'));
+      await poll(() => lampRed(page)).toBeGreaterThan(byDay * 5);
+      await page.evaluate((name) => window.__ashbound!.stage.setMoment(name), held);
+      await poll(() => lampRed(page)).toBeCloseTo(byDay, 6);
 
       await breakAt(page, generator);
       await poll(() => blockAt(page, generator)).toBe(0);
       await poll(() => powerOf(page, aim.place)).toBe('off');
       await poll(() => lit(page, aim.place)).toBe(false);
+      await poll(() => lamps(page)).toEqual({ burning: 0, active: 0 });
       await expectTag(
         page,
         'off',

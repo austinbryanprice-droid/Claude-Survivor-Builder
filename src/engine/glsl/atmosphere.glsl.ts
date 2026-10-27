@@ -1,13 +1,16 @@
 /**
  * Shared atmosphere GLSL: the analytic sky, sun-tinted height fog with colored mist pockets,
- * and ambient light. Every material includes this chunk so the sky, the water reflections and
- * the distance haze always agree. Uniforms are shared objects, set once per frame by
- * `Atmosphere` in `atmosphere.ts`.
+ * ambient light and the light of the crew's Lights. Every material includes this chunk so the sky,
+ * the water reflections and the distance haze always agree. Uniforms are shared objects, set once
+ * per frame by `Atmosphere` in `atmosphere.ts` (the lamps' by `LampField` in `lamps.ts`).
  *
  * Defines: SKY_RICH (lit cloud model), MIST (colored mist pockets).
  */
 
+import { LAMP_SLOTS } from '../lamps';
+
 export const ATMOSPHERE_UNIFORMS = /* glsl */ `
+#define LAMP_SLOTS ${LAMP_SLOTS}
 uniform vec3 uCamPos;
 uniform vec3 uSunDir;
 uniform vec3 uMoonDir;
@@ -32,6 +35,15 @@ uniform vec3 uMistLakeColor;
 uniform vec3 uMistCrashColor;
 uniform vec4 uMistParams;
 uniform sampler2D uNoise;
+// The crew's Lights. uLampA: xyz where a lamp's light leaves, w its strength. uLampB: xyz the unit
+// direction it is aimed, w the cosine of the half-angle where its beam ends. uLampColor: the lamps'
+// color times their brightness, turned down by day. uLampShape: x the distance a lamp has fallen to
+// half at, y the distance it ends at, z the share of the light outside the beam, w the wrap.
+uniform vec4 uLampA[LAMP_SLOTS];
+uniform vec4 uLampB[LAMP_SLOTS];
+uniform vec3 uLampColor;
+uniform vec4 uLampShape;
+uniform float uLampCount;
 `;
 
 export const ATMOSPHERE_FUNCTIONS = /* glsl */ `
@@ -203,6 +215,30 @@ vec3 applyAtmosphere(vec3 color, vec3 wp) {
 
 vec3 ambientLight(vec3 n) {
   return mix(uAmbGround, uAmbSky, n.y * 0.5 + 0.5);
+}
+
+// The light the crew's Lights throw on a surface at wp that faces n: the sum over the lamps in use of
+// a soft beam (full inside the cone, the spill outside it) that falls off with distance and ends at
+// the range, on a surface that takes it a little past square. A surface adds albedo times this to
+// its lit color, before the haze. The lamps cast no shadows: a wall does not stop them.
+vec3 lampLight(vec3 wp, vec3 n) {
+  vec3 sum = vec3(0.0);
+  for (int i = 0; i < LAMP_SLOTS; i++) {
+    if (float(i) >= uLampCount) break;
+    vec3 to = uLampA[i].xyz - wp;
+    float d2 = dot(to, to);
+    float range = uLampShape.y;
+    if (d2 >= range * range) continue;
+    float d = sqrt(d2);
+    vec3 l = to / max(d, 0.001);
+    float face = clamp((dot(n, l) + uLampShape.w) / (1.0 + uLampShape.w), 0.0, 1.0);
+    float cone = uLampB[i].w;
+    float beam = smoothstep(cone, mix(cone, 1.0, 0.5), dot(-l, uLampB[i].xyz));
+    float reach = uLampShape.x;
+    float fall = (1.0 - smoothstep(range * 0.55, range, d)) / (1.0 + d2 / (reach * reach));
+    sum += face * mix(uLampShape.z, 1.0, beam) * fall * uLampA[i].w;
+  }
+  return sum * uLampColor;
 }
 `;
 

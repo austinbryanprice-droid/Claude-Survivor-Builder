@@ -40,6 +40,8 @@ export interface QualitySettings {
   /** Whether sky clouds use the full lit model. */
   readonly richClouds: boolean;
   readonly mist: boolean;
+  /** How many of the crew's Lights a frame is lit by: the nearest ones to the camera (at most 8, the shaders' slots). */
+  readonly lamps: number;
 }
 
 export const QUALITY_PRESETS: Readonly<Record<QualityName, QualitySettings>> = {
@@ -63,6 +65,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualitySettings>> = {
     treeNearDistance: 28,
     richClouds: false,
     mist: false,
+    lamps: 2,
   },
   balanced: {
     name: 'balanced',
@@ -84,6 +87,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualitySettings>> = {
     treeNearDistance: 44,
     richClouds: true,
     mist: true,
+    lamps: 6,
   },
   ultra: {
     name: 'ultra',
@@ -105,6 +109,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityName, QualitySettings>> = {
     treeNearDistance: 70,
     richClouds: true,
     mist: true,
+    lamps: 8,
   },
 };
 

@@ -272,6 +272,7 @@ From 5h3a a crew can build a Light, a lantern that burns bright with power and l
 
 - **A Light is a cell.** It is the seventh module, shape ids 56 to 59 for its four facings, so it rides the `place` and `break` commands, the `set` event and the late-join edit list exactly as the Bed does, and is opened by the same Camp row of research. A placement before the points are read is refused in words to the sender alone, `Light needs research`.
 - **Every screen works out its own lamp.** The `PowerWatcher` of each screen runs the same `PowerGrid` over its own copy of the modules, and a Light is one of the modules that take power from it, so the Light's lamp comes up on a screen when that screen's world has a Generator within six blocks of it or a powered Node within eight, and goes low when it has not. The host and the guests agree because the world they run it over is the same list of edits. The host's simulation does not look at a Light at all.
+- **And so does the light it throws (5h3b).** The lamps of the Lights that burn are the same function over the same list: the `PowerWatcher` hands the stage each powered Light's lens and aim, so the pool of light comes on and goes out on every screen together with the lens. Nothing is sent, and the version stays 20.
 - **Protocol version 20.** A Light is a state a version 19 build does not know: it could neither draw one nor say what it is. A host and a guest on different versions refuse each other and say why.
 
 ## URL switches

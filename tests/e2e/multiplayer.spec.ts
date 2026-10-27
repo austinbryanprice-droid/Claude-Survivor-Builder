@@ -2155,7 +2155,7 @@ test.describe('multiplayer', () => {
     }
   });
 
-  test("power is worked out on every screen from the world's own edits: a Generator and a Power Node light a turret and a Light on the guest's screen as they do on the host's, and breaking the Generator puts them out", async ({
+  test("power is worked out on every screen from the world's own edits: a Generator and a Power Node light a turret and a Light on the guest's screen as they do on the host's, the Light's lamp burns on both while it has power, and breaking the Generator puts them out", async ({
     browser,
     baseURL,
   }) => {
@@ -2194,6 +2194,9 @@ test.describe('multiplayer', () => {
           ).view.modules.isPowered(x!, y!, z!),
         [cell.x, cell.y, cell.z] as const,
       );
+    /** How many lamps burn on this screen: the Lights that have power, which the stage throws light from. */
+    const lampsOf = (p: Player) =>
+      p.page.evaluate(() => window.__ashbound!.stage.atmosphere.lamps.burning);
     const rejectionsOf = async (p: Player) =>
       (await p.page.evaluate(() => window.__ashbound!.mp!.rejections())).map((r) => r.reason);
     /** Waits until the module in a cell has this power, and its lights this state, on every screen. */
@@ -2205,6 +2208,14 @@ test.describe('multiplayer', () => {
         await expect
           .poll(() => litOf(p, cell), { ...slow, message: `${p.name} draws ${what} lit: ${lit}` })
           .toBe(lit);
+      }
+    };
+    /** Waits until this many lamps burn on every screen. */
+    const expectLamps = async (count: number, what: string) => {
+      for (const p of everyone) {
+        await expect
+          .poll(() => lampsOf(p), { ...slow, message: `${p.name} has ${what}` })
+          .toBe(count);
       }
     };
     try {
@@ -2232,6 +2243,7 @@ test.describe('multiplayer', () => {
       const light = await buildNear(LIGHT_STATE, 0, -6);
       await expectSameWorld(everyone, 2);
       await expectEverywhere(light, 'off', false, 'the Light');
+      await expectLamps(0, 'no lamp burning without power');
 
       // A Generator seven blocks from the turret and from the Light is beyond its reach of both: the Generator burns, and they have none.
       const generator = await buildNear(GENERATOR_STATE, -4, 0);
@@ -2239,6 +2251,7 @@ test.describe('multiplayer', () => {
       await expectEverywhere(generator, 'on', true, 'the Generator');
       await expectEverywhere(turret, 'off', false, 'the turret');
       await expectEverywhere(light, 'off', false, 'the Light');
+      await expectLamps(0, 'no lamp burning beyond the Generator');
 
       // A Power Node between them takes the power from the Generator and passes it on to the turret and the Light.
       const node = await buildNear(NODE_STATE, 0, -3);
@@ -2246,6 +2259,7 @@ test.describe('multiplayer', () => {
       await expectEverywhere(node, 'on', true, 'the Node');
       await expectEverywhere(turret, 'on', true, 'the turret');
       await expectEverywhere(light, 'on', true, 'the Light');
+      await expectLamps(1, 'the Light’s lamp burning');
 
       // The host walks up to the Generator and breaks it: the guest's screen follows the host's, and the
       // Node, the turret and the Light go dark on both.
@@ -2261,6 +2275,7 @@ test.describe('multiplayer', () => {
       await expectEverywhere(node, 'off', false, 'the Node');
       await expectEverywhere(turret, 'off', false, 'the turret');
       await expectEverywhere(light, 'off', false, 'the Light');
+      await expectLamps(0, 'the lamp put out');
       expect(await rejectionsOf(host)).toEqual([]);
       expect(await rejectionsOf(ada)).toEqual([]);
       expectNoProblems(everyone);

@@ -178,6 +178,7 @@ export class Stage {
     this.quality = q;
     this.sun.configure(q);
     this.registry.setSwitches({ richSky: q.richClouds, mist: q.mist, detailBump: q.detailNormals });
+    this.atmosphere.lamps.setLimit(q.lamps);
     this.pipeline.setQuality(q);
     this.governor = this.makeGovernor();
     this.fitRenderScale();
