@@ -1168,6 +1168,138 @@ test.describe('multiplayer', () => {
     }
   });
 
+  test("a guest fells the host's skimmer in the air: every screen draws it hanging over her with a mesh of its own, and the Energy-Infused cells it leaves are in everyone's pool and everyone's messages", async ({
+    browser,
+    baseURL,
+  }) => {
+    const host = await openPlayer(browser, baseURL, 'Host');
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and a machine is only listed when one is drawn.
+    const slow = { timeout: 60_000 };
+    const skimmer = ENEMIES.flyer;
+    const shots = Math.ceil(skimmer.health / skimmer.takes / BLASTER.damage);
+    const cells = skimmer.drop.amount;
+    const cellsName = MATERIALS.find((material) => material.id === MATERIAL.energy)!.name;
+    const machinesOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.enemies());
+    const shotsOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.shots().shots);
+    const fireAtIt = () => ada.page.evaluate(() => window.__ashbound!.mp!.fireAtMachine());
+    const energyCellsOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.pool())).stock[
+        poolSlot(MATERIAL.energy)
+      ] as number;
+    const drawnOf = (p: Player) =>
+      p.page.evaluate(() => {
+        const mesh = window.__ashbound!.stage.world.getObjectByName('skimmers') as unknown as
+          { geometry: { instanceCount: number }; visible: boolean } | undefined;
+        return mesh ? { count: mesh.geometry.instanceCount, visible: mesh.visible } : null;
+      });
+    /** How far its hull hangs over the ground below it on this screen, or null while the screen lists no machine. */
+    const hangsOf = (p: Player) =>
+      p.page.evaluate(() => {
+        const { game, mp } = window.__ashbound!;
+        const machine = mp!.enemies()[0];
+        return machine ? machine.y - game.world.groundAt(machine.x, machine.z) : null;
+      });
+    const told = async (p: Player) =>
+      (await toasts(p.page)).filter((t) => t.startsWith('A machine left'));
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) {
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+        await recordToasts(p.page);
+      }
+      const adaId = (await session(ada)).localId;
+      for (const p of everyone) expect(await energyCellsOf(p)).toBe(0);
+
+      // One skimmer comes out of the air beside Ada, on the side away from the host: it comes for her
+      // and hangs over her, so that it is still while she aims at it.
+      const adaAt = await ada.page.evaluate(() => window.__ashbound!.mp!.position());
+      const hostAt = await host.page.evaluate(() => window.__ashbound!.mp!.position());
+      const away = Math.hypot(adaAt.x - hostAt.x, adaAt.z - hostAt.z) || 1;
+      const id = await host.page.evaluate(
+        ([x, z, ux, uz, kind]) =>
+          window.__ashbound!.mp!.spawnCrawlerAt(x! + ux! * 1.2, z! + uz! * 1.2, kind),
+        [
+          adaAt.x,
+          adaAt.z,
+          (adaAt.x - hostAt.x) / away,
+          (adaAt.z - hostAt.z) / away,
+          ENEMY_KIND.flyer,
+        ] as const,
+      );
+      expect(id).not.toBeNull();
+
+      // Every screen draws it as a skimmer, whole, with the mesh of its own kind, in the air over the ground.
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await machinesOf(p)).map((m) => [m.id, m.kind, m.health]), {
+            ...slow,
+            message: `${p.name} sees the skimmer`,
+          })
+          .toEqual([[id, ENEMY_KIND.flyer, 1]]);
+        await expect
+          .poll(() => drawnOf(p), { ...slow, message: `${p.name} draws it with its own mesh` })
+          .toEqual({ count: 1, visible: true });
+        expect(await hangsOf(p), `${p.name} sees it hanging in the air`).toBeGreaterThan(1.5);
+      }
+
+      // Ada's shots go the moment her screen has it in her sights, and the host's word comes back for each.
+      await expect
+        .poll(fireAtIt, { ...slow, message: 'Ada has the skimmer in her sights' })
+        .toBe(id);
+      for (let shot = 2; shot <= shots; shot++) {
+        await ada.page.waitForTimeout(Math.ceil(BLASTER.interval * 1000) + 60);
+        expect(await fireAtIt()).toBe(id);
+      }
+
+      // It falls, and the kill reaches everyone.
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await machinesOf(p)).length, {
+            ...slow,
+            message: `${p.name} sees it gone`,
+          })
+          .toBe(0);
+        await expect
+          .poll(
+            async () =>
+              (await shotsOf(p)).filter((s) => (s.flags & SHOT_FLAG.kill) !== 0 && !s.predicted)
+                .length,
+            { ...slow, message: `${p.name} sees it fall once` },
+          )
+          .toBe(1);
+      }
+      expect((await shotsOf(host)).filter((s) => s.by === adaId).length).toBeGreaterThanOrEqual(
+        shots,
+      );
+
+      // The cells are in the one pool the crew shares, on both screens, and both are told how many.
+      const message = `A machine left ${cells} ${cellsName} in the pool`;
+      for (const p of everyone) {
+        await expect
+          .poll(() => energyCellsOf(p), { ...slow, message: `${p.name} has the cells` })
+          .toBe(cells);
+        await expect
+          .poll(() => told(p), { ...slow, message: `${p.name} is told of them` })
+          .toEqual([message]);
+        await expect
+          .poll(async () => (await clockOf(p)).gathered, {
+            ...slow,
+            message: `${p.name} counts them gathered`,
+          })
+          .toBe(cells);
+      }
+      expect(await ada.page.evaluate(() => window.__ashbound!.mp!.rejections())).toEqual([]);
+      expect(await host.page.evaluate(() => window.__ashbound!.mp!.rejections())).toEqual([]);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
   test("a guest strips a heap of debris: the host's pool and both pictures follow, only the guest is told, and a latecomer is told how things stand", async ({
     browser,
     baseURL,
