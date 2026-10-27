@@ -10,6 +10,8 @@ export interface CameraPose {
   pitch: number;
   /** Vertical field of view in degrees, when the pose sets one. */
   fov?: number;
+  /** A tilt of the picture about the line of sight, in radians (a cinematic's shake and dutch angles); level when absent. */
+  roll?: number;
 }
 
 /** A path for the camera to fly. `sample(0)` is where it starts and `sample(1)` where it ends. */

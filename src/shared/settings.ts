@@ -9,6 +9,8 @@ export interface Settings {
   invertY: boolean;
   /** Graphics preset; a `?quality=` switch overrides it for one visit. */
   quality: QualityName;
+  /** Opens a fresh game with the intro film. It can always be skipped, or watched again from the pause card. */
+  intro: boolean;
 }
 
 export const SETTINGS_LIMITS = {
@@ -21,6 +23,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fov: 70,
   invertY: false,
   quality: DEFAULT_QUALITY,
+  intro: true,
 };
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
@@ -45,5 +48,6 @@ export function sanitizeSettings(raw: unknown): Settings {
       typeof source.quality === 'string' && isQualityName(source.quality)
         ? source.quality
         : DEFAULT_SETTINGS.quality,
+    intro: typeof source.intro === 'boolean' ? source.intro : DEFAULT_SETTINGS.intro,
   };
 }

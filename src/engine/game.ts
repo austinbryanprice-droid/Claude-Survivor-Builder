@@ -20,6 +20,7 @@ import type { SweepExtras } from '../shared/sweep-report';
 import { createAvatar } from './avatar';
 import { PresetSweep, type SweepTarget } from './bench-sweep';
 import { createCameraRig, type CameraRig, type RigFrame, type ViewPoint } from './camera-rig';
+import type { Cinematic } from './cinematic';
 import { createInput, type Input } from './input';
 import type { RenderListener, Stage } from './stage';
 
@@ -135,6 +136,16 @@ export interface Game {
   setQuality(name: QualityName): void;
   /** Takes the camera off the player and holds it at a pose (screenshots); null gives it back. */
   setPhoto(pose: CameraPose | null): void;
+  /**
+   * Hands the camera to a cinematic until it says it is over: the player stands still and cannot
+   * be steered, the mouse looks at nothing, and the avatar is hidden. Passing another one, or null,
+   * ends the one that plays (its `end` is called). `onFrame` listeners keep running throughout.
+   */
+  setCinematic(cinematic: Cinematic | null): void;
+  /** The cinematic that has the camera, or null. */
+  readonly cinematic: Cinematic | null;
+  /** Called when a cinematic takes the camera or gives it back. */
+  onCinematicChange(listener: () => void): () => void;
   /** Draws a frame right now, with the camera where it is. Tests use it to read pixels. */
   renderNow(): void;
   start(): void;
@@ -197,7 +208,11 @@ export function createGame({
   const frameListeners = new Set<() => void>();
   const tickListeners = new Set<() => void>();
   const sweepListeners = new Set<() => void>();
+  const cinematicListeners = new Set<() => void>();
   let photo: CameraPose | null = null;
+  let cinematic: Cinematic | null = null;
+  const viewPose: CameraPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
+  const filmPose: CameraPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0 };
   let bodyYaw = 0;
   let lastTime: number | null = null;
 
@@ -240,7 +255,7 @@ export function createGame({
   /** Puts the camera at a pose, for the benchmark route and for photos. */
   const placeCamera = (pose: CameraPose): void => {
     camera.position.set(pose.x, pose.y, pose.z);
-    camera.rotation.set(pose.pitch, pose.yaw, 0);
+    camera.rotation.set(pose.pitch, pose.yaw, pose.roll ?? 0);
     const fov = pose.fov ?? settings.fov;
     if (Math.abs(camera.fov - fov) > 0.01) {
       camera.fov = fov;
@@ -315,7 +330,7 @@ export function createGame({
 
   const applyMouseLook = (): void => {
     input.takeLook(lookDelta);
-    if (sweep.active) return;
+    if (sweep.active || cinematic) return;
     const turn = RADIANS_PER_PIXEL * settings.mouseSensitivity;
     look.yaw = wrapAngle(look.yaw - lookDelta.dx * turn);
     look.pitch = clampPitch(look.pitch - lookDelta.dy * turn * (settings.invertY ? -1 : 1));
@@ -386,6 +401,20 @@ export function createGame({
           bodyYaw = look.yaw;
         }
       }
+
+      if (cinematic) {
+        // The camera is where the player's own view puts it; the cinematic ends by flying there.
+        viewPose.x = camera.position.x;
+        viewPose.y = camera.position.y;
+        viewPose.z = camera.position.z;
+        viewPose.yaw = camera.rotation.y;
+        viewPose.pitch = camera.rotation.x;
+        viewPose.fov = camera.fov;
+        const going = cinematic.update(dt, viewPose, filmPose);
+        placeCamera(filmPose);
+        avatar.object.visible = false;
+        if (!going) game.setCinematic(null);
+      }
     }
 
     // The governor stays out of the benchmark: it would hide the cost of a preset.
@@ -454,6 +483,20 @@ export function createGame({
     setPhoto(pose) {
       photo = pose;
     },
+    setCinematic(next) {
+      if (next === cinematic) return;
+      const ended = cinematic;
+      cinematic = next;
+      ended?.end();
+      cinematicListeners.forEach((listener) => listener());
+    },
+    get cinematic() {
+      return cinematic;
+    },
+    onCinematicChange(listener) {
+      cinematicListeners.add(listener);
+      return () => cinematicListeners.delete(listener);
+    },
     renderNow() {
       stage.render(0, 0);
     },
@@ -462,6 +505,7 @@ export function createGame({
       if (flags.bench) sweep.start();
     },
     dispose() {
+      game.setCinematic(null);
       stopActions();
       sweep.dispose();
       input.dispose();
@@ -470,6 +514,7 @@ export function createGame({
       frameListeners.clear();
       tickListeners.clear();
       sweepListeners.clear();
+      cinematicListeners.clear();
       stage.dispose();
     },
   };

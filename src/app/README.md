@@ -15,6 +15,7 @@ The composition root: the one place that knows the engine, the world and the int
 - `player-sync.ts` sends the local player to the session each frame, flags teleports, and puts the player back where the host says.
 - `seat-spawn.ts` says where each of the four seats starts: in a row beside the spawn point, above anything built there.
 - `browser-storage.ts` is storage that never throws (private windows, blocked cookies).
+- `intro.ts` is the intro film's controller: it starts the film inside the click that asks for the mouse (so the mouse arrives in hand and the input is held deaf while the film plays), skips it on any key or click, ends it at once when the mouse is let go, and hands the same mouse to the player when it ends. `attach-intro.ts` is the one file that knows both the film and the valley: it tells the film where the crater, the furrow and the Core are and how to hide what the crash made, and `create-app.ts` loads it only when a film is wanted or asked for, so a page with none pays nothing for its code.
 
 ## Keys
 
@@ -36,27 +37,29 @@ Click the page to take the mouse; Esc gives it back.
 
 ## URL switches
 
-| Switch                         | Does                                                                                                              |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `bench=1`                      | Run the benchmark at load (see below)                                                                             |
-| `benchSeconds`, `benchPresets` | Length of the route per preset (default 30), presets to run (`low,ultra`)                                         |
-| `debug`                        | Expose `window.__ashbound` for tests and scripts; show the frame overlay                                          |
-| `quality=low\|balanced\|ultra` | Preset for this visit; it is not saved (the pause panel and P save)                                               |
-| `shot=<name>`                  | Photo mode: hold the camera at a named viewpoint (see `viewpoints.ts`)                                            |
-| `time=<moment>`                | Fix the time of day (the sky otherwise follows the run's clock); `clock` runs a compressed demo cycle instead     |
-| `night=<n>`                    | Start the run at nightfall of night n (1 to 99), to try the later nights                                          |
-| `waves=0`                      | Keep the nights empty: no waves, for pictures and tests that want a quiet night                                   |
-| `stock=<n>`                    | Open the crew's pool with n of every material (0 to 9999, held to the pool's ceiling), to build without gathering |
-| `research=<n>`                 | Open the run with n research points (0 to 9999), already read by a Terminal, to try the better materials          |
-| `seed=<n>`                     | Build another valley                                                                                              |
-| `demo=outpost\|swatch\|hall`   | Raise a demo structure before the first frame (`demo` alone: the outpost)                                         |
-| `terrain=heightfield`          | Mesh the terrain as a smoothed heightfield instead of surface nets                                                |
-| `scale=<0..1>`                 | Force the internal resolution and switch the adaptive governor off                                                |
-| `hud=0`                        | Hide the whole HUD (player HUD, panels, overlay, room card), for clean shots                                      |
-| `stats=0`                      | Keep the frame overlay off even when `bench` or `debug` would show it                                             |
-| `freeze=1`                     | Freeze clouds, wind and water, and draw only when something changes                                               |
-| `join=CODE`, `name=Ada`        | Join a room on load; the name to play under                                                                       |
-| `broker=host:port`, `ice=...`  | Another PeerJS server; STUN and TURN servers (`none` for direct only)                                             |
+| Switch                         | Does                                                                                                                                               |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bench=1`                      | Run the benchmark at load (see below)                                                                                                              |
+| `benchSeconds`, `benchPresets` | Length of the route per preset (default 30), presets to run (`low,ultra`)                                                                          |
+| `debug`                        | Expose `window.__ashbound` for tests and scripts; show the frame overlay                                                                           |
+| `quality=low\|balanced\|ultra` | Preset for this visit; it is not saved (the pause panel and P save)                                                                                |
+| `shot=<name>`                  | Photo mode: hold the camera at a named viewpoint (see `viewpoints.ts`)                                                                             |
+| `time=<moment>`                | Fix the time of day (the sky otherwise follows the run's clock); `clock` runs a compressed demo cycle instead                                      |
+| `night=<n>`                    | Start the run at nightfall of night n (1 to 99), to try the later nights                                                                           |
+| `waves=0`                      | Keep the nights empty: no waves, for pictures and tests that want a quiet night                                                                    |
+| `stock=<n>`                    | Open the crew's pool with n of every material (0 to 9999, held to the pool's ceiling), to build without gathering                                  |
+| `research=<n>`                 | Open the run with n research points (0 to 9999), already read by a Terminal, to try the better materials                                           |
+| `intro=on\|off`                | `on` plays the intro film at the first Play whatever else is going on, `off` never does (otherwise it plays on a plain page, not under automation) |
+| `introAt=<seconds>`            | Hold the intro film at this second, with no mouse needed: for pictures and tests                                                                   |
+| `seed=<n>`                     | Build another valley                                                                                                                               |
+| `demo=outpost\|swatch\|hall`   | Raise a demo structure before the first frame (`demo` alone: the outpost)                                                                          |
+| `terrain=heightfield`          | Mesh the terrain as a smoothed heightfield instead of surface nets                                                                                 |
+| `scale=<0..1>`                 | Force the internal resolution and switch the adaptive governor off                                                                                 |
+| `hud=0`                        | Hide the whole HUD (player HUD, panels, overlay, room card), for clean shots                                                                       |
+| `stats=0`                      | Keep the frame overlay off even when `bench` or `debug` would show it                                                                              |
+| `freeze=1`                     | Freeze clouds, wind and water, and draw only when something changes                                                                                |
+| `join=CODE`, `name=Ada`        | Join a room on load; the name to play under                                                                                                        |
+| `broker=host:port`, `ice=...`  | Another PeerJS server; STUN and TURN servers (`none` for direct only)                                                                              |
 
 The viewpoints are `lake`, `valley`, `canopy`, `crash`, `core` and `reactor` (the Outpost Core from the rim and from a few steps away), `trail`, `outcrop`, `noon`, `sunset`, `dusk`, `night` and seven that look at the demo structures: `outpost` and `gate` for `demo=outpost`, `swatch` and `closeup` for `demo=swatch`, `hall`, `hallside` and `eaves` for `demo=hall`. A viewpoint brings its own time of day unless `time=` says otherwise. For example, `/?shot=lake&quality=balanced&hud=0&stats=0&freeze=1` draws the same frame every time.
 

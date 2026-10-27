@@ -2,6 +2,7 @@ import { DEFAULT_MOMENT, createStage } from '../engine/stage';
 import { createGame, type Game } from '../engine/game';
 import { stateMaterial } from '../shared/blocks';
 import { readFlags } from '../shared/flags';
+import { introWanted } from '../shared/intro';
 import { readNetFlags } from '../shared/net-flags';
 import { createReading } from '../shared/survival-state';
 import { readViewFlags } from '../shared/view-flags';
@@ -11,6 +12,7 @@ import { loadSettings } from '../ui/settings-store';
 import type { CoreLook } from '../world/render/core-render';
 import { SHOTS, shotPose } from '../world/terrain/viewpoints';
 import { createBuildControls } from './build-controls';
+import type { IntroController } from './intro';
 import type { Multiplayer } from './multiplayer';
 import { VALLEY_MIST, createValleyWorld, type ValleyWorld } from './valley-world';
 import { followVitals } from './vitals-effects';
@@ -73,16 +75,72 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
   // The player's building hands: the mouse, the hotbar keys and Build Mode, aimed from the camera.
   const building = createBuildControls({ game, valley: () => valley });
 
+  // The intro film opens a fresh run for a player alone (or a host with nobody in the room), once per
+  // page, unless the URL, the settings or the browser say otherwise. Its code loads only when it is
+  // wanted, or when the pause card is asked to show it.
+  let multiplayer: Multiplayer | null = null;
+  let introController: IntroController | null = null;
+  let introLoading: Promise<IntroController | null> | null = null;
+  let disposed = false;
+  // A page opened from an invite link is going to join somebody else's run, not open one of its own.
+  const netFlags = readNetFlags(search, { secure: window.location.protocol === 'https:' });
+  const plainStart =
+    netFlags.join === null &&
+    !flags.debug &&
+    !flags.bench &&
+    view.hud &&
+    view.shot === null &&
+    view.demo === null &&
+    view.time === null &&
+    !view.clock &&
+    view.night === null &&
+    view.stock === null &&
+    view.research === null;
+  const wantsIntro = (): boolean =>
+    introWanted({
+      mode: view.introAt !== null ? 'on' : view.intro,
+      setting: settings.intro,
+      automated: navigator.webdriver === true,
+      custom: !plainStart,
+      reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    }) &&
+    (multiplayer === null || multiplayer.lobby.hub.role === 'solo');
+  const loadIntro = (): Promise<IntroController | null> => {
+    introLoading ??= import('./attach-intro')
+      .then(({ attachIntro }) => {
+        if (disposed) return null;
+        introController = attachIntro({ game, valley: () => valley, wanted: wantsIntro });
+        if (flags.debug && window.__ashbound) window.__ashbound.intro = introController;
+        return introController;
+      })
+      .catch((error: unknown) => {
+        // The game still plays; it just opens without the film.
+        console.error('The intro could not load.', error);
+        return null;
+      });
+    return introLoading;
+  };
+
   document.body.classList.toggle('no-hud', !view.hud);
-  const hud = createHud(game, { flags, view, buildId, build: building.controller });
+  const hud = createHud(game, {
+    flags,
+    view,
+    buildId,
+    build: building.controller,
+    watchIntro: () => void loadIntro().then((controller) => controller?.replay()),
+  });
   if (flags.debug) window.__ashbound = { stage, game, build: building.debug };
+  if (view.introAt !== null) {
+    const heldAt = view.introAt;
+    void loadIntro().then((controller) => controller?.hold(heldAt));
+  } else if (wantsIntro()) {
+    void loadIntro();
+  }
 
   // Playing together loads after the game is up, and never in the benchmark, which measures the
   // game alone.
-  let multiplayer: Multiplayer | null = null;
   let stopVitals: (() => void) | null = null;
   let stopFire: (() => void) | null = null;
-  let disposed = false;
   if (!flags.bench) {
     void import('./attach-multiplayer')
       .then(({ attachMultiplayer }) => {
@@ -104,7 +162,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           forEachModule: (visit) => valley?.voxels.forEachModule(visit),
           aimTurret: (x, y, z, tx, ty, tz) => valley?.view.modules.aim(x, y, z, tx, ty, tz),
           levelOfTurret: (x, y, z) => stateMaterial(valley?.voxels.getBlock(x, y, z) ?? 0),
-          flags: readNetFlags(search, { secure: window.location.protocol === 'https:' }),
+          flags: netFlags,
           buildId,
           night: view.night,
           waves: view.waves,
@@ -160,6 +218,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
     start: () => game.start(),
     dispose() {
       disposed = true;
+      introController?.dispose();
       building.dispose();
       stopFire?.();
       stopVitals?.();

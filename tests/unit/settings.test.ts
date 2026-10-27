@@ -10,13 +10,27 @@ describe('sanitizeSettings', () => {
 
   it('keeps valid values', () => {
     expect(
-      sanitizeSettings({ mouseSensitivity: 1.5, fov: 90, invertY: true, quality: 'ultra' }),
+      sanitizeSettings({
+        mouseSensitivity: 1.5,
+        fov: 90,
+        invertY: true,
+        quality: 'ultra',
+        intro: false,
+      }),
     ).toEqual({
       mouseSensitivity: 1.5,
       fov: 90,
       invertY: true,
       quality: 'ultra',
+      intro: false,
     });
+  });
+
+  it('plays the intro unless the player turned it off', () => {
+    expect(DEFAULT_SETTINGS.intro).toBe(true);
+    expect(sanitizeSettings({}).intro).toBe(true);
+    expect(sanitizeSettings({ intro: false }).intro).toBe(false);
+    expect(sanitizeSettings({ intro: 'no' }).intro).toBe(true);
   });
 
   it('only keeps a graphics preset that exists', () => {

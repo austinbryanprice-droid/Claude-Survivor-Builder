@@ -55,6 +55,8 @@ export interface HudOptions {
   readonly buildId: string;
   /** The player's building hands: the hotbar's blocks, the selection and Build Mode. */
   readonly build: BuildHudSource;
+  /** Plays the intro film now, for the pause card's "Watch the intro"; the card offers none without it. */
+  readonly watchIntro?: () => void;
 }
 
 const BANNER_INTERVAL_MS = 200;
@@ -71,14 +73,17 @@ const capitalized = (text: string): string => text.charAt(0).toUpperCase() + tex
  * Builds the HUD over the canvas and keeps it in step with the game: pointer lock, the benchmark,
  * the camera and the graphics preset. The player HUD of the reference sits underneath the panels.
  */
-export function createHud(game: Game, { flags, view, buildId, build }: HudOptions): Hud {
+export function createHud(
+  game: Game,
+  { flags, view, buildId, build, watchIntro }: HudOptions,
+): Hud {
   const root = el('div');
   root.id = 'hud';
   root.hidden = !view.hud;
 
   const playerHud = createPlaceholderHud(root, game, build);
   const overlay = createFrameOverlay(game);
-  const pause = createPausePanel(game, buildId, { skyPreview: flags.debug });
+  const pause = createPausePanel(game, buildId, { skyPreview: flags.debug, watchIntro });
   const bench = createBenchPanel(game, render);
   const status = createStatusPanel(game);
   const toast = createToast();
@@ -141,16 +146,18 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
     return changed;
   }
 
-  /** Shows the card the screen calls for: the run being played, the pause card, the results of a lost run, or the benchmark's. */
+  /** Shows the card the screen calls for: the run being played, the pause card, the results of a lost run, the benchmark's, or nothing while the intro film plays. */
   function place(): void {
     const playing = game.input.locked;
     const driven = game.sweep.active;
+    const filming = game.cinematic !== null;
     const benchResults = bench.showingResults && !playing;
-    pause.element.hidden = playing || driven || benchResults || over;
-    results.element.hidden = playing || driven || benchResults || !over;
+    pause.element.hidden = playing || driven || benchResults || over || filming;
+    results.element.hidden = playing || driven || benchResults || !over || filming;
     status.element.hidden = !playing || driven;
     root.dataset.pointer = playing ? 'locked' : 'free';
     root.dataset.bench = game.sweep.state;
+    root.dataset.intro = filming ? 'on' : 'off';
   }
 
   function render(): void {
@@ -162,6 +169,7 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
 
   const stopInput = game.input.onChange(render);
   const stopSweep = game.onSweepChange(render);
+  const stopFilm = game.onCinematicChange(render);
   const stopQuality = game.stage.onQuality(() => {
     status.refresh();
     pause.refresh();
@@ -257,6 +265,7 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
       stopRunEvents?.();
       stopInput();
       stopSweep();
+      stopFilm();
       stopQuality();
       stopActions();
       stopFrames();

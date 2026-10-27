@@ -1,0 +1,158 @@
+/*
+ * The intro film's dressing: letterbox bars, captions, the title card, flashes, the black between
+ * cuts, the eyelids of the survivor waking and the prompt to skip. It sits above the HUD and the
+ * room panel and takes no clicks; the film listens for its own skip on the window.
+ */
+
+.intro {
+  --intro-bar: 0%;
+  --ink: #f4ead2;
+  --amber: #f2a43a;
+
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  overflow: hidden;
+  color: var(--ink);
+  pointer-events: none;
+  user-select: none;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}
+
+.intro[hidden] {
+  display: none;
+}
+
+/* The panels of the page that would sit in the picture while it plays. */
+body.intro-playing .mp,
+body.intro-playing #build-tag {
+  visibility: hidden;
+}
+
+.intro-black,
+.intro-flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.intro-black {
+  background: #000;
+  opacity: 1;
+}
+
+.intro-flash {
+  background: radial-gradient(ellipse at 50% 56%, #fffbee 0%, #ffe3b0 36%, #ffb25c 100%);
+}
+
+.intro-bar,
+.intro-lid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: #000;
+}
+
+.intro-bar {
+  height: 0;
+}
+
+.intro-bar-top {
+  top: 0;
+}
+
+.intro-bar-bottom {
+  bottom: 0;
+}
+
+/* Two lids a little taller than half the screen, so that shut they overlap, with a soft edge for the blur of waking. */
+.intro-lid {
+  height: 56%;
+  will-change: transform;
+}
+
+.intro-lid-top {
+  top: 0;
+  transform: translateY(-100%);
+  background: linear-gradient(180deg, #000 0%, #000 72%, rgb(0 0 0 / 0%) 100%);
+}
+
+.intro-lid-bottom {
+  bottom: 0;
+  transform: translateY(100%);
+  background: linear-gradient(0deg, #000 0%, #000 72%, rgb(0 0 0 / 0%) 100%);
+}
+
+.intro-caption {
+  position: absolute;
+  left: 50%;
+  bottom: max(calc(var(--intro-bar) / 2 - 0.8em), 5%);
+  width: min(86vw, 62em);
+  margin: 0;
+  padding: 0 1em;
+  transform: translateX(-50%);
+  opacity: 0;
+  text-align: center;
+  font-size: clamp(14px, 1.55vw, 26px);
+  font-weight: 450;
+  letter-spacing: 0.1em;
+  line-height: 1.4;
+  text-shadow: 0 2px 14px rgb(0 0 0 / 80%);
+}
+
+.intro-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 33%;
+  opacity: 0;
+  text-align: center;
+  transform: translateY(calc((1 - var(--arrived, 0)) * 16px));
+  text-shadow:
+    0 2px 30px rgb(0 0 0 / 70%),
+    0 0 44px rgb(242 164 58 / 32%);
+}
+
+.intro-name {
+  margin: 0;
+  color: #fbf1d8;
+  font-size: clamp(30px, 6.4vw, 112px);
+  font-weight: 700;
+  letter-spacing: calc(0.2em + (1 - var(--arrived, 0)) * 0.2em);
+  text-transform: uppercase;
+}
+
+.intro-tagline {
+  margin: 1em 0 0;
+  color: var(--amber);
+  font-size: clamp(12px, 1.5vw, 24px);
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+}
+
+.intro-skip {
+  position: absolute;
+  right: 3vw;
+  bottom: max(calc(var(--intro-bar) / 2 - 0.9em), 2vh);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  opacity: 0;
+  color: rgb(244 234 210 / 68%);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Someone who asked their system for less motion gets the flashes at a third of their strength. */
+@media (prefers-reduced-motion: reduce) {
+  .intro-flash {
+    filter: opacity(35%);
+  }
+}

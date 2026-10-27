@@ -22,6 +22,13 @@
   line-height: 1.45;
   pointer-events: none;
   user-select: none;
+  transition: opacity 0.8s ease 0.2s;
+}
+
+/* The intro film has the screen to itself, and the HUD fades in as it hands the game over. */
+#hud[data-intro='on'] {
+  opacity: 0;
+  transition: none;
 }
 
 #hud [hidden] {
@@ -179,6 +186,12 @@
   margin-top: 18px;
   padding: 13px 34px;
   font-size: 16px;
+}
+
+.pause-card .watch-intro {
+  margin: 18px 0 0 10px;
+  padding: 12px 22px;
+  font-size: 14px;
 }
 
 .hint {

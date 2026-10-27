@@ -87,8 +87,8 @@ const PATHS: readonly (readonly [number, number][])[] = [
   ],
 ];
 
-/** The furrow the station fragment carved while skidding in. */
-const FURROW: readonly [number, number][] = [
+/** The furrow the station fragment carved while skidding in, from the crater out to where it first touched down. */
+export const FURROW: readonly [number, number][] = [
   [-6, -8],
   [-26, -24],
   [-44, -36],
