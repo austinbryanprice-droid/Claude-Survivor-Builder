@@ -391,6 +391,73 @@ describe('the armored machines', () => {
   });
 });
 
+describe('the flying machines', () => {
+  const HOVER = ENEMIES.flyer.flies.hover;
+  const CELLS = ENEMIES.flyer.drop?.amount ?? 0;
+
+  it('are drawn as skimmers on every screen, hovering over the ground', async () => {
+    const { room, machines } = arena();
+    room.host.setLocalActive(true);
+    const code = await room.openRoom();
+    const guest = await room.join(code, 'Ada');
+    const skimmer = machines().spawnAt(26.5, -3.5, 1, ENEMY_KIND.flyer);
+    expect(skimmer).not.toBeNull();
+    await play(room, 1);
+    for (const seen of [room.host.sampleEnemies(), guest.session.sampleEnemies()]) {
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ id: skimmer, kind: ENEMY_KIND.flyer });
+      // Over the ground at its hover, to within the sixteenth of a block the wire keeps.
+      expect(Math.abs(seen[0]!.y - (FLOOR + HOVER))).toBeLessThan(1 / 16);
+    }
+  });
+
+  it('cross a wall that holds the walkers without chewing a block of it, and wound the Core from beside it', async () => {
+    const { room, hostWorld, machines } = arena({}, {}, wall);
+    room.host.setLocalActive(true);
+    const code = await room.openRoom();
+    const guest = await room.join(code, 'Ada');
+    machines().spawnAt(26.5, -3.5, 1, ENEMY_KIND.flyer);
+    const max = sim(room).coreMax;
+    await play(room, 10);
+    // It is on the Core's side of the wall, and nothing was chewed on the way.
+    expect(sim(room).coreHealth).toBeLessThan(max);
+    expect(hostWorld.cells.size).toBe(WALL_BLOCKS);
+    for (const seen of [room.host.sampleEnemies(), guest.session.sampleEnemies()]) {
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.x).toBeLessThan(8);
+    }
+  });
+
+  it('leave their cells in the pool when they fall, and every screen hears of it', async () => {
+    const { room, machines } = arena();
+    room.host.setLocalActive(true);
+    const code = await room.openRoom();
+    const ada = await room.join(code, 'Ada');
+    const views = [room.host, ada.session];
+    const heard = views.map((view) => {
+      const seen: SurvivalEvent[] = [];
+      view.survival.onEvent((event) => seen.push(event));
+      return seen;
+    });
+    const energyOf = (view: (typeof views)[number]): number => {
+      const reading = createEconomyReading();
+      view.economy.read(reading);
+      return reading.stock[poolSlot(MATERIAL.energy)] as number;
+    };
+    const skimmer = machines().spawnAt(26.5, -3.5, 1, ENEMY_KIND.flyer)!;
+    await play(room, 1);
+    machines().hurt(skimmer, ENEMIES.flyer.health - 1);
+    await play(room, 1);
+    for (const view of views) expect(energyOf(view)).toBe(0);
+    machines().hurt(skimmer, 2);
+    await play(room, 1);
+    const drop = { k: 'drop', n: 1, m: MATERIAL.energy, c: CELLS };
+    for (const view of views) expect(energyOf(view)).toBe(CELLS);
+    for (const seen of heard) expect(seen.filter((event) => event.k === 'drop')).toEqual([drop]);
+    expect(room.host.sampleEnemies()).toEqual([]);
+  });
+});
+
 describe('what the host puts on the wire', () => {
   it('is one packet ten times a second, naming every machine', async () => {
     const { room, machines } = arena();

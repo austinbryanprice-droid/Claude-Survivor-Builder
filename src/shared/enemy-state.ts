@@ -10,10 +10,12 @@ export const ENEMY_KIND = {
   crawler: 0,
   /** The crawler's plated cousin: bigger, slower, takes less of every hit, and leaves Tier 4 cells (Phase 5i1). */
   armored: 1,
+  /** The flying skimmer: small and quick, it hovers over walls and water and zaps from above (Phase 5i2). */
+  flyer: 2,
 } as const;
 
 /** How many kinds the wire accepts: a packet naming one past this is refused. */
-export const ENEMY_KIND_COUNT = 2;
+export const ENEMY_KIND_COUNT = 3;
 
 /** The bits of an enemy's `flags`. */
 export const ENEMY_FLAG = {

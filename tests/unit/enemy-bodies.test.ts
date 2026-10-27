@@ -11,11 +11,13 @@ describe('the bodies of the machines', () => {
       expect(bodyOf(kind)).toBeUndefined();
     expect(bodyOf(ENEMY_KIND.crawler)).toBe(ENEMIES.crawler);
     expect(bodyOf(ENEMY_KIND.armored)).toBe(ENEMIES.armored);
+    expect(bodyOf(ENEMY_KIND.flyer)).toBe(ENEMIES.flyer);
   });
 
   it('give the targets a bolt is aimed at, and none for a kind with no body', () => {
     expect(hitboxOf(ENEMY_KIND.crawler)).toEqual(ENEMIES.crawler.hitbox);
     expect(hitboxOf(ENEMY_KIND.armored)).toEqual(ENEMIES.armored.hitbox);
+    expect(hitboxOf(ENEMY_KIND.flyer)).toEqual(ENEMIES.flyer.hitbox);
     expect(hitboxOf(ENEMY_KIND_COUNT)).toBeUndefined();
     expect(hitboxOf(-1)).toBeUndefined();
     // A target the body stands in, with its legs counted: wider and taller than the body itself.
@@ -44,11 +46,41 @@ describe('the bodies of the machines', () => {
     expect(armored.step).toBe(crawler.step);
   });
 
+  it('make the skimmer small, quick and fragile, and the only one that flies', () => {
+    const { crawler, armored, flyer } = ENEMIES;
+    expect(flyer.health).toBeLessThan(crawler.health);
+    expect(flyer.speed).toBeGreaterThan(crawler.speed);
+    // Quick, but a player who runs can still get away from it, as from the others.
+    expect(flyer.speed).toBeLessThan(4.4);
+    expect(flyer.turnRate).toBeGreaterThan(crawler.turnRate);
+    expect(flyer.bite.player).toBeLessThan(armored.bite.player);
+    expect(flyer.takes).toBe(1);
+    // Nothing but the skimmer flies, and it has a hover and a reach that go together: from its hull a
+    // player standing on the ground it hovers over is within the reach of its zap.
+    expect(Object.values(ENEMY_KIND).filter((kind) => bodyOf(kind)?.flies)).toEqual([
+      ENEMY_KIND.flyer,
+    ]);
+    const { hover, climb, lookAhead, scan } = flyer.flies;
+    expect(flyer.reach.height).toBeGreaterThan(hover);
+    // It sees a wall in time to rise: the look-ahead takes it at least a quarter of a second, and it
+    // climbs faster than it flies along.
+    expect(lookAhead / flyer.speed).toBeGreaterThan(0.25);
+    expect(climb).toBeGreaterThan(flyer.speed);
+    // It looks higher than any tower a crew builds, and has more than a body's height of air to hover in.
+    expect(scan).toBeGreaterThanOrEqual(16);
+    expect(hover).toBeGreaterThan(flyer.height);
+  });
+
   it('leave Tier 4 cells only for the special machines', () => {
     expect(ENEMIES.crawler.drop).toBeNull();
     expect(ENEMIES.armored.drop).toEqual({ material: MATERIAL.energy, amount: expect.any(Number) });
     expect(ENEMIES.armored.drop!.amount).toBeGreaterThan(0);
     expect(Number.isInteger(ENEMIES.armored.drop!.amount)).toBe(true);
+    // The skimmer leaves less than the armored crawler: it is the lighter machine.
+    expect(ENEMIES.flyer.drop).toEqual({ material: MATERIAL.energy, amount: expect.any(Number) });
+    expect(Number.isInteger(ENEMIES.flyer.drop!.amount)).toBe(true);
+    expect(ENEMIES.flyer.drop!.amount).toBeGreaterThan(0);
+    expect(ENEMIES.flyer.drop!.amount).toBeLessThan(ENEMIES.armored.drop!.amount);
     for (const kind of Object.values(ENEMY_KIND)) {
       const drop = bodyOf(kind)!.drop;
       if (drop) expect(MATERIALS.map((material) => material.id)).toContain(drop.material);
@@ -80,10 +112,10 @@ describe('the bodies the waves send', () => {
     }
   });
 
-  it('give the armored special its own body, and the kinds still to come the crawler’s for now', () => {
+  it('give the armored and the flying specials bodies of their own, and the kind still to come the crawler’s for now', () => {
     expect(WAVES.kinds.crawler.body).toBe(ENEMY_KIND.crawler);
     expect(WAVES.kinds.armored.body).toBe(ENEMY_KIND.armored);
-    expect(WAVES.kinds.flyer.body).toBe(ENEMY_KIND.crawler);
+    expect(WAVES.kinds.flyer.body).toBe(ENEMY_KIND.flyer);
     expect(WAVES.kinds.breacher.body).toBe(ENEMY_KIND.crawler);
   });
 });

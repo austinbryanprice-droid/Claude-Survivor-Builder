@@ -256,7 +256,18 @@ describe('the waves of a run', () => {
     expect(fourth.enemies!.hurt(armored.id, 0.2)).toBe(true);
   });
 
-  it('bring the armored ones as armored crawlers, and the flyers and breachers as crawlers until their parts are built', () => {
+  it('give the skimmer of the fifth night the points of its own body, with the steel of the night on them', () => {
+    // 20 points, a tenth more from the third night and an eighth more again from the fifth; its steel is plain.
+    const fifth = run({ startAt: nightStart(5) });
+    playClearingUntilLast(fifth, 5);
+    const skimmer = machinesOf(fifth).at(-1)!;
+    expect(skimmer.kind).toBe(ENEMY_KIND.flyer);
+    const points = ENEMIES.flyer.health * 1.1 * 1.08;
+    expect(fifth.enemies!.hurt(skimmer.id, points - 0.1)).toBe(false);
+    expect(fifth.enemies!.hurt(skimmer.id, 0.2)).toBe(true);
+  });
+
+  it('bring the armored ones as armored crawlers, the flyers as skimmers, and the breachers as crawlers until their part is built', () => {
     const sim = run({ startAt: nightStart(9) });
     // Every machine of the night, once, with the kind it came as.
     const kinds = new Map<number, number>();
@@ -270,8 +281,10 @@ describe('the waves of a run', () => {
     const count = (kind: number): number => [...kinds.values()].filter((k) => k === kind).length;
     expect(count(ENEMY_KIND.armored)).toBe(plan.filter((kind) => kind === 'armored').length);
     expect(count(ENEMY_KIND.armored)).toBe(2);
-    // The plain ones, the two flyers and the breacher all walk as crawlers.
-    expect(count(ENEMY_KIND.crawler)).toBe(plan.length - 2);
+    expect(count(ENEMY_KIND.flyer)).toBe(plan.filter((kind) => kind === 'flyer').length);
+    expect(count(ENEMY_KIND.flyer)).toBe(2);
+    // The plain ones and the breacher walk as crawlers.
+    expect(count(ENEMY_KIND.crawler)).toBe(plan.length - 4);
   });
 
   it('bring a wave in from one side of the ring, and the next from another', () => {

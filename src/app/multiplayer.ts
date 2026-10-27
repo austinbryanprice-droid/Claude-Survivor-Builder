@@ -105,8 +105,9 @@ export interface MultiplayerDebug {
    */
   spawnCrawlers(count: number): number;
   /**
-   * Puts one machine at a spot on open ground, a plain crawler unless `kind` (an `ENEMY_KIND`) says
-   * otherwise, and returns its id, or null where there is no room. Only a host (or single-player) can.
+   * Puts one machine at a spot on open ground (a skimmer, which flies, anywhere on the map), a plain
+   * crawler unless `kind` (an `ENEMY_KIND`) says otherwise, and returns its id, or null where there is
+   * no room. Only a host (or single-player) can.
    */
   spawnCrawlerAt(x: number, z: number, kind?: number): number | null;
   /** Removes every machine from the field. Only a host (or single-player) can. */

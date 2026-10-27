@@ -15,7 +15,7 @@ import type { EnemySim } from './enemies';
  * seed plays the same waves however the crew played the nights before, which is what Retry needs.
  */
 
-/** A kind of machine in the plan. The body each one has is in `WAVES.kinds`: the flyer and the breacher fight as crawlers until 5i2 and 5i3. */
+/** A kind of machine in the plan. The body each one has is in `WAVES.kinds`: the breacher fights as a crawler until 5i3. */
 export type WaveKind = keyof typeof WAVES.kinds;
 
 /** One wave of a night. */
