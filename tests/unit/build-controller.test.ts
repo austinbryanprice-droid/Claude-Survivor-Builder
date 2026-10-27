@@ -50,6 +50,7 @@ import { BLASTER, POWER } from '../../src/systems/survival/balance';
 import type { PowerState } from '../../src/systems/survival/power';
 import { createTerrainGround } from '../../src/world/terrain/collision';
 import { createWorld, type VoxelWorld } from '../../src/world/voxels/world';
+import { blockPrice } from './helpers/prices';
 import { TEST_SEED, terrain } from './helpers/valley';
 
 const SPOT = { x: 8, z: -4 };
@@ -1828,7 +1829,7 @@ describe('upgrading the block under the cursor with E', () => {
     expect(r.sent).toEqual([]);
     expect(r.controller.hudState().refusal).toBe(notEnough('Reinforced Composite'));
     // Once the pool holds the price the same press goes.
-    r.pool.stock[1] = 1;
+    r.pool.stock[1] = blockPrice(MATERIAL.composite);
     r.controller.update(NOTICE_SECONDS + 0.1, r.lookDown(3));
     expect(r.controller.hudState().upgradeRefusal).toBeNull();
     r.controller.interact();

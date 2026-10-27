@@ -196,7 +196,7 @@ describe('modules', () => {
     ]);
     expect(moduleLevelCost(turret, 1)).toEqual(turret.cost);
     expect(moduleLevelCost(turret, 2)).toEqual({ material: MATERIAL.composite, amount: 10 });
-    expect(moduleLevelCost(turret, 3)).toEqual({ material: MATERIAL.alloy, amount: 10 });
+    expect(moduleLevelCost(turret, 3)).toEqual({ material: MATERIAL.alloy, amount: 20 });
     // What opens a step is the research of the material that pays for it, so the tiers must climb.
     const tiers = [1, 2, 3].map((level) => materialTier(moduleLevelCost(turret, level).material));
     expect(tiers).toEqual([1, 2, 3]);

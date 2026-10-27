@@ -35,6 +35,7 @@ import {
   upgradeStep,
   type PlacementEconomy,
 } from '../../src/systems/economy/build-rules';
+import { blockPrice, turretStepPrice } from './helpers/prices';
 
 const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
 const COMPOSITE = packState(SHAPE.cube, MATERIAL.composite);
@@ -95,12 +96,12 @@ describe('what a piece costs', () => {
       expect(at(2, facing)).toEqual({
         material: MATERIAL.composite,
         name: 'Reinforced Composite',
-        amount: 10,
+        amount: turretStepPrice(2),
       });
       expect(at(3, facing)).toEqual({
         material: MATERIAL.alloy,
         name: 'Advanced Alloy',
-        amount: 10,
+        amount: turretStepPrice(3),
       });
     }
     // A level the module does not have is not a piece.
@@ -509,14 +510,14 @@ describe('what upgrading a piece makes of it', () => {
       expect(first.cost).toEqual({
         material: MATERIAL.composite,
         name: 'Reinforced Composite',
-        amount: 10,
+        amount: turretStepPrice(2),
       });
       const second = upgradeStep(first.to)!;
       expect(second.to).toBe(packState(shape, 3));
       expect(second.cost).toEqual({
         material: MATERIAL.alloy,
         name: 'Advanced Alloy',
-        amount: 10,
+        amount: turretStepPrice(3),
       });
       expect(second.cost).toEqual(pieceCost(second.to));
     }
@@ -572,7 +573,8 @@ describe('whether the crew can upgrade a piece now', () => {
   });
 
   it('asks only about the better material: a pool without Scrap can upgrade a Scrap block', () => {
-    const onlyComposite = (material: number) => (material === MATERIAL.composite ? 1 : 0);
+    const onlyComposite = (material: number) =>
+      material === MATERIAL.composite ? blockPrice(MATERIAL.composite) : 0;
     expect(upgradeRefusal(2, onlyComposite, SCRAP)).toBeNull();
   });
 
@@ -590,10 +592,12 @@ describe('whether the crew can upgrade a piece now', () => {
     expect(upgradeRefusal(3, plenty, turret(2))).toBeNull();
     expect(upgradeRefusal(4, plenty, turret(3))).toBe(FULLY_UPGRADED);
     // The pool is asked for the better material only: a pool with no Scrap can raise a turret.
-    const onlyComposite = (material: number) => (material === MATERIAL.composite ? 10 : 0);
-    expect(upgradeRefusal(2, onlyComposite, turret(1))).toBeNull();
-    const nine = (material: number) => (material === MATERIAL.composite ? 9 : 0);
-    expect(upgradeRefusal(2, nine, turret(1))).toBe(notEnough('Reinforced Composite'));
+    const exactly = (material: number) =>
+      material === MATERIAL.composite ? turretStepPrice(2) : 0;
+    expect(upgradeRefusal(2, exactly, turret(1))).toBeNull();
+    const oneShort = (material: number) =>
+      material === MATERIAL.composite ? turretStepPrice(2) - 1 : 0;
+    expect(upgradeRefusal(2, oneShort, turret(1))).toBe(notEnough('Reinforced Composite'));
   });
 
   it('says what stops a piece that cannot be upgraded, whatever the crew holds', () => {
@@ -616,7 +620,13 @@ describe('what a screen asks before it offers an upgrade', () => {
   }
 
   it('reads the pool as this screen has it', () => {
-    expect(upgradeRefusalOnScreen(view([0, 1, 0, 0], 400, 2), scratch, SCRAP)).toBeNull();
+    expect(
+      upgradeRefusalOnScreen(
+        view([0, blockPrice(MATERIAL.composite), 0, 0], 400, 2),
+        scratch,
+        SCRAP,
+      ),
+    ).toBeNull();
     expect(upgradeRefusalOnScreen(view([9, 0, 0, 0], 400, 2), scratch, SCRAP)).toBe(
       notEnough('Reinforced Composite'),
     );

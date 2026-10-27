@@ -148,10 +148,10 @@ export const MODULES: readonly ModuleDef[] = [
   {
     id: MODULE.turret,
     name: 'Basic Turret',
-    // First guesses, to be judged by the balance pass (5j): ten of the better material for each step.
+    // Judged by the balance pass (5j): the second step costs twice the first, as a better material costs more.
     raises: [
       { name: 'Auto Turret', cost: { material: MATERIAL.composite, amount: 10 } },
-      { name: 'Heavy Turret', cost: { material: MATERIAL.alloy, amount: 10 } },
+      { name: 'Heavy Turret', cost: { material: MATERIAL.alloy, amount: 20 } },
     ],
     cost: { material: MATERIAL.scrap, amount: 25 },
     body: [0.14, 0, 0.14, 0.86, 0.78, 0.86],
@@ -301,11 +301,16 @@ export function isUpsideDown(shape: number): boolean {
   return false;
 }
 
+/**
+ * The four materials. A block costs more the better it is (SPEC section 9: "upgrade costs rise with tier"):
+ * 1, 2, 3 and 5 of its own material, which is also what an upgrade in place to it takes. The balance
+ * simulator (`src/systems/economy/simulator.ts`) holds these to the spec's pace; docs/decisions.md, Phase 5j.
+ */
 export const MATERIALS: readonly MaterialDef[] = [
   { id: MATERIAL.scrap, name: 'Scrap', tier: 1, cost: 1 },
-  { id: MATERIAL.composite, name: 'Reinforced Composite', tier: 2, cost: 1 },
-  { id: MATERIAL.alloy, name: 'Advanced Alloy', tier: 3, cost: 1 },
-  { id: MATERIAL.energy, name: 'Energy-Infused', tier: 4, cost: 1 },
+  { id: MATERIAL.composite, name: 'Reinforced Composite', tier: 2, cost: 2 },
+  { id: MATERIAL.alloy, name: 'Advanced Alloy', tier: 3, cost: 3 },
+  { id: MATERIAL.energy, name: 'Energy-Infused', tier: 4, cost: 5 },
 ];
 
 /** How many different tiles each material has. Each face of each block picks one by chance, so a wall is never a stamp. */

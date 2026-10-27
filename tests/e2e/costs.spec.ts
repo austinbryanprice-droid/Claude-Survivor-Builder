@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { MATERIAL, SHAPE, packState, slabShape, wedgeShape } from '../../src/shared/blocks';
 import { poolSlot } from '../../src/shared/economy';
 import { DEBRIS, POOL } from '../../src/systems/economy/balance';
-import { DEBRIS_IN_THE_WAY, notEnough } from '../../src/systems/economy/build-rules';
+import { DEBRIS_IN_THE_WAY, notEnough, pieceCost } from '../../src/systems/economy/build-rules';
 import { CYCLE_SECONDS } from '../../src/shared/daycycle';
 
 // Software WebGL is slow, so these tests wait on game state rather than on time, and use a small
@@ -297,7 +297,8 @@ test.describe('what building costs', () => {
         notEnough('Advanced Alloy'),
       );
       await wait(page.locator('.ph-prompt')).toContainText('Not enough Advanced Alloy');
-      await setPool(page, MATERIAL.alloy, 1);
+      // Exactly the price of one block of it.
+      await setPool(page, MATERIAL.alloy, pieceCost(ALLOY)!.amount);
       await poll(async () => (await aimAt(page, -0.5)).placeRefusal).toBeNull();
       const aim = await aimAt(page, -0.5);
       await click(page, 'right');

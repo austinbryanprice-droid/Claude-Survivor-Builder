@@ -9,6 +9,7 @@ import { RESEARCH_STEPS } from '../../src/systems/economy/research';
 import { FLOOR, arena, sim, type Room } from './helpers/arena';
 import type { TestWorld } from './helpers/net';
 import { at, helloText, rawGuest } from './helpers/net';
+import { blockPrice } from './helpers/prices';
 
 const CLEAN = RESEARCH.perNight + RESEARCH.cleanNight;
 const COMPOSITE = packState(SHAPE.cube, MATERIAL.composite);
@@ -149,7 +150,12 @@ describe('a guest building with a material the crew has not researched', () => {
     ada.session.sendCommand({ type: 'place', x: SPOT.x, y: SPOT.y, z: SPOT.z, state: COMPOSITE });
     await room.settle(300);
     expect(hostWorld.cells.size).toBe(1);
-    expect(reading(room.host.economy).stock).toEqual([10, 9, 10, 10]);
+    expect(reading(room.host.economy).stock).toEqual([
+      10,
+      10 - blockPrice(MATERIAL.composite),
+      10,
+      10,
+    ]);
   });
 });
 

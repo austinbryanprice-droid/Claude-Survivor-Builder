@@ -3,7 +3,7 @@ import { MATERIAL, MODULE, SHAPE, moduleShape, packState } from '../../src/share
 import { poolSlot } from '../../src/shared/economy';
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../src/shared/daycycle';
 import { DEBRIS, RESEARCH } from '../../src/systems/economy/balance';
-import { needsResearch } from '../../src/systems/economy/build-rules';
+import { needsResearch, pieceCost } from '../../src/systems/economy/build-rules';
 import { TERMINAL_NEEDED } from '../../src/ui/research-hud';
 import { recordToasts, toasts } from './support/toasts';
 
@@ -22,6 +22,9 @@ const QUERY = '?debug&quality=low&freeze=1&stats=0&waves=0';
 const COMPOSITE = packState(SHAPE.cube, MATERIAL.composite);
 const TERMINAL = packState(moduleShape(MODULE.terminal, 0), 1);
 const COMPOSITE_SLOT = poolSlot(MATERIAL.composite);
+/** What one block of Composite costs the pool, and how much of it the tests put there. */
+const COMPOSITE_PRICE = pieceCost(COMPOSITE)!.amount;
+const COMPOSITE_STOCK = 5;
 /** A spot in the crash clearing, where the ground is open and gentle. */
 const SPOT = { x: 8.5, z: -4.5 };
 /** The points each row of the ladder asks for: Composite, Alloy, Energy-Infused. */
@@ -228,8 +231,8 @@ test.describe('research', () => {
     });
 
     await test.step('a click sends nothing, and the host says the same if asked anyway, with the material in the pool', async () => {
-      await setPool(page, MATERIAL.composite, 5);
-      await poll(async () => (await pool(page)).stock[COMPOSITE_SLOT]).toBe(5);
+      await setPool(page, MATERIAL.composite, COMPOSITE_STOCK);
+      await poll(async () => (await pool(page)).stock[COMPOSITE_SLOT]).toBe(COMPOSITE_STOCK);
       // A padlocked slot shows no count, however much the pool holds of it.
       await expect(slotAt(page, 1).locator('.ph-count')).toHaveText('');
       const events = await eventCount(page);
@@ -241,7 +244,7 @@ test.describe('research', () => {
         COMPOSITE,
       ] as const);
       await poll(() => rejections(page)).toEqual([needsResearch('Reinforced Composite')]);
-      expect((await pool(page)).stock[COMPOSITE_SLOT]).toBe(5);
+      expect((await pool(page)).stock[COMPOSITE_SLOT]).toBe(COMPOSITE_STOCK);
     });
 
     await test.step('the points open Composite: the padlock goes, the pill and the toasts tell, and the block can be placed', async () => {
@@ -252,17 +255,21 @@ test.describe('research', () => {
         (await toasts(page)).filter((text) => /^Research \+|unlocked$/.test(text)),
       ).toEqual([`Research +${COMPOSITE_AT}`, 'Power unlocked', 'Reinforced Composite unlocked']);
       await wait(slotAt(page, 1)).not.toHaveAttribute('data-locked', '');
-      await wait(slotAt(page, 1).locator('.ph-count')).toHaveText('5');
+      await wait(slotAt(page, 1).locator('.ph-count')).toHaveText(String(COMPOSITE_STOCK));
       // The next row up the ladder is the Camp row, not Alloy.
       await expect(page.locator('.ph-research-value')).toHaveText(`${COMPOSITE_AT}/${CAMP_AT}`);
       await poll(async () => (await aimAt(page, -0.5)).placeRefusal).toBeNull();
-      await wait(page.locator('.ph-prompt')).toContainText('Cost 1 Reinforced Composite');
+      await wait(page.locator('.ph-prompt')).toContainText(
+        `Cost ${COMPOSITE_PRICE} Reinforced Composite`,
+      );
       const aim = await aimAt(page, -0.5);
       await click(page, 'right');
       await poll(() =>
         read<number>(page, `mp.block(${aim.place.x}, ${aim.place.y}, ${aim.place.z})`),
       ).toBe(COMPOSITE);
-      await poll(async () => (await pool(page)).stock[COMPOSITE_SLOT]).toBe(4);
+      await poll(async () => (await pool(page)).stock[COMPOSITE_SLOT]).toBe(
+        COMPOSITE_STOCK - COMPOSITE_PRICE,
+      );
       await page.screenshot({ path: testInfo.outputPath('research-opened.png') });
     });
 
