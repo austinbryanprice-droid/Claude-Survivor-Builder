@@ -15,7 +15,8 @@ import { reachEdge } from '../../shared/power';
  * ground (a ribbon laid on the terrain at the points where a player stops being in reach, found by
  * the very rule the host charges by, `reachEdge`), so on a hill it is pulled in, and Energy comes back
  * inside it and not outside it. Dashes of light march slowly round it, so it reads as a field and not
- * as a painted line, from the stage's animation clock.
+ * as a painted line, from the stage's animation clock. A curtain of light rises from the ribbon and
+ * fades out above it: the grass is as tall as a block, and a ribbon on the ground alone is lost in it.
  */
 
 /** The ribbon is made of this many pieces round the ring, and is this wide, in blocks. */
@@ -23,6 +24,8 @@ const SEGMENTS = 96;
 const WIDTH = 0.34;
 /** It floats this far above the ground, so that it does not fight the terrain for the pixel. */
 const LIFT = 0.07;
+/** The curtain rises this far above the ribbon, a little past the top of the tallest grass. */
+const CURTAIN = 1.25;
 /** How many dashes run round the ring, and how many turns of it they make in a second. */
 const DASHES = 48;
 const MARCH = 0.04;
@@ -61,6 +64,34 @@ void main() {
 }
 `;
 
+const CURTAIN_VERTEX = /* glsl */ `
+attribute float aAround;
+attribute float aUp;
+varying float vAround;
+varying float vUp;
+void main() {
+  vAround = aAround;
+  vUp = aUp;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const CURTAIN_FRAGMENT = /* glsl */ `
+uniform vec3 uColor;
+uniform float uTime;
+uniform float uDashes;
+uniform float uMarch;
+varying float vAround;
+varying float vUp;
+void main() {
+  // The same dashes as the ribbon's, running up through the curtain, brightest at its foot and gone at its top.
+  float phase = fract(vAround * uDashes - uTime * uMarch * uDashes);
+  float dash = smoothstep(0.0, 0.18, phase) * (1.0 - smoothstep(0.52, 0.7, phase));
+  float fall = pow(1.0 - vUp, 1.7);
+  gl_FragColor = vec4(uColor * (0.7 + 0.5 * dash), 0.55 * fall * (0.3 + 0.7 * dash));
+}
+`;
+
 /** The cell a ring is drawn round. */
 export interface ReachCell {
   readonly x: number;
@@ -72,8 +103,18 @@ export class ReachRing {
   readonly object = new Group();
   private readonly geometry = new BufferGeometry();
   private readonly positions = new Float32Array((SEGMENTS + 1) * 2 * 3);
+  private readonly curtainGeometry = new BufferGeometry();
+  private readonly curtainPositions = new Float32Array((SEGMENTS + 1) * 2 * 3);
+  private readonly uniforms = {
+    uColor: { value: GLOW.clone() },
+    uTime: { value: 0 },
+    uDashes: { value: DASHES },
+    uMarch: { value: MARCH },
+  };
   private readonly material: ShaderMaterial;
+  private readonly curtainMaterial: ShaderMaterial;
   private readonly mesh: Mesh;
+  private readonly curtain: Mesh;
   /** What the ring was last laid for, so that the same cell and radius cost nothing a frame later. */
   private laid = '';
   private cell: ReachCell | null = null;
@@ -100,16 +141,18 @@ export class ReachRing {
     this.geometry.setAttribute('aAround', new BufferAttribute(around, 1));
     this.geometry.setAttribute('aAcross', new BufferAttribute(across, 1));
     this.geometry.setIndex(index);
+    // The curtain has the ribbon's pieces, with a foot and a top for each.
+    const up = new Float32Array((SEGMENTS + 1) * 2);
+    for (let i = 0; i <= SEGMENTS; i++) up[i * 2 + 1] = 1;
+    this.curtainGeometry.setAttribute('position', new BufferAttribute(this.curtainPositions, 3));
+    this.curtainGeometry.setAttribute('aAround', new BufferAttribute(around, 1));
+    this.curtainGeometry.setAttribute('aUp', new BufferAttribute(up, 1));
+    this.curtainGeometry.setIndex(index);
 
     this.material = new ShaderMaterial({
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
-      uniforms: {
-        uColor: { value: GLOW.clone() },
-        uTime: { value: 0 },
-        uDashes: { value: DASHES },
-        uMarch: { value: MARCH },
-      },
+      uniforms: this.uniforms,
       transparent: true,
       depthWrite: false,
       side: DoubleSide,
@@ -118,15 +161,26 @@ export class ReachRing {
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
     });
+    this.curtainMaterial = new ShaderMaterial({
+      vertexShader: CURTAIN_VERTEX,
+      fragmentShader: CURTAIN_FRAGMENT,
+      uniforms: this.uniforms,
+      transparent: true,
+      depthWrite: false,
+      side: DoubleSide,
+    });
     this.mesh = new Mesh(this.geometry, this.material);
-    // It is laid in place, not moved, and its bounds are not kept.
-    this.mesh.frustumCulled = false;
-    this.mesh.castShadow = false;
-    this.mesh.receiveShadow = false;
-    this.mesh.renderOrder = 9;
-    this.mesh.visible = false;
+    this.curtain = new Mesh(this.curtainGeometry, this.curtainMaterial);
+    for (const mesh of [this.mesh, this.curtain]) {
+      // It is laid in place, not moved, and its bounds are not kept.
+      mesh.frustumCulled = false;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      mesh.renderOrder = 9;
+      mesh.visible = false;
+    }
     this.object.name = 'reach-ring';
-    this.object.add(this.mesh);
+    this.object.add(this.mesh, this.curtain);
     parent.add(this.object);
   }
 
@@ -150,6 +204,7 @@ export class ReachRing {
   show(cell: ReachCell | null, radius = 0): void {
     const on = cell !== null && radius > 0;
     this.mesh.visible = on;
+    this.curtain.visible = on;
     if (!on) {
       this.cell = null;
       return;
@@ -164,17 +219,21 @@ export class ReachRing {
 
   /** Moves the dashes for the stage's animation clock, in seconds. */
   update(time: number): void {
-    const uniform = this.material.uniforms.uTime;
-    if (uniform) uniform.value = time;
+    this.uniforms.uTime.value = time;
   }
 
   dispose(): void {
     this.object.removeFromParent();
     this.geometry.dispose();
+    this.curtainGeometry.dispose();
     this.material.dispose();
+    this.curtainMaterial.dispose();
   }
 
-  /** Lays the ribbon on the ground round the cell: for each bearing, a strip centred on the edge of the reach. */
+  /**
+   * Lays the ribbon on the ground round the cell: for each bearing, a strip centred on the edge of the
+   * reach, and the curtain that stands on the middle of it.
+   */
   private lay(cell: ReachCell, radius: number): void {
     const mx = cell.x + 0.5;
     const mz = cell.z + 0.5;
@@ -187,8 +246,21 @@ export class ReachRing {
       const outer = edge + WIDTH / 2;
       this.vertex(i * 2, mx + dx * inner, mz + dz * inner);
       this.vertex(i * 2 + 1, mx + dx * outer, mz + dz * outer);
+      const x = mx + dx * edge;
+      const z = mz + dz * edge;
+      const foot = this.groundAt(x, z) + LIFT;
+      this.curtainVertex(i * 2, x, foot, z);
+      this.curtainVertex(i * 2 + 1, x, foot + CURTAIN, z);
     }
     (this.geometry.getAttribute('position') as BufferAttribute).needsUpdate = true;
+    (this.curtainGeometry.getAttribute('position') as BufferAttribute).needsUpdate = true;
+  }
+
+  private curtainVertex(slot: number, x: number, y: number, z: number): void {
+    const at = slot * 3;
+    this.curtainPositions[at] = x;
+    this.curtainPositions[at + 1] = y;
+    this.curtainPositions[at + 2] = z;
   }
 
   private vertex(slot: number, x: number, z: number): void {
