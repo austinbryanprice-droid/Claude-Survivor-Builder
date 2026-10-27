@@ -55,6 +55,7 @@ function fakeFx() {
     impact: (at, dir, color, delay) =>
       calls.impact.push({ at: { ...at }, dir: { ...dir }, color, delay }),
     burst: (at, delay) => calls.burst.push({ at: { ...at }, delay }),
+    blast: () => undefined,
     strip: () => undefined,
     update: (dt) => calls.update.push(dt),
     live: () => ({ bolts: calls.bolt.length, sparks: 0 }),

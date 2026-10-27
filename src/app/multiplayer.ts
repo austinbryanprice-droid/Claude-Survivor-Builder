@@ -249,6 +249,10 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     const node = hub.economy.debris.nodes[event.node];
     if (node) shotFx.strip({ x: node.x, y: node.y + DEBRIS.lift, z: node.z });
   });
+  // A breacher going off, in anyone's world, is a flash and a fan of fire where it went off.
+  const stopBlasts = hub.survival.onEvent((event) => {
+    if (event.k === 'blast') shotFx.blast({ x: event.x, y: event.y, z: event.z });
+  });
 
   const panel = createRoomPanel({
     lobby,
@@ -492,6 +496,7 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       stopEvents();
       stopShots();
       stopStrips();
+      stopBlasts();
       panel.dispose();
       sync.dispose();
       options.scene.remove(remotes.object);

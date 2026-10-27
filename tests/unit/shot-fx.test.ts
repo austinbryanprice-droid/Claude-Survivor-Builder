@@ -250,6 +250,46 @@ describe('the sparks of the blaster', () => {
     }
   });
 
+  it('go off in a blast when a breacher does: a flash wider than a machine’s, a white core and sixty-four sparks every way', () => {
+    const { fx, spark } = setup();
+    fx.blast({ x: 3, y: 4, z: 5 });
+    expect(fx.live().sparks).toBe(66);
+    // Two flashes, then sparks.
+    expect(spark('iLife')[3]).toBe(1);
+    expect(spark('iLife')[7]).toBe(1);
+    expect(spark('iLife')[11]).toBe(0);
+    // The flash is wider than the burst of a machine felled, and the core inside it is not as wide.
+    const burst = setup();
+    burst.fx.burst({ x: 3, y: 4, z: 5 });
+    expect(spark('iLife')[2]).toBeGreaterThan(2 * (burst.spark('iLife')[2] as number));
+    expect(spark('iLife')[6]).toBeLessThan(spark('iLife')[2] as number);
+    expect(Array.from(spark('iOrigin').slice(0, 3))).toEqual([3, 4, 5]);
+    // Thrown every way at once.
+    const velocity = spark('iVelocity');
+    for (const axis of [0, 1, 2]) {
+      let least = Infinity;
+      let most = -Infinity;
+      for (let i = 2; i < 66; i++) {
+        const v = velocity[i * 3 + axis] as number;
+        least = Math.min(least, v);
+        most = Math.max(most, v);
+      }
+      expect(least).toBeLessThan(0);
+      expect(most).toBeGreaterThan(0);
+    }
+  });
+
+  it('let a blast die away more slowly than a burst: its flashes in 0.4 seconds, its sparks within a second and a fifth', () => {
+    const { fx } = setup();
+    fx.blast(ORIGIN);
+    fx.update(0.016);
+    expect(fx.live().sparks).toBe(66);
+    fx.update(0.45);
+    expect(fx.live().sparks).toBe(64);
+    fx.update(0.8);
+    expect(fx.live().sparks).toBe(0);
+  });
+
   it('die out: the flashes first, the sparks after, and the draw stops when all are gone', () => {
     const { fx, sparkCount } = setup();
     fx.burst(ORIGIN);

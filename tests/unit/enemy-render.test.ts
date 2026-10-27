@@ -1,6 +1,6 @@
 import type { InstancedBufferGeometry, Mesh, ShaderMaterial } from 'three';
 import { describe, expect, it } from 'vitest';
-import { createEnemyRenderer } from '../../src/engine/enemy-render';
+import { BREACHER_CHARGE_SECONDS, createEnemyRenderer } from '../../src/engine/enemy-render';
 import {
   ENEMY_FLAG,
   ENEMY_KIND,
@@ -8,6 +8,7 @@ import {
   type EnemyPose,
 } from '../../src/shared/enemy-state';
 import { NET } from '../../src/shared/net-config';
+import { ENEMIES } from '../../src/systems/survival/balance';
 import { createTestRegistry } from './helpers/registry';
 
 function pose(id: number, extra: Partial<EnemyPose> = {}): EnemyPose {
@@ -33,6 +34,7 @@ describe('the machines on screen', () => {
       'crawlers',
       'armored',
       'skimmers',
+      'breachers',
     ]);
     expect(mesh.visible).toBe(false);
     renderer.update(0.016, [pose(1), pose(2), pose(3)]);
@@ -307,6 +309,114 @@ describe('the machines on screen', () => {
     expect(skimmer * 100).toBeLessThan(200_000);
   });
 
+  it('draw the breachers in a mesh of their own, larger, in the order of the poses among the rest', () => {
+    const { renderer } = setup();
+    const breachers = renderer.object.children[3] as Mesh;
+    const geometry = breachers.geometry as InstancedBufferGeometry;
+    const at = (name: string, index: number, width: number): number[] =>
+      Array.from(
+        (geometry.getAttribute(name).array as Float32Array).slice(
+          index * width,
+          index * width + width,
+        ),
+      );
+    renderer.update(0.016, [
+      pose(1),
+      pose(2, { kind: ENEMY_KIND.breacher, x: 5, y: 12, z: -3, yaw: 1.5 }),
+      pose(3, { kind: ENEMY_KIND.flyer }),
+      pose(4, { kind: ENEMY_KIND.breacher }),
+    ]);
+    expect(geometry.instanceCount).toBe(2);
+    expect(breachers.visible).toBe(true);
+    expect(at('iPos', 0, 3)).toEqual([5, 12, -3]);
+    expect(at('iData', 0, 4)[0]).toBeCloseTo(1.5, 6);
+    for (const index of [0, 1]) {
+      const size = at('iData', index, 4)[1] as number;
+      expect(size).toBeGreaterThan(0.94 * 1.3);
+      expect(size).toBeLessThan(1.06 * 1.3);
+    }
+    expect(renderer.list().map((machine) => [machine.id, machine.kind])).toEqual([
+      [1, 0],
+      [2, 3],
+      [3, 2],
+      [4, 3],
+    ]);
+    renderer.update(0.016, [pose(1)]);
+    expect(breachers.visible).toBe(false);
+  });
+
+  it('build a breacher’s charge up over the time it takes, from the flag the host raises, and put it out when the flag falls', () => {
+    const { renderer } = setup();
+    const geometry = (renderer.object.children[3] as Mesh).geometry as InstancedBufferGeometry;
+    const attack = (): number =>
+      (geometry.getAttribute('iState').array as Float32Array)[2] as number;
+    const ram = (flags: number) => pose(1, { kind: ENEMY_KIND.breacher, flags });
+    // The charge the picture builds is the one the host plays.
+    expect(BREACHER_CHARGE_SECONDS).toBe(ENEMIES.breacher.blast.windup);
+    renderer.update(0.05, [ram(0)]);
+    expect(attack()).toBe(0);
+    // Half the time, half the charge; a bite or a zap would be all there by now.
+    for (let i = 0; i < 12; i++) renderer.update(0.05, [ram(ENEMY_FLAG.attack)]);
+    expect(attack()).toBeCloseTo(0.5, 6);
+    for (let i = 0; i < 12; i++) renderer.update(0.05, [ram(ENEMY_FLAG.attack)]);
+    expect(attack()).toBe(1);
+    renderer.update(0.05, [ram(ENEMY_FLAG.attack)]);
+    expect(attack()).toBe(1);
+    renderer.update(0.05, [ram(0)]);
+    expect(attack()).toBe(0);
+    // A skimmer’s zap is quick: the flag takes it most of the way in a frame or two.
+    const skimmers = (renderer.object.children[2] as Mesh).geometry as InstancedBufferGeometry;
+    renderer.update(0.05, [pose(2, { kind: ENEMY_KIND.flyer, flags: ENEMY_FLAG.attack })]);
+    renderer.update(0.05, [pose(2, { kind: ENEMY_KIND.flyer, flags: ENEMY_FLAG.attack })]);
+    expect((skimmers.getAttribute('iState').array as Float32Array)[2]).toBeGreaterThan(0.5);
+  });
+
+  it('keep a breacher’s beat for its shudder still while it stands, and quicken it as the charge builds', () => {
+    const { renderer } = setup();
+    const geometry = (renderer.object.children[3] as Mesh).geometry as InstancedBufferGeometry;
+    const phase = (): number => (geometry.getAttribute('iData').array as Float32Array)[2] as number;
+    const ram = (extra: Partial<EnemyPose>) => pose(1, { kind: ENEMY_KIND.breacher, ...extra });
+    renderer.update(0.05, [ram({})]);
+    const start = phase();
+    renderer.update(0.05, [ram({})]);
+    expect(phase()).toBeCloseTo(start, 9);
+    const steps: number[] = [];
+    let before = phase();
+    for (let i = 0; i < 24; i++) {
+      renderer.update(0.05, [ram({ flags: ENEMY_FLAG.attack })]);
+      steps.push(phase() - before);
+      before = phase();
+    }
+    // Faster every frame of the charge, up to 70 radians a second at the end of it.
+    for (let i = 1; i < steps.length; i++) {
+      expect(steps[i]).toBeGreaterThan(steps[i - 1] as number);
+    }
+    expect(steps.at(-1)).toBeCloseTo(70 * 0.05, 6);
+  });
+
+  it('stride the breacher slowly, and give it a body of its own within the budget of a hundred', () => {
+    const { renderer } = setup();
+    const geometry = (renderer.object.children[3] as Mesh).geometry as InstancedBufferGeometry;
+    const crawlers = renderer.object.children[0] as Mesh;
+    const crawlerPhase = (crawlers.geometry as InstancedBufferGeometry).getAttribute('iData');
+    const phase = (): number => (geometry.getAttribute('iData').array as Float32Array)[2] as number;
+    renderer.update(0.05, [pose(5), pose(5 + 1000, { kind: ENEMY_KIND.breacher })]);
+    const crawlerStart = (crawlerPhase.array as Float32Array)[2] as number;
+    const ramStart = phase();
+    renderer.update(0.05, [
+      pose(5, { speed: 1.8 }),
+      pose(5 + 1000, { kind: ENEMY_KIND.breacher, speed: 1.8 }),
+    ]);
+    const crawlerStep = (crawlerPhase.array as Float32Array)[2]! - crawlerStart;
+    const ramStep = phase() - ramStart;
+    expect(ramStep).toBeGreaterThan(0);
+    expect(ramStep).toBeLessThan(crawlerStep);
+    const triangles = renderer.trianglesOf(ENEMY_KIND.breacher);
+    expect(triangles).toBeGreaterThan(renderer.trianglesPerMachine);
+    expect(triangles).toBeLessThan(2000);
+    expect(triangles * 100).toBeLessThan(200_000);
+  });
+
   it('carry themselves as their kind does, the same for the body and for its shadow', () => {
     const { renderer } = setup();
     const motion = (mesh: Mesh): number[] => {
@@ -316,18 +426,41 @@ describe('the machines on screen', () => {
       expect(shadow).toBe(body);
       return (body!.value as { toArray(): number[] }).toArray();
     };
-    const [crawlers, armored, skimmers] = renderer.object.children as Mesh[];
+    const [crawlers, armored, skimmers, breachers] = renderer.object.children as Mesh[];
     // The walkers do not lean, bob or dip, and lunge for a bite.
     expect(motion(crawlers!)).toEqual([0, 0, 0.22, 0]);
     expect(motion(armored!)).toEqual([0, 0, 0.22, 0]);
+    // The ram does not lunge either: it charges.
+    expect(motion(breachers!)).toEqual([0, 0, 0, 0]);
     const [lean, bob, lunge, dip] = motion(skimmers!) as [number, number, number, number];
     expect(lean).toBeGreaterThan(0);
     expect(bob).toBeGreaterThan(0);
     expect(lunge).toBeLessThan(0.22);
     expect(dip).toBeGreaterThan(0);
     // Each kind has a shadow material of its own.
-    const shadows = new Set([crawlers, armored, skimmers].map((mesh) => mesh!.customDepthMaterial));
-    expect(shadows.size).toBe(3);
+    const shadows = new Set(
+      [crawlers, armored, skimmers, breachers].map((mesh) => mesh!.customDepthMaterial),
+    );
+    expect(shadows.size).toBe(4);
+  });
+
+  it('shudder, sink and swell with a charge as the breacher does, and no other kind does, the same for the body and its shadow', () => {
+    const { renderer } = setup();
+    const charge = (mesh: Mesh): number[] => {
+      const body = (mesh.material as ShaderMaterial).uniforms.uCharge;
+      const shadow = (mesh.customDepthMaterial as ShaderMaterial).uniforms.uCharge;
+      expect(shadow).toBe(body);
+      return (body!.value as { toArray(): number[] }).toArray();
+    };
+    const [crawlers, armored, skimmers, breachers] = renderer.object.children as Mesh[];
+    for (const mesh of [crawlers, armored, skimmers]) expect(charge(mesh!)).toEqual([0, 0, 0, 0]);
+    const [shudder, swell, crouch] = charge(breachers!) as [number, number, number, number];
+    expect(shudder).toBeGreaterThan(0);
+    expect(swell).toBeGreaterThan(0);
+    expect(crouch).toBeGreaterThan(0);
+    // The shudder is small beside the body, and the cell does not swell past its cradle.
+    expect(shudder).toBeLessThan(0.1);
+    expect(swell).toBeLessThan(0.5);
   });
 
   it('are lit like the rest of the world, and cast a shadow that moves the same way', () => {
@@ -349,7 +482,7 @@ describe('the machines on screen', () => {
     renderer.update(0.016, [pose(1)]);
     const materials = Reflect.get(registry, 'materials') as Set<unknown>;
     // One material for each kind: they differ in color.
-    expect(materials.size).toBe(3);
+    expect(materials.size).toBe(4);
     renderer.dispose();
     expect(materials.size).toBe(0);
     expect(renderer.object.children).toHaveLength(0);

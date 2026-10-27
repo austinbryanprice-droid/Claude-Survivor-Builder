@@ -4,6 +4,7 @@ import {
   Color,
   DynamicDrawUsage,
   Group,
+  IcosahedronGeometry,
   InstancedBufferAttribute,
   InstancedBufferGeometry,
   Mesh,
@@ -22,11 +23,12 @@ import type { MaterialRegistry } from './materials';
 /**
  * The machines that come for the Core, each kind drawn as one instanced mesh: a crawler is a low,
  * six-legged walker of dark steel with amber joints and a red eye, built from boxes in code (no
- * assets), the armored crawler is a heavier, plated one, the skimmer is a saucer on four spinning
- * rotors that hovers, and all the machines of a kind cost one draw call and one more for their
- * shadows. The legs, the jaws, the rotors, the lunge of a bite and the rise on arrival are all done in
- * the vertex shader from a few numbers per machine, so a hundred of them cost the CPU a handful of
- * array writes a frame.
+ * assets), the armored crawler is a heavier, plated one, the skimmer is a flat-hulled drone on four
+ * spinning rotors that hovers, the breacher is a squat ram on four stout legs with a cell on its back
+ * that swells and burns as it charges, and all the machines of a kind cost one draw call and one more
+ * for their shadows. The legs, the jaws, the rotors, the lunge of a bite, the shudder of a charge and
+ * the rise on arrival are all done in the vertex shader from a few numbers per machine, so a hundred of
+ * them cost the CPU a handful of array writes a frame.
  *
  * The poses come from the network layer already smoothed (`EnemyMirror`); this only dresses them.
  * What it keeps per machine is what the picture needs and the host does not say: how far the legs
@@ -39,6 +41,11 @@ const STRIDE = 5;
 const FULL_GAIT_SPEED = 1.6;
 const GAIT_FOLLOW = 10;
 const ATTACK_FOLLOW = 14;
+/**
+ * Seconds a breacher charges before it goes off (`ENEMIES.breacher.blast.windup`, which a test holds
+ * this to): its charge shows as a flag from the host, and the picture builds it up over this long.
+ */
+export const BREACHER_CHARGE_SECONDS = 1.2;
 /** A hit lights the machine white-hot for as long as the flag is up, then the light dies away in this long. */
 const FLASH_FADE = 0.25;
 /** A machine arrives by rising out of the ground over this long. */
@@ -51,7 +58,7 @@ const SIZE_SPREAD = 0.05;
 /** Surface looks. They index the colors in the fragment shader. */
 const LOOK = { shell: 0, plate: 1, amber: 2, eye: 3, blade: 4, emitter: 5 } as const;
 /** How a vertex moves. */
-const KIND = { body: 0, leg: 1, lowerLeg: 2, jaw: 3, rotor: 4, beam: 5 } as const;
+const KIND = { body: 0, leg: 1, lowerLeg: 2, jaw: 3, rotor: 4, beam: 5, cell: 6 } as const;
 
 const ANIMATION_GLSL = /* glsl */ `
 attribute vec3 iPos;
@@ -63,6 +70,10 @@ attribute vec3 aHip;    // where a leg, a jaw or a rotor turns, in the model's o
 // What sets a kind's carriage apart. x: how far its body leans into a flight, y: how far it bobs,
 // z: how far it lunges for a bite, w: how far its nose dips for one. A walker has only the lunge.
 uniform vec4 uMotion;
+// What a machine that charges does as it does, at full charge. x: how far its whole body shudders,
+// y: how far the cell on its back swells (and how much its amber lights burn up), z: how far it
+// crouches. The kinds that do not charge have none of it.
+uniform vec4 uCharge;
 
 vec3 rotX(vec3 v, float a) {
   float c = cos(a);
@@ -112,9 +123,12 @@ void poseVertex(vec3 p, vec3 n, out vec3 wp, out vec3 wn) {
     float turn = (iData.z + aPart.z * 0.785398) * side;
     p = aHip + rotY(p - aHip, turn);
     n = rotY(n, turn);
-  } else if (how > 4.5) {
+  } else if (how > 4.5 && how < 5.5) {
     // The beam under a skimmer grows out of its emitter as a zap charges, and is gone between zaps.
     p.y = aHip.y + (p.y - aHip.y) * attack;
+  } else if (how > 5.5) {
+    // The cell on a breacher's back swells about its middle as the charge builds.
+    p = aHip + (p - aHip) * (1.0 + uCharge.y * attack);
   }
 
   // A machine that flies leans into its flight, dips its nose to strike and bobs on its lift.
@@ -129,6 +143,9 @@ void poseVertex(vec3 p, vec3 n, out vec3 wp, out vec3 wn) {
   p.y += uMotion.y * sin(iData.z * 0.09);
   p.z += uMotion.z * attack;
   p.y -= 0.05 * attack;
+  // A machine that charges shudders with it, all of it, off the beat of its own phase, and sinks under the strain.
+  p += vec3(sin(iData.z), sin(iData.z * 1.37 + 1.0), sin(iData.z * 1.91 + 2.0)) * (uCharge.x * attack);
+  p.y -= uCharge.z * attack;
   p *= iData.y * mix(0.6, 1.0, rise);
   p.y -= (1.0 - rise) * 0.4;
 
@@ -180,6 +197,8 @@ uniform vec3 uEyeGlow;
 uniform vec3 uBlade;
 uniform vec3 uEmitter;
 uniform vec3 uEmitterGlow;
+uniform float uEmitterRest;
+uniform vec4 uCharge;
 
 varying vec3 vWorld;
 varying vec3 vNormal;
@@ -201,7 +220,8 @@ void surface(float look, out vec3 base, out vec3 glow, out vec2 finish) {
     finish = vec2(0.4, 0.6);
   } else if (look < 2.5) {
     base = uAmber;
-    glow = uAmberGlow;
+    // A machine that charges has its amber burn up with it.
+    glow = uAmberGlow * (1.0 + 3.0 * vAttack * step(0.001, uCharge.y));
     finish = vec2(0.5, 0.3);
   } else if (look < 3.5) {
     base = uEye;
@@ -211,9 +231,9 @@ void surface(float look, out vec3 base, out vec3 glow, out vec2 finish) {
     base = uBlade;
     finish = vec2(0.7, 0.7);
   } else {
-    // The emitter under a skimmer's belly smoulders, and burns as it charges a zap.
+    // The emitter under a skimmer's belly, and the cell on a breacher's back, smoulder and burn as they charge.
     base = uEmitter;
-    glow = uEmitterGlow * (0.3 + 1.7 * vAttack);
+    glow = uEmitterGlow * mix(uEmitterRest, 2.0, vAttack);
     finish = vec2(0.6, 0.2);
   }
 }
@@ -324,13 +344,15 @@ function splay(geometry: BufferGeometry, hip: Point, angle: number): BufferGeome
     .translate(...hip);
 }
 
-/** How the six legs of a walker are put together, in the model's own space. */
+/** How the legs of a walker are put together, in the model's own space. */
 interface LegSpec {
-  /** Where each of the three rows stands along the body, front to back. */
-  readonly rows: readonly [number, number, number];
+  /** Where each row of legs stands along the body, front to back: three rows for six legs, two for four. */
+  readonly rows: readonly number[];
   readonly hip: Point;
   readonly knee: Point;
   readonly foot: Point;
+  /** What the blocks at the hip and the knee are made of: amber lights on the walkers, plate on the ram. */
+  readonly joint: number;
   /** How thick the hip block, the upper bar, the knee block and the lower bar are. */
   readonly hipBlock: number;
   readonly upper: number;
@@ -340,11 +362,12 @@ interface LegSpec {
   readonly pad: Point;
 }
 
-/** Six legs, each a hip, an upper bar rising to the knee, a lower bar down to the foot. */
+/** A leg on each side of every row, each a hip, an upper bar rising to the knee, a lower bar down to the foot. */
 function addLegs(parts: BufferGeometry[], spec: LegSpec): void {
-  for (let row = 0; row < 3; row++) {
+  for (let row = 0; row < spec.rows.length; row++) {
     const z = spec.rows[row] as number;
-    const reach = (1 - row) * 0.3;
+    // The front legs reach forward and the back ones trail: 0.3 either way, whatever the number of rows.
+    const reach = spec.rows.length > 1 ? (0.5 - row / (spec.rows.length - 1)) * 0.6 : 0;
     for (const side of [-1, 1]) {
       const hip: Point = [side * spec.hip[0], spec.hip[1], z];
       const knee: Point = [side * spec.knee[0], spec.knee[1], z];
@@ -355,9 +378,9 @@ function addLegs(parts: BufferGeometry[], spec: LegSpec): void {
         piece(splay(geometry, hip, -side * reach), look, how, group, side, hip);
       const h = spec.hipBlock;
       const k = spec.kneeBlock;
-      parts.push(leg(block(h, h, h, hip), LOOK.amber, KIND.leg));
+      parts.push(leg(block(h, h, h, hip), spec.joint, KIND.leg));
       parts.push(leg(bar(hip, knee, spec.upper), LOOK.plate, KIND.leg));
-      parts.push(leg(block(k, k, k, knee), LOOK.amber, KIND.leg));
+      parts.push(leg(block(k, k, k, knee), spec.joint, KIND.leg));
       parts.push(leg(bar(knee, foot, spec.lower), LOOK.shell, KIND.lowerLeg));
       parts.push(
         leg(
@@ -411,6 +434,7 @@ function buildCrawler(): BufferGeometry {
     hip: [0.3, 0.42, 0],
     knee: [0.64, 0.68, 0],
     foot: [0.86, 0.03, 0],
+    joint: LOOK.amber,
     hipBlock: 0.12,
     upper: 0.075,
     kneeBlock: 0.1,
@@ -464,6 +488,7 @@ function buildArmored(): BufferGeometry {
     hip: [0.36, 0.44, 0],
     knee: [0.72, 0.72, 0],
     foot: [0.92, 0.03, 0],
+    joint: LOOK.amber,
     hipBlock: 0.16,
     upper: 0.11,
     kneeBlock: 0.14,
@@ -530,6 +555,75 @@ function buildSkimmer(): BufferGeometry {
   return weld(parts, 'skimmer');
 }
 
+/**
+ * The breacher in the same space: a ram on four stout legs, the ground under its middle the origin
+ * and its face +Z. A broad low hull with plate down its flanks, a blunt head with a ram plate across
+ * its face (wings of plate back along its sides, a grille of amber bars under a red eye strip) and teeth at the
+ * foot of it, an engine behind with two stacks, and on its back a cell: an orb in a cage, dull at rest, that
+ * swells and burns white as it charges. About 1.0 across the head, 1.6 long and 1.0 tall; the picture draws it larger.
+ */
+function buildBreacher(): BufferGeometry {
+  const parts: BufferGeometry[] = [];
+
+  // Hull, the deck of plate over it, plate down each flank with a strip of light, the engine behind.
+  parts.push(piece(block(0.84, 0.34, 0.86, [0, 0.43, -0.04], 0.07), LOOK.shell));
+  parts.push(piece(block(0.72, 0.09, 0.7, [0, 0.645, -0.1], 0.03), LOOK.plate));
+  for (const side of [-1, 1]) {
+    parts.push(piece(block(0.08, 0.34, 0.74, [side * 0.46, 0.43, -0.08]), LOOK.plate));
+    parts.push(piece(block(0.03, 0.05, 0.5, [side * 0.515, 0.52, -0.08]), LOOK.amber));
+    // Two stacks on the engine, capped with plate.
+    parts.push(piece(block(0.1, 0.2, 0.1, [side * 0.2, 0.7, -0.5]), LOOK.shell));
+    parts.push(piece(block(0.13, 0.03, 0.13, [side * 0.2, 0.815, -0.5]), LOOK.plate));
+  }
+  parts.push(piece(block(0.58, 0.28, 0.26, [0, 0.4, -0.6], 0.05), LOOK.shell));
+  parts.push(piece(block(0.36, 0.06, 0.03, [0, 0.42, -0.735]), LOOK.amber));
+
+  // The head, the brow over it and the ram plate across its face: a red eye strip over a grille of amber bars, and teeth below.
+  parts.push(piece(block(0.72, 0.32, 0.28, [0, 0.42, 0.52], 0.06), LOOK.shell));
+  parts.push(piece(block(0.78, 0.07, 0.3, [0, 0.62, 0.5]), LOOK.plate));
+  parts.push(piece(block(0.84, 0.4, 0.1, [0, 0.4, 0.71], 0.02), LOOK.plate));
+  for (const side of [-1, 1])
+    parts.push(piece(block(0.09, 0.36, 0.3, [side * 0.465, 0.4, 0.6]), LOOK.plate));
+  parts.push(piece(block(0.58, 0.05, 0.03, [0, 0.54, 0.775]), LOOK.eye));
+  for (const x of [-0.27, -0.09, 0.09, 0.27]) {
+    parts.push(piece(block(0.08, 0.2, 0.03, [x, 0.32, 0.775]), LOOK.amber));
+  }
+  for (const x of [-0.3, 0, 0.3]) {
+    parts.push(piece(block(0.14, 0.1, 0.18, [x, 0.12, 0.85]), LOOK.blade));
+  }
+
+  // The cell on its back: an orb in a cage of four posts on a base of plate, with a frame over them. It swells about its
+  // middle as the charge builds, until it strains the cage.
+  const cell: Point = [0, 0.87, -0.12];
+  parts.push(piece(block(0.42, 0.05, 0.42, [0, 0.715, -0.12]), LOOK.plate));
+  for (const x of [-0.18, 0.18]) {
+    for (const z of [-0.3, 0.06])
+      parts.push(piece(block(0.045, 0.25, 0.045, [x, 0.85, z]), LOOK.shell));
+  }
+  for (const z of [-0.3, 0.06])
+    parts.push(piece(block(0.42, 0.04, 0.05, [0, 0.99, z]), LOOK.plate));
+  for (const x of [-0.18, 0.18])
+    parts.push(piece(block(0.05, 0.04, 0.31, [x, 0.99, -0.12]), LOOK.plate));
+  parts.push(
+    piece(new IcosahedronGeometry(0.15, 1).translate(...cell), LOOK.emitter, KIND.cell, 0, 0, cell),
+  );
+
+  addLegs(parts, {
+    rows: [0.28, -0.28],
+    hip: [0.34, 0.36, 0],
+    knee: [0.52, 0.5, 0],
+    foot: [0.56, 0.03, 0],
+    joint: LOOK.plate,
+    hipBlock: 0.2,
+    upper: 0.13,
+    kneeBlock: 0.17,
+    lower: 0.12,
+    pad: [0.2, 0.05, 0.22],
+  });
+
+  return weld(parts, 'breacher');
+}
+
 /** The colors of a kind: the shell and plate of the body, the amber of its joints and the eye, and the glow of each. */
 interface Palette {
   readonly shell: string;
@@ -539,9 +633,13 @@ interface Palette {
   readonly eye: string;
   readonly eyeGlow: number;
   readonly blade: string;
-  /** The emitter under a skimmer's belly, and how brightly it glows at rest (a walker has none). */
+  /**
+   * The emitter under a skimmer's belly or the cell on a breacher's back, how brightly it glows at full charge
+   * (a walker has none), and the share of that it glows at rest.
+   */
   readonly emitter: string;
   readonly emitterGlow: number;
+  readonly emitterRest: number;
 }
 
 /** What sets a kind of machine apart in the picture: its model, how large it is drawn, how it walks and what color it is. */
@@ -556,13 +654,27 @@ interface Variant {
   readonly fullGait: number;
   /** Radians a second its rotors turn, or 0 for a machine that walks (its stride follows its speed). */
   readonly spin: number;
+  /**
+   * Radians a second its phase turns at full charge, so that a machine that charges standing still
+   * has a beat to shudder to; 0 for the kinds that do not charge.
+   */
+  readonly rattle: number;
+  /**
+   * Seconds its charge takes to build to full when the host says it has begun, or 0 for a kind whose
+   * strike is a quick motion that follows the flag at once (a bite, a zap).
+   */
+  readonly chargeSeconds: number;
   /** How its body carries itself, as the shader's `uMotion`: lean into a flight, bob, lunge for a bite, dip of the nose for one. */
   readonly motion: readonly [number, number, number, number];
+  /** What a charge does to it at full charge, as the shader's `uCharge`: shudder, swell of its cell, crouch. */
+  readonly charge: readonly [number, number, number, number];
   readonly palette: Palette;
 }
 
 /** How a walker carries itself: it does not lean, bob or dip, and lunges a fifth of a body for a bite. */
 const WALKER_MOTION = [0, 0, 0.22, 0] as const;
+/** The kinds that bite or zap quickly have no charge to build. */
+const NO_CHARGE = [0, 0, 0, 0] as const;
 
 /** The kinds the picture knows, indexed by `ENEMY_KIND`. A kind it does not know is drawn as the first. */
 const VARIANTS: readonly Variant[] = [
@@ -573,7 +685,10 @@ const VARIANTS: readonly Variant[] = [
     stride: STRIDE,
     fullGait: FULL_GAIT_SPEED,
     spin: 0,
+    rattle: 0,
+    chargeSeconds: 0,
     motion: WALKER_MOTION,
+    charge: NO_CHARGE,
     palette: {
       shell: '#262d35',
       plate: '#414b57',
@@ -584,6 +699,7 @@ const VARIANTS: readonly Variant[] = [
       blade: '#9aa4af',
       emitter: '#201a14',
       emitterGlow: 0,
+      emitterRest: 0.3,
     },
   },
   {
@@ -594,7 +710,10 @@ const VARIANTS: readonly Variant[] = [
     stride: 4,
     fullGait: 1.3,
     spin: 0,
+    rattle: 0,
+    chargeSeconds: 0,
     motion: WALKER_MOTION,
+    charge: NO_CHARGE,
     palette: {
       shell: '#1f252c',
       plate: '#5b4838',
@@ -605,6 +724,7 @@ const VARIANTS: readonly Variant[] = [
       blade: '#b3a99a',
       emitter: '#201a14',
       emitterGlow: 0,
+      emitterRest: 0.3,
     },
   },
   {
@@ -616,7 +736,10 @@ const VARIANTS: readonly Variant[] = [
     stride: 0,
     fullGait: 3.6,
     spin: 34,
+    rattle: 0,
+    chargeSeconds: 0,
     motion: [0.3, 0.035, 0.1, 0.35],
+    charge: NO_CHARGE,
     palette: {
       shell: '#2b3644',
       plate: '#53657a',
@@ -627,6 +750,34 @@ const VARIANTS: readonly Variant[] = [
       blade: '#b9c3cf',
       emitter: '#3a2c1c',
       emitterGlow: 2.4,
+      emitterRest: 0.3,
+    },
+  },
+  {
+    // The ram: it walks slowly on short stout legs, does not lunge, and as it charges shudders, sinks
+    // on its legs, swells the cell on its back and burns its amber up. Dark iron with plate of a
+    // demolition yellow gone dull, so that it reads as a different trade from the others.
+    name: 'breachers',
+    build: buildBreacher,
+    scale: 1.3,
+    stride: 3.2,
+    fullGait: 1.4,
+    spin: 0,
+    rattle: 70,
+    chargeSeconds: BREACHER_CHARGE_SECONDS,
+    motion: [0, 0, 0, 0],
+    charge: [0.03, 0.3, 0.07, 0],
+    palette: {
+      shell: '#201e1c',
+      plate: '#6e5b2e',
+      amber: '#c4701a',
+      amberGlow: 0.45,
+      eye: '#1c0805',
+      eyeGlow: 3.2,
+      blade: '#a9a398',
+      emitter: '#4a1a07',
+      emitterGlow: 3.4,
+      emitterRest: 0.04,
     },
   },
 ];
@@ -703,10 +854,11 @@ function createBatch(variant: Variant, registry: MaterialRegistry, capacity: num
   const { palette } = variant;
   // The body and its shadow carry themselves the same way, so they share the numbers.
   const motion = { value: new Vector4(...variant.motion) };
+  const charge = { value: new Vector4(...variant.charge) };
   const depth = new ShaderMaterial({
     vertexShader: DEPTH_VERTEX,
     fragmentShader: DEPTH_FRAGMENT,
-    uniforms: { uMotion: motion },
+    uniforms: { uMotion: motion, uCharge: charge },
   });
   const material = registry.create({
     vertexShader: VERTEX,
@@ -721,7 +873,9 @@ function createBatch(variant: Variant, registry: MaterialRegistry, capacity: num
       uBlade: { value: new Color(palette.blade) },
       uEmitter: { value: new Color(palette.emitter) },
       uEmitterGlow: { value: new Color('#ffc27a').multiplyScalar(palette.emitterGlow) },
+      uEmitterRest: { value: palette.emitterRest },
       uMotion: motion,
+      uCharge: charge,
     },
   });
 
@@ -795,19 +949,24 @@ export function createEnemyRenderer({
           tracks.set(pose.id, track);
         }
         track.seen = true;
-        // A walker's legs turn as far as it walks; a skimmer's rotors turn all the time.
-        const turning = variant.spin > 0 ? variant.spin : pose.speed * variant.stride;
+        const attacking = (pose.flags & ENEMY_FLAG.attack) !== 0;
+        // A bite or a zap follows the flag at once; a charge builds up over its own time once it begins.
+        track.attack =
+          variant.chargeSeconds > 0
+            ? attacking
+              ? Math.min(1, track.attack + step / variant.chargeSeconds)
+              : 0
+            : follow(track.attack, attacking ? 1 : 0, ATTACK_FOLLOW, step);
+        // A walker's legs turn as far as it walks; a skimmer's rotors turn all the time; a machine
+        // that charges has a beat of its own to shudder to, which runs faster as the charge builds.
+        const turning =
+          (variant.spin > 0 ? variant.spin : pose.speed * variant.stride) +
+          variant.rattle * track.attack;
         track.phase = (track.phase + turning * step) % (Math.PI * 200);
         track.gait = follow(
           track.gait,
           Math.min(1, pose.speed / variant.fullGait),
           GAIT_FOLLOW,
-          step,
-        );
-        track.attack = follow(
-          track.attack,
-          pose.flags & ENEMY_FLAG.attack ? 1 : 0,
-          ATTACK_FOLLOW,
           step,
         );
         track.flash =
