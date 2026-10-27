@@ -235,6 +235,7 @@ void main() {
   vec3 direct = uKeyColor * diff * shadow * aoDirect;
   vec3 amb = ambientLight(N) * vAo;
   vec3 lit = col * (direct + amb);
+  lit += col * lampLight(P, N) * mix(1.0, vAo, 0.5);
 
   lit = applyAtmosphere(lit, P);
   gl_FragColor = vec4(lit, 1.0);

@@ -210,5 +210,9 @@ export function messageFor(event: SurvivalEvent, nameOf: Namer = NO_NAMES): stri
         ? `The Core brought you back, shaken · ${left}`
         : `${name} is back, shaken · ${left}`;
     }
+    case 'drop': {
+      const material = MATERIALS.find((candidate) => candidate.id === event.m)?.name ?? 'material';
+      return `A machine left ${event.c} ${material} in the pool`;
+    }
   }
 }

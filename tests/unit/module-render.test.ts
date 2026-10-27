@@ -25,6 +25,10 @@ const terminal = (facing: number) => packState(moduleShape(MODULE.terminal, faci
 const turret = (facing: number, level = 1) => packState(moduleShape(MODULE.turret, facing), level);
 const generator = (facing: number) => packState(moduleShape(MODULE.generator, facing), 1);
 const node = (facing: number) => packState(moduleShape(MODULE.node, facing), 1);
+const light = (facing: number) => packState(moduleShape(MODULE.light, facing), 1);
+
+/** The looks every module is made of: all but the Light's lamp, which is its alone. */
+const COMMON_LOOKS = MODULE_LOOK_NAMES.filter((look) => look !== 'lamp');
 
 /** A world with the cell where the tests build, and a renderer drawing it. */
 function build() {
@@ -65,9 +69,18 @@ describe('the modules as they are drawn', () => {
     expect(group.position.toArray()).toEqual([cell.x + 0.5, cell.y, cell.z + 0.5]);
     expect(group.userData).toEqual({ module: MODULE.terminal, level: 1 });
     const meshes = meshesOf(group);
-    expect(meshes).toHaveLength(MODULE_LOOK_NAMES.length);
+    expect(meshes).toHaveLength(COMMON_LOOKS.length);
     expect(meshes.every((mesh) => mesh.castShadow && mesh.receiveShadow)).toBe(true);
     expect(renderer.object.children).toEqual([group]);
+  });
+
+  it('draw a Light in the looks of a lantern: no screen, no beacon, and a lamp of its own', () => {
+    const { renderer, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, light(0));
+    const group = renderer.at(cell.x, cell.y, cell.z) as Group;
+    expect(group.userData).toEqual({ module: MODULE.light, level: 1 });
+    const looks = new Set(lookedMeshes(group).map(({ look }) => look));
+    expect(looks).toEqual(new Set(['plate', 'trim', 'amber', 'lights', 'lamp']));
   });
 
   it('turn the model so its front looks the way the module faces', () => {
@@ -148,7 +161,7 @@ describe('a Generator as it is drawn', () => {
     const group = renderer.at(cell.x, cell.y, cell.z) as Group;
     expect(group.userData).toEqual({ module: MODULE.generator, level: 1 });
     expect(group.position.toArray()).toEqual([cell.x + 0.5, cell.y, cell.z + 0.5]);
-    expect(meshesOf(group)).toHaveLength(MODULE_LOOK_NAMES.length);
+    expect(meshesOf(group)).toHaveLength(COMMON_LOOKS.length);
     expect(group.getObjectByName('head')).toBeUndefined();
     expect(renderer.aim(cell.x, cell.y, cell.z, cell.x + 5, cell.y + 1, cell.z)).toBe(false);
   });
@@ -510,6 +523,20 @@ describe('the lights of a module', () => {
     expect(seen.size).toBeGreaterThan(1);
   });
 
+  it('hold a Light’s lamp steady while the strips beside it breathe', () => {
+    const { renderer, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, light(0));
+    const parts = lookedMeshes(renderer.at(cell.x, cell.y, cell.z) as Group);
+    const glowAt = (look: ModuleLook) =>
+      glowOf(parts.find((part) => part.look === look)?.mesh as Mesh).toArray();
+    renderer.update(0.3);
+    const lamp = glowAt('lamp');
+    const strip = glowAt('lights');
+    renderer.update(1.9);
+    expect(glowAt('lamp')).toEqual(lamp);
+    expect(glowAt('lights')).not.toEqual(strip);
+  });
+
   it('are the same at the same time, so a frozen page gives the same picture twice', () => {
     const a = build();
     const b = build();
@@ -570,6 +597,32 @@ describe('a module without power', () => {
       const want = new Color(spec.glow).multiplyScalar((spec.glowIntensity ?? 1) * DIM_GLOW);
       expect(glowOf(mesh).toArray(), look).toEqual(want.toArray());
     });
+  });
+
+  it('puts a Light’s lamp down to a faint glow, held still, and leaves its steel as it is', () => {
+    const { renderer, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, light(0));
+    const group = renderer.at(cell.x, cell.y, cell.z) as Group;
+    const lampOf = () => lookedMeshes(group).filter(({ look }) => look === 'lamp');
+    const plates = lookedMeshes(group)
+      .filter(({ look }) => look === 'plate')
+      .map(({ mesh }) => mesh.material);
+    expect(lampOf().length).toBeGreaterThan(0);
+    const lit = lampOf().map(({ mesh }) => brightness(glowOf(mesh)));
+    renderer.setPowered(cell.x, cell.y, cell.z, false);
+    const spec = MODULE_LOOKS.lamp;
+    const want = new Color(spec.glow).multiplyScalar((spec.glowIntensity ?? 1) * DIM_GLOW);
+    lampOf().forEach(({ mesh }, i) => {
+      expect(glowOf(mesh).toArray()).toEqual(want.toArray());
+      expect(brightness(glowOf(mesh))).toBeLessThan((lit[i] ?? 0) * 0.2);
+    });
+    expect(
+      lookedMeshes(group)
+        .filter(({ look }) => look === 'plate')
+        .map(({ mesh }) => mesh.material),
+    ).toEqual(plates);
+    renderer.update(2.5);
+    lampOf().forEach(({ mesh }) => expect(glowOf(mesh).toArray()).toEqual(want.toArray()));
   });
 
   it('still reads as a module: dim is on standby, not out', () => {

@@ -19,11 +19,12 @@ import { SHADOW_FRAGMENT_PARS, SHADOW_VERTEX_PARS } from './glsl/lighting.glsl';
 import type { MaterialRegistry } from './materials';
 
 /**
- * The machines that come for the Core, drawn as one instanced mesh: a crawler is a low, six-legged
- * walker of dark steel with amber joints and a red eye, built from boxes in code (no assets), and
- * the whole crowd costs one draw call and one more for its shadows. The legs, the jaws, the lunge
- * of a bite and the rise out of the ground on arrival are all done in the vertex shader from a few
- * numbers per machine, so a hundred of them cost the CPU a handful of array writes a frame.
+ * The machines that come for the Core, each kind drawn as one instanced mesh: a crawler is a low,
+ * six-legged walker of dark steel with amber joints and a red eye, built from boxes in code (no
+ * assets), the armored crawler is a heavier, plated one, and all the crawlers of a kind cost one draw
+ * call and one more for their shadows. The legs, the jaws, the lunge of a bite and the rise out of
+ * the ground on arrival are all done in the vertex shader from a few numbers per machine, so a
+ * hundred of them cost the CPU a handful of array writes a frame.
  *
  * The poses come from the network layer already smoothed (`EnemyMirror`); this only dresses them.
  * What it keeps per machine is what the picture needs and the host does not say: how far the legs
@@ -207,6 +208,7 @@ void main() {
            + uKeyColor * specColor * shine * shadow
            + uAmbSky * rim * 0.2 * (0.4 + 0.6 * metal)
            + glow;
+  lit += albedo * lampLight(vWorld, N);
   lit = mix(lit, vec3(1.0, 0.82, 0.64) * 1.5, vFlash * 0.75);
   lit = applyAtmosphere(lit, vWorld);
   gl_FragColor = vec4(lit, 1.0);
@@ -283,6 +285,60 @@ function splay(geometry: BufferGeometry, hip: Point, angle: number): BufferGeome
     .translate(...hip);
 }
 
+/** How the six legs of a walker are put together, in the model's own space. */
+interface LegSpec {
+  /** Where each of the three rows stands along the body, front to back. */
+  readonly rows: readonly [number, number, number];
+  readonly hip: Point;
+  readonly knee: Point;
+  readonly foot: Point;
+  /** How thick the hip block, the upper bar, the knee block and the lower bar are. */
+  readonly hipBlock: number;
+  readonly upper: number;
+  readonly kneeBlock: number;
+  readonly lower: number;
+  /** The pad of the foot: width, height and depth. */
+  readonly pad: Point;
+}
+
+/** Six legs, each a hip, an upper bar rising to the knee, a lower bar down to the foot. */
+function addLegs(parts: BufferGeometry[], spec: LegSpec): void {
+  for (let row = 0; row < 3; row++) {
+    const z = spec.rows[row] as number;
+    const reach = (1 - row) * 0.3;
+    for (const side of [-1, 1]) {
+      const hip: Point = [side * spec.hip[0], spec.hip[1], z];
+      const knee: Point = [side * spec.knee[0], spec.knee[1], z];
+      const foot: Point = [side * spec.foot[0], spec.foot[1], z];
+      // The legs on one side step together with the opposite side's neighbours: front-left, middle-right and back-left.
+      const group = (row + (side > 0 ? 1 : 0)) % 2;
+      const leg = (geometry: BufferGeometry, look: number, how: number): BufferGeometry =>
+        piece(splay(geometry, hip, -side * reach), look, how, group, side, hip);
+      const h = spec.hipBlock;
+      const k = spec.kneeBlock;
+      parts.push(leg(block(h, h, h, hip), LOOK.amber, KIND.leg));
+      parts.push(leg(bar(hip, knee, spec.upper), LOOK.plate, KIND.leg));
+      parts.push(leg(block(k, k, k, knee), LOOK.amber, KIND.leg));
+      parts.push(leg(bar(knee, foot, spec.lower), LOOK.shell, KIND.lowerLeg));
+      parts.push(
+        leg(
+          block(spec.pad[0], spec.pad[1], spec.pad[2], [foot[0], 0.02, foot[2]]),
+          LOOK.blade,
+          KIND.lowerLeg,
+        ),
+      );
+    }
+  }
+}
+
+/** Welds the pieces of a model into one geometry. */
+function weld(parts: BufferGeometry[], name: string): BufferGeometry {
+  const merged = mergeGeometries(parts, false);
+  for (const part of parts) part.dispose();
+  if (!merged) throw new Error(`The ${name} could not be put together`);
+  return merged;
+}
+
 /**
  * The crawler in its own space: the ground under its middle is the origin and its face is +Z.
  * About 0.9 long and 0.7 across the hull, 1.7 across with the legs out, and 0.7 tall.
@@ -311,36 +367,141 @@ function buildCrawler(): BufferGeometry {
     );
   }
 
-  // Six legs, each a hip, an upper bar rising to the knee, a lower bar down to the foot.
-  for (let row = 0; row < 3; row++) {
-    const z = 0.3 - row * 0.3;
-    const reach = (1 - row) * 0.3;
-    for (const side of [-1, 1]) {
-      const hip: Point = [side * 0.3, 0.42, z];
-      const knee: Point = [side * 0.64, 0.68, z];
-      const foot: Point = [side * 0.86, 0.03, z];
-      // The legs on one side step together with the opposite side's neighbours: front-left, middle-right and back-left.
-      const group = (row + (side > 0 ? 1 : 0)) % 2;
-      const leg = (geometry: BufferGeometry, look: number, how: number): BufferGeometry =>
-        piece(splay(geometry, hip, -side * reach), look, how, group, side, hip);
-      parts.push(leg(block(0.12, 0.12, 0.12, hip), LOOK.amber, KIND.leg));
-      parts.push(leg(bar(hip, knee, 0.075), LOOK.plate, KIND.leg));
-      parts.push(leg(block(0.1, 0.1, 0.1, knee), LOOK.amber, KIND.leg));
-      parts.push(leg(bar(knee, foot, 0.06), LOOK.shell, KIND.lowerLeg));
-      parts.push(leg(block(0.1, 0.04, 0.12, [foot[0], 0.02, foot[2]]), LOOK.blade, KIND.lowerLeg));
-    }
+  addLegs(parts, {
+    rows: [0.3, 0, -0.3],
+    hip: [0.3, 0.42, 0],
+    knee: [0.64, 0.68, 0],
+    foot: [0.86, 0.03, 0],
+    hipBlock: 0.12,
+    upper: 0.075,
+    kneeBlock: 0.1,
+    lower: 0.06,
+    pad: [0.1, 0.04, 0.12],
+  });
+
+  return weld(parts, 'crawler');
+}
+
+/**
+ * The armored crawler in the same space: the crawler's build, bulked out. A deeper hull with a
+ * second deck of plate over it and amber ribs across the top, plate along the flanks and over the
+ * brow, a ram under the head, heavier jaws and thicker legs. About 1.0 long, 0.9 across the hull
+ * and 0.9 tall; the picture draws it larger still.
+ */
+function buildArmored(): BufferGeometry {
+  const parts: BufferGeometry[] = [];
+
+  // Hull, two decks of plate over it, flank plates, the engine behind and the head in front.
+  parts.push(piece(block(0.78, 0.38, 1, [0, 0.46, 0], 0.08), LOOK.shell));
+  parts.push(piece(block(0.72, 0.1, 0.86, [0, 0.72, -0.02], 0.03), LOOK.plate));
+  parts.push(piece(block(0.5, 0.09, 0.5, [0, 0.81, -0.06]), LOOK.plate));
+  for (const z of [-0.24, -0.06, 0.12]) {
+    parts.push(piece(block(0.56, 0.03, 0.05, [0, 0.865, z]), LOOK.amber));
+  }
+  for (const side of [-1, 1]) {
+    parts.push(piece(block(0.07, 0.3, 0.8, [side * 0.42, 0.52, 0]), LOOK.plate));
+    parts.push(piece(block(0.05, 0.12, 0.68, [side * 0.42, 0.3, 0]), LOOK.shell));
+  }
+  parts.push(piece(block(0.56, 0.32, 0.4, [0, 0.46, -0.68], 0.05), LOOK.shell));
+  parts.push(piece(block(0.4, 0.08, 0.04, [0, 0.5, -0.89]), LOOK.amber));
+  parts.push(piece(block(0.56, 0.3, 0.34, [0, 0.42, 0.62], 0.06), LOOK.shell));
+  parts.push(piece(block(0.62, 0.07, 0.28, [0, 0.6, 0.64]), LOOK.plate));
+  parts.push(piece(block(0.5, 0.2, 0.08, [0, 0.28, 0.82]), LOOK.plate));
+  parts.push(piece(block(0.4, 0.07, 0.04, [0, 0.46, 0.8]), LOOK.eye));
+  for (const side of [-1, 1]) {
+    parts.push(piece(block(0.07, 0.07, 0.04, [side * 0.24, 0.5, 0.8]), LOOK.eye));
+    parts.push(piece(block(0.06, 0.06, 0.06, [side * 0.26, 0.64, 0.74]), LOOK.amber));
+    const hip: Point = [side * 0.16, 0.24, 0.8];
+    parts.push(
+      piece(block(0.1, 0.09, 0.32, [side * 0.16, 0.24, 0.96]), LOOK.blade, KIND.jaw, 0, side, hip),
+    );
+    parts.push(
+      piece(block(0.07, 0.07, 0.16, [side * 0.12, 0.24, 1.14]), LOOK.blade, KIND.jaw, 0, side, hip),
+    );
   }
 
-  const merged = mergeGeometries(parts, false);
-  for (const part of parts) part.dispose();
-  if (!merged) throw new Error('The crawler could not be put together');
-  return merged;
+  addLegs(parts, {
+    rows: [0.34, 0, -0.34],
+    hip: [0.36, 0.44, 0],
+    knee: [0.72, 0.72, 0],
+    foot: [0.92, 0.03, 0],
+    hipBlock: 0.16,
+    upper: 0.11,
+    kneeBlock: 0.14,
+    lower: 0.085,
+    pad: [0.14, 0.05, 0.16],
+  });
+
+  return weld(parts, 'armored crawler');
 }
+
+/** The colors of a kind: the shell and plate of the body, the amber of its joints and the eye, and the glow of each. */
+interface Palette {
+  readonly shell: string;
+  readonly plate: string;
+  readonly amber: string;
+  readonly amberGlow: number;
+  readonly eye: string;
+  readonly eyeGlow: number;
+  readonly blade: string;
+}
+
+/** What sets a kind of machine apart in the picture: its model, how large it is drawn, how it walks and what color it is. */
+interface Variant {
+  /** The name of its mesh in the scene. */
+  readonly name: string;
+  readonly build: () => BufferGeometry;
+  /** How large it is drawn against its model. */
+  readonly scale: number;
+  /** Radians of gait per block walked, and the speed at which its legs are at full swing. */
+  readonly stride: number;
+  readonly fullGait: number;
+  readonly palette: Palette;
+}
+
+/** The kinds the picture knows, indexed by `ENEMY_KIND`. A kind it does not know is drawn as the first. */
+const VARIANTS: readonly Variant[] = [
+  {
+    name: 'crawlers',
+    build: buildCrawler,
+    scale: 1,
+    stride: STRIDE,
+    fullGait: FULL_GAIT_SPEED,
+    palette: {
+      shell: '#262d35',
+      plate: '#414b57',
+      amber: '#8a5518',
+      amberGlow: 0.7,
+      eye: '#1c0805',
+      eyeGlow: 2.6,
+      blade: '#9aa4af',
+    },
+  },
+  {
+    // Heavier: it strides slower for the ground it covers, and its plate is a warmer, rustier steel so that it reads at dusk.
+    name: 'armored',
+    build: buildArmored,
+    scale: 1.2,
+    stride: 4,
+    fullGait: 1.3,
+    palette: {
+      shell: '#1f252c',
+      plate: '#5b4838',
+      amber: '#a3601a',
+      amberGlow: 0.9,
+      eye: '#1c0805',
+      eyeGlow: 3.2,
+      blade: '#b3a99a',
+    },
+  },
+];
 
 export interface EnemyRenderer {
   readonly object: Group;
-  /** How many triangles one machine has. */
+  /** How many triangles one crawler has. */
   readonly trianglesPerMachine: number;
+  /** How many triangles one machine of a kind has (the crawler's, for a kind the picture does not know). */
+  trianglesOf(kind: number): number;
   /** Draws the machines at these poses, the first `NET.maxEnemies` of them. The poses are read, not kept. */
   update(dt: number, poses: readonly EnemyPose[]): void;
   /** The machines on screen now, for tests and the debug hook. */
@@ -366,11 +527,30 @@ interface Track {
   seen: boolean;
 }
 
-export function createEnemyRenderer({
-  registry,
-  capacity = NET.maxEnemies,
-}: EnemyRendererOptions): EnemyRenderer {
-  const model = buildCrawler();
+/** One kind's mesh, and the buffers the machines of that kind are written into each frame. */
+interface Batch {
+  readonly variant: Variant;
+  readonly model: BufferGeometry;
+  readonly geometry: InstancedBufferGeometry;
+  readonly material: ShaderMaterial;
+  readonly mesh: Mesh;
+  readonly positions: Float32Array;
+  readonly looks: Float32Array;
+  readonly states: Float32Array;
+  readonly pos: InstancedBufferAttribute;
+  readonly data: InstancedBufferAttribute;
+  readonly state: InstancedBufferAttribute;
+  /** How many machines of this kind are drawn this frame. */
+  count: number;
+}
+
+function createBatch(
+  variant: Variant,
+  registry: MaterialRegistry,
+  depth: ShaderMaterial,
+  capacity: number,
+): Batch {
+  const model = variant.build();
   const geometry = new InstancedBufferGeometry();
   for (const name of ['position', 'normal', 'aPart', 'aHip']) {
     const attribute = model.getAttribute(name);
@@ -388,50 +568,83 @@ export function createEnemyRenderer({
   geometry.setAttribute('iState', state);
   geometry.instanceCount = 0;
 
+  const { palette } = variant;
   const material = registry.create({
     vertexShader: VERTEX,
     fragmentShader: FRAGMENT,
     uniforms: {
-      uShell: { value: new Color('#262d35') },
-      uPlate: { value: new Color('#414b57') },
-      uAmber: { value: new Color('#8a5518') },
-      uAmberGlow: { value: new Color('#f2a43a').multiplyScalar(0.7) },
-      uEye: { value: new Color('#1c0805') },
-      uEyeGlow: { value: new Color('#ff4a26').multiplyScalar(2.6) },
-      uBlade: { value: new Color('#9aa4af') },
+      uShell: { value: new Color(palette.shell) },
+      uPlate: { value: new Color(palette.plate) },
+      uAmber: { value: new Color(palette.amber) },
+      uAmberGlow: { value: new Color('#f2a43a').multiplyScalar(palette.amberGlow) },
+      uEye: { value: new Color(palette.eye) },
+      uEyeGlow: { value: new Color('#ff4a26').multiplyScalar(palette.eyeGlow) },
+      uBlade: { value: new Color(palette.blade) },
     },
   });
-  const depth = new ShaderMaterial({ vertexShader: DEPTH_VERTEX, fragmentShader: DEPTH_FRAGMENT });
 
   const mesh = new Mesh(geometry, material);
-  mesh.name = 'crawlers';
+  mesh.name = variant.name;
   mesh.frustumCulled = false;
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.customDepthMaterial = depth;
   mesh.visible = false;
+  return {
+    variant,
+    model,
+    geometry,
+    material,
+    mesh,
+    positions,
+    looks,
+    states,
+    pos,
+    data,
+    state,
+    count: 0,
+  };
+}
+
+export function createEnemyRenderer({
+  registry,
+  capacity = NET.maxEnemies,
+}: EnemyRendererOptions): EnemyRenderer {
+  const depth = new ShaderMaterial({ vertexShader: DEPTH_VERTEX, fragmentShader: DEPTH_FRAGMENT });
+  const batches = VARIANTS.map((variant) => createBatch(variant, registry, depth, capacity));
+  const crawlers = batches[0] as Batch;
   const object = new Group();
   object.name = 'enemies';
-  object.add(mesh);
+  for (const batch of batches) object.add(batch.mesh);
 
   const tracks = new Map<number, Track>();
+  // What the debug list reads: every machine drawn, in the order of the poses, whatever its kind.
   const ids = new Int32Array(capacity);
   const kinds = new Uint8Array(capacity);
+  const seenAt = new Float32Array(capacity * 4);
   let shown = 0;
 
   const follow = (from: number, to: number, rate: number, dt: number): number =>
     from + (to - from) * (1 - Math.exp(-rate * dt));
+  const triangles = (batch: Batch): number => batch.model.getAttribute('position').count / 3;
 
   return {
     object,
-    trianglesPerMachine: model.getAttribute('position').count / 3,
+    trianglesPerMachine: triangles(crawlers),
+
+    trianglesOf(kind) {
+      return triangles(batches[kind] ?? crawlers);
+    },
 
     update(dt, poses) {
       const step = Math.min(Math.max(dt, 0), MAX_STEP);
       const n = Math.min(poses.length, capacity);
       for (const track of tracks.values()) track.seen = false;
+      for (const batch of batches) batch.count = 0;
       for (let i = 0; i < n; i++) {
         const pose = poses[i] as EnemyPose;
+        const batch = batches[pose.kind] ?? crawlers;
+        const { variant } = batch;
         let track = tracks.get(pose.id);
         if (!track) {
           // Each machine starts its stride at its own point, so a crowd does not step in time.
@@ -440,10 +653,10 @@ export function createEnemyRenderer({
           tracks.set(pose.id, track);
         }
         track.seen = true;
-        track.phase = (track.phase + pose.speed * step * STRIDE) % (Math.PI * 200);
+        track.phase = (track.phase + pose.speed * step * variant.stride) % (Math.PI * 200);
         track.gait = follow(
           track.gait,
-          Math.min(1, pose.speed / FULL_GAIT_SPEED),
+          Math.min(1, pose.speed / variant.fullGait),
           GAIT_FOLLOW,
           step,
         );
@@ -457,30 +670,38 @@ export function createEnemyRenderer({
           pose.flags & ENEMY_FLAG.hurt ? 1 : Math.max(0, track.flash - step / FLASH_FADE);
         track.rise = Math.min(1, track.rise + step / RISE_SECONDS);
 
-        const size = 1 - SIZE_SPREAD + ((pose.id * 0.618034) % 1) * SIZE_SPREAD * 2;
-        positions[i * 3] = pose.x;
-        positions[i * 3 + 1] = pose.y;
-        positions[i * 3 + 2] = pose.z;
-        looks[i * 4] = pose.yaw;
-        looks[i * 4 + 1] = size;
-        looks[i * 4 + 2] = track.phase;
-        looks[i * 4 + 3] = track.gait;
-        states[i * 4] = pose.health;
-        states[i * 4 + 1] = track.flash;
-        states[i * 4 + 2] = track.attack;
-        states[i * 4 + 3] = track.rise;
+        const size =
+          (1 - SIZE_SPREAD + ((pose.id * 0.618034) % 1) * SIZE_SPREAD * 2) * variant.scale;
+        const at = batch.count++;
+        batch.positions[at * 3] = pose.x;
+        batch.positions[at * 3 + 1] = pose.y;
+        batch.positions[at * 3 + 2] = pose.z;
+        batch.looks[at * 4] = pose.yaw;
+        batch.looks[at * 4 + 1] = size;
+        batch.looks[at * 4 + 2] = track.phase;
+        batch.looks[at * 4 + 3] = track.gait;
+        batch.states[at * 4] = pose.health;
+        batch.states[at * 4 + 1] = track.flash;
+        batch.states[at * 4 + 2] = track.attack;
+        batch.states[at * 4 + 3] = track.rise;
         ids[i] = pose.id;
         kinds[i] = pose.kind;
+        seenAt[i * 4] = pose.x;
+        seenAt[i * 4 + 1] = pose.y;
+        seenAt[i * 4 + 2] = pose.z;
+        seenAt[i * 4 + 3] = pose.health;
       }
       for (const [id, track] of tracks) if (!track.seen) tracks.delete(id);
 
       shown = n;
-      geometry.instanceCount = n;
-      mesh.visible = n > 0;
-      if (n > 0) {
-        pos.needsUpdate = true;
-        data.needsUpdate = true;
-        state.needsUpdate = true;
+      for (const batch of batches) {
+        batch.geometry.instanceCount = batch.count;
+        batch.mesh.visible = batch.count > 0;
+        if (batch.count > 0) {
+          batch.pos.needsUpdate = true;
+          batch.data.needsUpdate = true;
+          batch.state.needsUpdate = true;
+        }
       }
     },
 
@@ -490,10 +711,10 @@ export function createEnemyRenderer({
         out.push({
           id: ids[i] as number,
           kind: kinds[i] as number,
-          x: positions[i * 3] as number,
-          y: positions[i * 3 + 1] as number,
-          z: positions[i * 3 + 2] as number,
-          health: states[i * 4] as number,
+          x: seenAt[i * 4] as number,
+          y: seenAt[i * 4 + 1] as number,
+          z: seenAt[i * 4 + 2] as number,
+          health: seenAt[i * 4 + 3] as number,
         });
       }
       return out;
@@ -502,9 +723,11 @@ export function createEnemyRenderer({
     dispose() {
       object.removeFromParent();
       object.clear();
-      geometry.dispose();
-      model.dispose();
-      registry.release(material);
+      for (const batch of batches) {
+        batch.geometry.dispose();
+        batch.model.dispose();
+        registry.release(batch.material);
+      }
       depth.dispose();
       tracks.clear();
       shown = 0;

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ENEMY_FLAG, createEnemyState, type EnemyState } from '../../src/shared/enemy-state';
+import {
+  ENEMY_FLAG,
+  ENEMY_KIND,
+  createEnemyState,
+  type EnemyState,
+} from '../../src/shared/enemy-state';
 import { createRng } from '../../src/shared/hash';
 import { angleDelta } from '../../src/shared/look';
 import { SIM_STEP_SECONDS } from '../../src/shared/survival-state';
@@ -9,6 +14,7 @@ import { NavGrid, type NavCell } from '../../src/systems/survival/nav';
 import { ALLOY, SCRAP, flatWorld } from './helpers/nav-world';
 
 const CRAWLER = ENEMIES.crawler;
+const ARMORED = ENEMIES.armored;
 
 interface Fight {
   flat: ReturnType<typeof flatWorld>;
@@ -443,6 +449,110 @@ describe('taking a blow', () => {
     f.sim.hurt(id, CRAWLER.health);
     // 30 off 60 leaves half.
     expect((f.where()[0] as EnemyState).health).toBeCloseTo(128, 0);
+  });
+});
+
+describe('the armored crawler', () => {
+  const armoredAt = (f: Fight, x: number, z: number, scale = 1): number =>
+    f.sim.spawnAt(x, z, scale, ENEMY_KIND.armored) as number;
+
+  it('comes as its own kind, with the health of its body', () => {
+    const f = fight();
+    expect(armoredAt(f, 20.5, -3.5)).not.toBeNull();
+    f.sim.spawnAt(20.5, 3.5);
+    const [armored, plain] = f.where() as [EnemyState, EnemyState];
+    expect(armored.kind).toBe(ENEMY_KIND.armored);
+    expect(plain.kind).toBe(ENEMY_KIND.crawler);
+    // The wire carries Health as a part of the full bar, so a body shows it by what a blow takes off.
+    f.sim.hurt(armored.id, 15 / ARMORED.takes);
+    expect((f.where()[0] as EnemyState).health).toBe(Math.round(255 * (1 - 15 / ARMORED.health)));
+  });
+
+  it('takes the share of a blow that its plating lets through, and a crawler all of it', () => {
+    const f = fight();
+    const armored = armoredAt(f, 20.5, -3.5);
+    const plain = f.sim.spawnAt(20.5, 3.5) as number;
+    f.sim.hurt(armored, 10);
+    f.sim.hurt(plain, 10);
+    const [a, b] = f.where() as [EnemyState, EnemyState];
+    expect(a.health).toBeCloseTo(255 * (1 - (10 * ARMORED.takes) / ARMORED.health), 0);
+    expect(b.health).toBeCloseTo(255 * (1 - 10 / CRAWLER.health), 0);
+    expect(ARMORED.takes).toBeGreaterThan(0);
+    expect(ARMORED.takes).toBeLessThan(1);
+  });
+
+  it('falls when the blows add up to its health over what it takes, no sooner', () => {
+    const f = fight();
+    const id = armoredAt(f, 20.5, -3.5);
+    const needed = ARMORED.health / ARMORED.takes;
+    expect(f.sim.hurt(id, needed - 0.1)).toBe(false);
+    expect(f.sim.hurt(id, 0.2)).toBe(true);
+    expect(f.sim.count).toBe(0);
+    // The later nights' steel is tougher by the scale, plating and all.
+    const tougher = armoredAt(f, 20.5, -3.5, 1.1);
+    expect(f.sim.hurt(tougher, needed * 1.1 - 0.1)).toBe(false);
+    expect(f.sim.hurt(tougher, 0.2)).toBe(true);
+  });
+
+  it('tells the hook which kind fell, once, and not for a blow that did not fell it or for a clear', () => {
+    const f = fight();
+    const felled: number[] = [];
+    f.sim.onFelled = (kind) => felled.push(kind);
+    const armored = armoredAt(f, 20.5, -3.5);
+    const plain = f.sim.spawnAt(20.5, 3.5) as number;
+    f.sim.hurt(armored, 5);
+    expect(felled).toEqual([]);
+    f.sim.hurt(plain, CRAWLER.health);
+    f.sim.hurt(armored, ARMORED.health / ARMORED.takes);
+    expect(felled).toEqual([ENEMY_KIND.crawler, ENEMY_KIND.armored]);
+    // A blow at a machine that is gone does nothing.
+    f.sim.hurt(armored, 1000);
+    expect(felled).toHaveLength(2);
+    // Machines that fall back at dawn are not felled.
+    f.sim.spawnAt(20.5, 3.5);
+    f.sim.clear();
+    expect(felled).toHaveLength(2);
+  });
+
+  it('walks slower than a crawler over the same ground', () => {
+    const f = fight();
+    armoredAt(f, 30.5, -3.5);
+    f.sim.spawnAt(30.5, 3.5);
+    f.run(5);
+    const [armored, plain] = f.where() as [EnemyState, EnemyState];
+    expect(30.5 - armored.x).toBeCloseTo(ARMORED.speed * 5, 0);
+    expect(30.5 - plain.x).toBeCloseTo(CRAWLER.speed * 5, 0);
+    expect(armored.x).toBeGreaterThan(plain.x);
+  });
+
+  it('bites the Core and a player harder, on its own wind-up and rhythm', () => {
+    const f = fight();
+    armoredAt(f, 0.8, -3.5);
+    f.run(ARMORED.bite.windup - 0.1);
+    expect(f.core).toHaveLength(0);
+    f.run(0.2);
+    expect(f.core).toEqual([ARMORED.bite.core]);
+    expect(ARMORED.bite.core).toBeGreaterThan(CRAWLER.bite.core);
+
+    const g = fight();
+    armoredAt(g, 20.5, -3.5);
+    g.targets.push({ id: 2, x: 20.5, y: 10, z: 2.5 });
+    g.run(5);
+    expect(g.players.length).toBeGreaterThan(0);
+    for (const [id, amount] of g.players) {
+      expect(id).toBe(2);
+      expect(amount).toBe(ARMORED.bite.player);
+    }
+    expect(ARMORED.bite.player).toBeGreaterThan(CRAWLER.bite.player);
+  });
+
+  it('keeps clear of its fellows by the width of both bodies', () => {
+    const f = fight();
+    armoredAt(f, 25.5, -3.5);
+    armoredAt(f, 25.55, -3.5);
+    f.run(0.5);
+    const [a, b] = f.where() as [EnemyState, EnemyState];
+    expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThan(ARMORED.radius * 1.6);
   });
 });
 

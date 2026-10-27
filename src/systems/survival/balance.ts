@@ -181,6 +181,53 @@ export const RESPAWN = {
   },
 } as const;
 
+/** What a kind of machine is: its body, its bite, how much of a hit it takes and what it leaves behind. */
+export interface EnemyBody {
+  /** Points of Health at the start, before the night makes it tougher. */
+  readonly health: number;
+  /** Blocks a second on level ground. */
+  readonly speed: number;
+  /** Radians a second it can turn. */
+  readonly turnRate: number;
+  /** How wide and how tall its body is, for walls and for crowding. */
+  readonly radius: number;
+  readonly height: number;
+  /** How big a target it is for a bolt: a box standing on its feet. */
+  readonly hitbox: { readonly halfWidth: number; readonly height: number };
+  /** The highest step it climbs, in blocks. */
+  readonly step: number;
+  /** Points a bite takes off a player and off the Core, how long it winds up and how often it begins one. */
+  readonly bite: {
+    readonly player: number;
+    readonly core: number;
+    readonly windup: number;
+    readonly interval: number;
+  };
+  /** How close it must be to bite a player or the Core, and how far above or below it a player can be and still be bitten. */
+  readonly reach: {
+    readonly player: number;
+    readonly core: number;
+    readonly height: number;
+  };
+  /** Players this close pull it off its way to the Core. */
+  readonly aggro: number;
+  /** Seconds it takes to chew through one block, by material, and for a material the table does not know. */
+  readonly gnawSeconds: Readonly<Record<number, number>>;
+  readonly gnawDefault: number;
+  /** The share of a hit's points it takes: 1 for plain steel, less for plating. */
+  readonly takes: number;
+  /** What the crew finds in the pool when it fells one (Tier 4 cells drop only from special machines), or null. */
+  readonly drop: { readonly material: number; readonly amount: number } | null;
+}
+
+/** Seconds one machine of the crawler's kind takes to chew through one block, by material: tougher blocks hold longer. */
+const GNAW_SECONDS: Readonly<Record<number, number>> = {
+  [MATERIAL.scrap]: 2,
+  [MATERIAL.composite]: 3.5,
+  [MATERIAL.alloy]: 6,
+  [MATERIAL.energy]: 9,
+};
+
 /**
  * The machines that come for the Core. Every number is a first guess to be tuned by playing
  * (docs/decisions.md, Phase 4d); blocks have no health of their own until Phase 5, so the time an
@@ -237,14 +284,36 @@ export const ENEMIES = {
     /** Players this close pull it off its way to the Core. */
     aggro: 7,
     /** Seconds one crawler takes to chew through one block, by material: tougher blocks hold longer. */
-    gnawSeconds: {
-      [MATERIAL.scrap]: 2,
-      [MATERIAL.composite]: 3.5,
-      [MATERIAL.alloy]: 6,
-      [MATERIAL.energy]: 9,
-    } as Readonly<Record<number, number>>,
+    gnawSeconds: GNAW_SECONDS,
     /** What a block of a material this table does not know takes to chew. */
     gnawDefault: 2,
+    /** Plain steel: a hit takes all of its points off, and a felled crawler leaves nothing. */
+    takes: 1,
+    drop: null,
+  },
+
+  /**
+   * The armored crawler (Phase 5i1): the crawler's bigger, slower cousin, plated so that every hit
+   * takes only `takes` of its points off. It walks the same map and chews the same walls, bites a
+   * little harder and does not turn on a coin. The crew that fells one finds Tier 4 cells in its pool.
+   * A first guess to be tuned by playing (docs/decisions.md, Phase 5i1) and by the balance simulator
+   * of 5j: with a night's tougher steel it takes about fourteen shots of the blaster to fell.
+   */
+  armored: {
+    health: 75,
+    speed: 2,
+    turnRate: 6,
+    radius: 0.5,
+    height: 1.1,
+    hitbox: { halfWidth: 0.75, height: 1.25 },
+    step: 1,
+    bite: { player: 9, core: 8, windup: 0.5, interval: 1.2 },
+    reach: { player: 1.6, core: 1, height: 1.5 },
+    aggro: 6,
+    gnawSeconds: GNAW_SECONDS,
+    gnawDefault: 2,
+    takes: 0.6,
+    drop: { material: MATERIAL.energy, amount: 3 },
   },
 } as const;
 
@@ -273,14 +342,15 @@ export const WAVES = {
   ] as const,
 
   /**
-   * What each kind is until Phase 5 gives the new ones bodies of their own: every one of them
-   * walks, is drawn and fights as a crawler, and has this many times a crawler's Health.
+   * The body each kind of the plan has (`ENEMY_KIND`), and how many times that body's Health it has.
+   * The armored crawler has its own body (5i1); the flyer and the breacher walk, are drawn and fight
+   * as crawlers until 5i2 and 5i3 give them theirs.
    */
   kinds: {
-    crawler: { health: 1 },
-    armored: { health: 2 },
-    flyer: { health: 1 },
-    breacher: { health: 1 },
+    crawler: { body: ENEMY_KIND.crawler, health: 1 },
+    armored: { body: ENEMY_KIND.armored, health: 1 },
+    flyer: { body: ENEMY_KIND.crawler, health: 1 },
+    breacher: { body: ENEMY_KIND.crawler, health: 1 },
   },
 
   /** How much tougher the machines are: from the night `toughFrom` by `tough`, and from `growsFrom` that much again for each night. */
@@ -308,9 +378,21 @@ export const WAVES = {
   arc: Math.PI / 5,
 } as const;
 
+/** The body of a kind of machine, or undefined for a kind this table does not know. */
+export function bodyOf(kind: number): EnemyBody | undefined {
+  switch (kind) {
+    case ENEMY_KIND.crawler:
+      return ENEMIES.crawler;
+    case ENEMY_KIND.armored:
+      return ENEMIES.armored;
+    default:
+      return undefined;
+  }
+}
+
 /** The target a machine of this kind is for a bolt, or undefined for a kind this table does not know. */
 export function hitboxOf(
   kind: number,
 ): { readonly halfWidth: number; readonly height: number } | undefined {
-  return kind === ENEMY_KIND.crawler ? ENEMIES.crawler.hitbox : undefined;
+  return bodyOf(kind)?.hitbox;
 }

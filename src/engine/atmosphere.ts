@@ -8,6 +8,7 @@ import {
   type Texture,
 } from 'three';
 import type { Rgb, SkyState } from '../shared/daycycle';
+import { LampField, createLampUniforms, type LampUniforms } from './lamps';
 
 type U<T> = IUniform<T>;
 
@@ -17,8 +18,8 @@ export interface MistZones {
   readonly crash: { x: number; z: number; radius: number; top: number };
 }
 
-/** The shared uniform objects every material includes; one update per frame reaches them all. */
-export type AtmosphereUniforms = {
+/** The shared uniform objects every material includes (the lamps' among them); one update per frame reaches them all. */
+export type AtmosphereUniforms = LampUniforms & {
   uCamPos: U<Vector3>;
   uSunDir: U<Vector3>;
   uMoonDir: U<Vector3>;
@@ -72,12 +73,17 @@ export const DEFAULT_FOG: FogTuning = { densityScale: 1, heightFalloff: 0.022, b
  */
 export class Atmosphere {
   readonly uniforms: AtmosphereUniforms;
+  /** The crew's Lights as the shaders see them: the game layers say which burn, each frame picks the nearest. */
+  readonly lamps: LampField;
   fog: FogTuning = DEFAULT_FOG;
   /** Brightness of the mist pockets relative to the palette; tuned by the scene. */
   mistStrength = 1;
 
   constructor(noise: Texture | null, zones: MistZones) {
+    const lampUniforms = createLampUniforms();
+    this.lamps = new LampField(lampUniforms);
     this.uniforms = {
+      ...lampUniforms,
       uCamPos: { value: new Vector3() },
       uSunDir: { value: new Vector3(0, 1, 0) },
       uMoonDir: { value: new Vector3(0, 1, 0) },
@@ -154,5 +160,7 @@ export class Atmosphere {
     u.uMistLakeColor.value.lerp(u.uFogSunColor.value, 0.12 + 0.4 * lowSun);
     u.uMistCrashColor.value.setRGB(0.62, 0.34, 0.3, SRGBColorSpace).multiplyScalar(mistLight);
     u.uMistParams.value.set(0.016 * sky.mist, 0.014 * sky.mist, 0, 0);
+
+    this.lamps.update(u.uCamPos.value, sky.night);
   }
 }

@@ -104,8 +104,11 @@ export interface MultiplayerDebug {
    * field is full or the ring is walled off). Only a host (or single-player) can; others return 0.
    */
   spawnCrawlers(count: number): number;
-  /** Puts one crawler at a spot on open ground and returns its id, or null where there is no room. Only a host (or single-player) can. */
-  spawnCrawlerAt(x: number, z: number): number | null;
+  /**
+   * Puts one machine at a spot on open ground, a plain crawler unless `kind` (an `ENEMY_KIND`) says
+   * otherwise, and returns its id, or null where there is no room. Only a host (or single-player) can.
+   */
+  spawnCrawlerAt(x: number, z: number, kind?: number): number | null;
   /** Removes every machine from the field. Only a host (or single-player) can. */
   clearEnemies(): void;
   /** Every heap of debris in the run's list and the strips each has left, as this screen has the list. */
@@ -359,10 +362,10 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       const session = hub.current;
       return session instanceof HostSession ? (session.survivalSim?.enemies?.spawn(count) ?? 0) : 0;
     },
-    spawnCrawlerAt: (x, z) => {
+    spawnCrawlerAt: (x, z, kind) => {
       const session = hub.current;
       return session instanceof HostSession
-        ? (session.survivalSim?.enemies?.spawnAt(x, z) ?? null)
+        ? (session.survivalSim?.enemies?.spawnAt(x, z, 1, kind) ?? null)
         : null;
     },
     clearEnemies: () => {

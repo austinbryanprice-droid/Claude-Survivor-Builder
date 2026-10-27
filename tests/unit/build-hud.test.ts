@@ -198,6 +198,25 @@ describe('the module slot', () => {
     expect(new Set(icons).size).toBe(icons.length);
   });
 
+  it('gives the Light an icon of its own, the same whichever way it faces, and says what it costs', () => {
+    expect(moduleSlot(MODULE.light)).toEqual({ icon: 'light', blueprint: true });
+    for (let facing = 0; facing < 4; facing++) {
+      expect(blockIcon(packState(moduleShape(MODULE.light, facing), 1))).toBe('light');
+    }
+    expect(ICON_IDS).toContain('light');
+    expect(costText(packState(moduleShape(MODULE.light, 0), 1))).toBe('10 Scrap');
+    const icons = [
+      MODULE.terminal,
+      MODULE.turret,
+      MODULE.generator,
+      MODULE.node,
+      MODULE.storage,
+      MODULE.bed,
+      MODULE.light,
+    ].map((module) => moduleSlot(module).icon);
+    expect(new Set(icons).size).toBe(icons.length);
+  });
+
   it('has no icon for a module the HUD has no picture of, or a level the module does not have', () => {
     expect(moduleSlot(99).icon).toBeNull();
     expect(blockIcon(packState(moduleShape(MODULE.terminal, 0), 9))).toBeNull();
@@ -213,8 +232,8 @@ describe('the module slot', () => {
   });
 });
 
-describe('the tag that says whether a turret or a Power Node has power', () => {
-  it('is nothing for a cell that holds neither', () => {
+describe('the tag that says whether a turret, a Light or a Power Node has power', () => {
+  it('is nothing for a cell that holds none of them', () => {
     expect(powerTag('none', 0)).toBeNull();
     expect(powerTag('none', MODULE.turret)).toBeNull();
   });
@@ -249,6 +268,19 @@ describe('the tag that says whether a turret or a Power Node has power', () => {
       state: 'off',
       label: 'No power',
       detail: 'Needs a Generator or Node in reach',
+    });
+  });
+
+  it('says a Light with power burns bright, and one without burns low and what would light it', () => {
+    expect(powerTag('on', MODULE.light)).toEqual({
+      state: 'on',
+      label: 'Powered',
+      detail: 'Burns bright',
+    });
+    expect(powerTag('off', MODULE.light)).toEqual({
+      state: 'off',
+      label: 'No power',
+      detail: 'Burns low · a Generator or Node in reach lights it',
     });
   });
 });

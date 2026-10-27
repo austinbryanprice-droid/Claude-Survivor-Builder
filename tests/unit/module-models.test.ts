@@ -33,6 +33,9 @@ function boundsOf(geometries: readonly BufferGeometry[]): Box3 {
 const partsOf = (model: ModuleModel): BufferGeometry[] =>
   MODULE_LOOK_NAMES.flatMap((look) => model[look] ?? []);
 
+/** The looks every module is made of but the Light, which has a lamp of its own. */
+const COMMON_LOOKS = MODULE_LOOK_NAMES.filter((look) => look !== 'lamp');
+
 /** The points of a geometry that satisfy a test, as vectors. */
 function pointsWhere(geometry: BufferGeometry, keep: (point: Vector3) => boolean): Vector3[] {
   const position = geometry.getAttribute('position');
@@ -52,8 +55,8 @@ describe('the Research Terminal model', () => {
   const model = (buildModuleKit(MODULE.terminal) as ModuleKit).model;
 
   it('is made of one merged geometry for each look, and only looks the table defines', () => {
-    expect(Object.keys(model).sort()).toEqual([...MODULE_LOOK_NAMES].sort());
-    for (const look of MODULE_LOOK_NAMES) {
+    expect(Object.keys(model).sort()).toEqual([...COMMON_LOOKS].sort());
+    for (const look of COMMON_LOOKS) {
       const geometry = model[look] as BufferGeometry;
       expect(geometry.getAttribute('position').count, look).toBeGreaterThan(0);
       expect(geometry.getAttribute('normal').count, look).toBe(
@@ -138,7 +141,7 @@ describe('the Research Terminal model', () => {
 
   it('is built the same way every time, so two pictures of it agree', () => {
     const again = (buildModuleKit(MODULE.terminal) as ModuleKit).model;
-    for (const look of MODULE_LOOK_NAMES) {
+    for (const look of COMMON_LOOKS) {
       const a = (model[look] as BufferGeometry).getAttribute('position').array;
       const b = (again[look] as BufferGeometry).getAttribute('position').array;
       expect(Array.from(b), look).toEqual(Array.from(a));
@@ -149,7 +152,9 @@ describe('the Research Terminal model', () => {
     const count = partsOf(model).reduce((sum, geometry) => sum + triangles(geometry), 0);
     expect(count).toBeGreaterThan(200);
     expect(count).toBeLessThan(4000);
-    expect(MODULE_LOOK_NAMES.length).toBeLessThanOrEqual(6);
+    expect(COMMON_LOOKS.length).toBeLessThanOrEqual(6);
+    // The Light adds one look to the six, for its lamp.
+    expect(MODULE_LOOK_NAMES.length).toBeLessThanOrEqual(7);
   });
 
   it('has no model for a module the table does not define', () => {
@@ -470,7 +475,7 @@ describe('the Generator model', () => {
   it('is a body that stands still, in every look the table defines, in the Core’s paint', () => {
     expect(kit.head).toBeUndefined();
     expect(kit.palette).toBe(MODULE_LOOKS);
-    expect(Object.keys(model).sort()).toEqual([...MODULE_LOOK_NAMES].sort());
+    expect(Object.keys(model).sort()).toEqual([...COMMON_LOOKS].sort());
     for (const geometry of partsOf(model)) {
       const position = geometry.getAttribute('position');
       const normal = geometry.getAttribute('normal');
@@ -519,7 +524,7 @@ describe('the Generator model', () => {
 
   it('is built the same way every time, so two pictures of it agree', () => {
     const again = (buildModuleKit(MODULE.generator) as ModuleKit).model;
-    for (const look of MODULE_LOOK_NAMES) {
+    for (const look of COMMON_LOOKS) {
       const a = (model[look] as BufferGeometry).getAttribute('position').array;
       const b = (again[look] as BufferGeometry).getAttribute('position').array;
       expect(Array.from(b), look).toEqual(Array.from(a));
@@ -550,7 +555,7 @@ describe('the Power Node model', () => {
   it('is a body that stands still, in every look the table defines, in the Core’s paint', () => {
     expect(kit.head).toBeUndefined();
     expect(kit.palette).toBe(MODULE_LOOKS);
-    expect(Object.keys(model).sort()).toEqual([...MODULE_LOOK_NAMES].sort());
+    expect(Object.keys(model).sort()).toEqual([...COMMON_LOOKS].sort());
     for (const geometry of partsOf(model)) {
       const position = geometry.getAttribute('position');
       const normal = geometry.getAttribute('normal');
@@ -599,7 +604,7 @@ describe('the Power Node model', () => {
 
   it('is built the same way every time, so two pictures of it agree', () => {
     const again = (buildModuleKit(MODULE.node) as ModuleKit).model;
-    for (const look of MODULE_LOOK_NAMES) {
+    for (const look of COMMON_LOOKS) {
       const a = (model[look] as BufferGeometry).getAttribute('position').array;
       const b = (again[look] as BufferGeometry).getAttribute('position').array;
       expect(Array.from(b), look).toEqual(Array.from(a));
@@ -639,7 +644,7 @@ describe('the Storage model', () => {
   it('is a body that stands still, in every look the table defines, in the Core’s paint', () => {
     expect(kit.head).toBeUndefined();
     expect(kit.palette).toBe(MODULE_LOOKS);
-    expect(Object.keys(model).sort()).toEqual([...MODULE_LOOK_NAMES].sort());
+    expect(Object.keys(model).sort()).toEqual([...COMMON_LOOKS].sort());
     for (const geometry of partsOf(model)) {
       const position = geometry.getAttribute('position');
       const normal = geometry.getAttribute('normal');
@@ -696,7 +701,7 @@ describe('the Storage model', () => {
 
   it('is built the same way every time, so two pictures of it agree', () => {
     const again = (buildModuleKit(MODULE.storage) as ModuleKit).model;
-    for (const look of MODULE_LOOK_NAMES) {
+    for (const look of COMMON_LOOKS) {
       const a = (model[look] as BufferGeometry).getAttribute('position').array;
       const b = (again[look] as BufferGeometry).getAttribute('position').array;
       expect(Array.from(b), look).toEqual(Array.from(a));
@@ -727,7 +732,7 @@ describe('the Bed model', () => {
   it('is a body that stands still, in every look the table defines, in the Core’s paint', () => {
     expect(kit.head).toBeUndefined();
     expect(kit.palette).toBe(MODULE_LOOKS);
-    expect(Object.keys(model).sort()).toEqual([...MODULE_LOOK_NAMES].sort());
+    expect(Object.keys(model).sort()).toEqual([...COMMON_LOOKS].sort());
     for (const geometry of partsOf(model)) {
       const position = geometry.getAttribute('position');
       const normal = geometry.getAttribute('normal');
@@ -794,7 +799,7 @@ describe('the Bed model', () => {
 
   it('is built the same way every time, so two pictures of it agree', () => {
     const again = (buildModuleKit(MODULE.bed) as ModuleKit).model;
-    for (const look of MODULE_LOOK_NAMES) {
+    for (const look of COMMON_LOOKS) {
       const a = (model[look] as BufferGeometry).getAttribute('position').array;
       const b = (again[look] as BufferGeometry).getAttribute('position').array;
       expect(Array.from(b), look).toEqual(Array.from(a));
@@ -817,6 +822,125 @@ describe('the Bed model', () => {
       MODULE.generator,
       MODULE.node,
       MODULE.storage,
+    ]) {
+      const rival = (buildModuleKit(other) as ModuleKit).model;
+      expect(positions(model), `module ${other}`).not.toEqual(positions(rival));
+    }
+  });
+});
+
+describe('the Light model', () => {
+  const kit = buildModuleKit(MODULE.light) as ModuleKit;
+  const model = kit.model;
+
+  it('is a body that stands still, in the Core’s paint, made of the looks a lantern needs and its own lamp', () => {
+    expect(kit.head).toBeUndefined();
+    expect(kit.palette).toBe(MODULE_LOOKS);
+    // A lantern has no screen and no beacon: steel, trim, an amber ring, cyan strips and the lamp.
+    expect(Object.keys(model).sort()).toEqual(['amber', 'lamp', 'lights', 'plate', 'trim']);
+    for (const geometry of partsOf(model)) {
+      const position = geometry.getAttribute('position');
+      const normal = geometry.getAttribute('normal');
+      expect(position.count).toBeGreaterThan(0);
+      expect(normal.count).toBe(position.count);
+      for (let i = 0; i < position.count; i++) {
+        expect(Number.isFinite(position.getX(i) + position.getY(i) + position.getZ(i))).toBe(true);
+        expect(Math.hypot(normal.getX(i), normal.getY(i), normal.getZ(i))).toBeCloseTo(1, 3);
+      }
+    }
+  });
+
+  it('stays over the body the cursor aims at, with a foundation below the floor and the lamp leaning out in front of it', () => {
+    const box = boundsOf(partsOf(model));
+    const [x0, , z0, x1, y1, z1] = MODULES.find((def) => def.id === MODULE.light)!.body;
+    const slack = 0.03;
+    expect(box.min.x).toBeGreaterThanOrEqual(x0 - 0.5 - slack);
+    expect(box.min.z).toBeGreaterThanOrEqual(z0 - 0.5 - slack);
+    expect(box.max.z).toBeLessThanOrEqual(z1 - 0.5 + slack);
+    expect(box.min.y).toBeCloseTo(-MODULE_SKIRT, 6);
+    expect(box.max.y).toBeLessThanOrEqual(y1 + slack);
+    // The hood and the lens reach past the body toward the front, and still inside the cell.
+    expect(box.max.x).toBeGreaterThan(x1 - 0.5);
+    expect(box.max.x).toBeLessThan(0.5);
+    expect(box.max.y).toBeGreaterThan(0.85);
+  });
+
+  it('is the slimmest module: a mast on a small pad, narrower than every other', () => {
+    const own = boundsOf(partsOf(model)).getSize(new Vector3());
+    for (const other of [
+      MODULE.terminal,
+      MODULE.turret,
+      MODULE.generator,
+      MODULE.node,
+      MODULE.storage,
+      MODULE.bed,
+    ]) {
+      const rival = boundsOf(partsOf((buildModuleKit(other) as ModuleKit).model)).getSize(
+        new Vector3(),
+      );
+      expect(own.z, `module ${other}`).toBeLessThan(rival.z);
+    }
+  });
+
+  it('looks toward +x and a little down: the lens is in front of the mast and high up, and its face leans toward the ground', () => {
+    const lens = model.lamp as BufferGeometry;
+    const lamp = pointsWhere(lens, () => true);
+    expect(lamp.length).toBeGreaterThan(0);
+    expect(lamp.every((p) => p.y > 0.65)).toBe(true);
+    expect(lamp.every((p) => p.x > 0)).toBe(true);
+    // The big face of the lens looks forward and below level, as a floodlight's does: the mean of the
+    // normals that face forward, which for a lens tipped by the lamp's lean is that lean from level.
+    const normal = lens.getAttribute('normal');
+    const face = new Vector3();
+    for (let i = 0; i < normal.count; i++) {
+      if (normal.getX(i) > 0.5)
+        face.add(new Vector3(normal.getX(i), normal.getY(i), normal.getZ(i)));
+    }
+    expect(face.length()).toBeGreaterThan(0);
+    face.normalize();
+    expect(face.y).toBeLessThan(-0.1);
+    expect(face.y).toBeGreaterThan(-0.5);
+    expect(face.z).toBeCloseTo(0, 6);
+    // The mast stands at the middle of the pad, and the cyan strip up it is on its front.
+    const strip = pointsWhere(model.lights as BufferGeometry, (p) => p.y > 0.4);
+    expect(strip.length).toBeGreaterThan(0);
+    expect(strip.every((p) => Math.abs(p.z) < 0.02 && p.x > 0)).toBe(true);
+  });
+
+  it('lights the lamp a warm white that is steady and brighter than any other light but the beacon', () => {
+    expect(MODULE_LOOKS.lamp.glow).toBe('#ffc778');
+    expect(MODULE_LOOKS.lamp.glowIntensity).toBeGreaterThan(MODULE_LOOKS.lights.glowIntensity ?? 0);
+    expect(MODULE_LOOKS.lamp.glowIntensity).toBeGreaterThan(MODULE_LOOKS.amber.glowIntensity ?? 0);
+    expect(MODULE_LOOKS.lamp.glowIntensity).toBeLessThan(MODULE_LOOKS.beacon.glowIntensity ?? 0);
+    for (const look of ['plate', 'trim'] as const) expect(MODULE_LOOKS[look].glow).toBeUndefined();
+  });
+
+  it('is built the same way every time, so two pictures of it agree', () => {
+    const again = (buildModuleKit(MODULE.light) as ModuleKit).model;
+    for (const look of Object.keys(model) as (keyof ModuleModel)[]) {
+      const a = (model[look] as BufferGeometry).getAttribute('position').array;
+      const b = (again[look] as BufferGeometry).getAttribute('position').array;
+      expect(Array.from(b), look).toEqual(Array.from(a));
+    }
+  });
+
+  it('is a few hundred triangles, in five draw calls', () => {
+    const count = partsOf(model).reduce((sum, geometry) => sum + triangles(geometry), 0);
+    expect(count).toBeGreaterThan(100);
+    expect(count).toBeLessThan(1500);
+    expect(partsOf(model).length).toBe(5);
+  });
+
+  it('is a model of its own, not any other module’s', () => {
+    const positions = (m: ModuleModel) =>
+      MODULE_LOOK_NAMES.map((look) => m[look]?.getAttribute('position').count);
+    for (const other of [
+      MODULE.terminal,
+      MODULE.turret,
+      MODULE.generator,
+      MODULE.node,
+      MODULE.storage,
+      MODULE.bed,
     ]) {
       const rival = (buildModuleKit(other) as ModuleKit).model;
       expect(positions(model), `module ${other}`).not.toEqual(positions(rival));

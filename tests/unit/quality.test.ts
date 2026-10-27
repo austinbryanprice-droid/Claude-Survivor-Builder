@@ -27,6 +27,7 @@ describe('quality presets', () => {
       'foliageDensity',
       'grassDistance',
       'treeNearDistance',
+      'lamps',
     ] as const) {
       expect(low?.[key]).toBeLessThanOrEqual(balanced?.[key] ?? -1);
       expect(balanced?.[key]).toBeLessThanOrEqual(ultra?.[key] ?? -1);

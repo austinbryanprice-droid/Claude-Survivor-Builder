@@ -1,8 +1,10 @@
 import { Group } from 'three';
 import { describe, expect, it } from 'vitest';
 import { PowerWatcher } from '../../src/app/power-watcher';
+import type { LampSource } from '../../src/engine/lamps';
 import { MODULE, moduleShape, packState } from '../../src/shared/blocks';
 import { POWER } from '../../src/systems/survival/balance';
+import { lampSource } from '../../src/world/render/lamp-source';
 import { ModuleRenderer } from '../../src/world/render/module-render';
 import { createWorld } from '../../src/world/voxels/world';
 import { createTestRegistry } from './helpers/registry';
@@ -12,12 +14,24 @@ const generator = packState(moduleShape(MODULE.generator, 0), 1);
 const node = packState(moduleShape(MODULE.node, 0), 1);
 const turret = (level = 1) => packState(moduleShape(MODULE.turret, 0), level);
 const terminal = packState(moduleShape(MODULE.terminal, 0), 1);
+const light = (facing = 0) => packState(moduleShape(MODULE.light, facing), 1);
+
+/** Stands in for the stage's lamp field: keeps the last list of lamps it was handed and how many lists it has had. */
+class Lamps {
+  burning: readonly LampSource[] = [];
+  lists = 0;
+  set(sources: readonly LampSource[]): void {
+    this.burning = sources;
+    this.lists++;
+  }
+}
 
 /** A world with a renderer drawing its modules and a watcher dressing them for the power they have. */
 function rig() {
   const world = createWorld(TEST_SEED, terrain());
   const renderer = new ModuleRenderer(new Group(), createTestRegistry(), world);
-  const watcher = new PowerWatcher(world, renderer);
+  const lamps = new Lamps();
+  const watcher = new PowerWatcher(world, renderer, lamps);
   const y = Math.floor(world.terrain.grid.groundAt(8.5, -3.5));
   /** The cell `dx` blocks east of the spot where the tests build, on its row. */
   const cell = (dx: number) => ({ x: 8 + dx, y, z: -4 });
@@ -27,7 +41,7 @@ function rig() {
   };
   const lit = (dx: number) => renderer.isPowered(8 + dx, y, -4);
   const state = (dx: number) => watcher.stateAt(8 + dx, y, -4);
-  return { world, renderer, watcher, put, lit, state, cell };
+  return { world, renderer, watcher, lamps, put, lit, state, cell };
 }
 
 describe('the lights of a turret, as the power around it says', () => {
@@ -174,5 +188,118 @@ describe('putting the watcher away', () => {
     r.watcher.dispose();
     r.put(3, generator);
     expect(r.lit(0)).toBe(false);
+  });
+});
+
+describe('the lamps of the Lights that have power', () => {
+  it('are none for a Light with no Generator near, and one beside a Generator', () => {
+    const r = rig();
+    r.put(0, light());
+    expect(r.lamps.burning).toEqual([]);
+    r.put(3, generator);
+    const { x, y, z } = r.cell(0);
+    expect(r.lamps.burning).toEqual([lampSource(x, y, z, 0)]);
+  });
+
+  it('are handed on with the facing the Light was set down with', () => {
+    for (const facing of [0, 1, 2, 3]) {
+      const r = rig();
+      r.put(0, light(facing));
+      r.put(3, generator);
+      const { x, y, z } = r.cell(0);
+      expect(r.lamps.burning, `facing ${facing}`).toEqual([lampSource(x, y, z, facing)]);
+    }
+  });
+
+  it('go out the moment the Generator is broken, and burn again when it is put back', () => {
+    const r = rig();
+    r.put(0, light());
+    r.put(3, generator);
+    expect(r.lamps.burning).toHaveLength(1);
+    r.put(3, 0);
+    expect(r.lamps.burning).toEqual([]);
+    r.put(3, generator);
+    expect(r.lamps.burning).toHaveLength(1);
+  });
+
+  it('go out when the Light itself is taken away', () => {
+    const r = rig();
+    r.put(0, light());
+    r.put(3, generator);
+    r.put(0, 0);
+    expect(r.lamps.burning).toEqual([]);
+  });
+
+  it('are none for a Light past the Generator’s reach, and one through a Node between', () => {
+    const r = rig();
+    const gap = POWER.generator.radius;
+    r.put(0, generator);
+    r.put(gap + POWER.node.radius, light(2));
+    expect(r.lamps.burning).toEqual([]);
+    r.put(gap, node);
+    const { x, y, z } = r.cell(gap + POWER.node.radius);
+    expect(r.lamps.burning).toEqual([lampSource(x, y, z, 2)]);
+    r.put(0, 0);
+    expect(r.lamps.burning).toEqual([]);
+  });
+
+  it('burn for each Light that has power and not for one that has none', () => {
+    const r = rig();
+    r.put(0, light(0));
+    r.put(3, generator);
+    r.put(5, light(1));
+    r.put(POWER.generator.radius + 8, light(3));
+    expect(r.lamps.burning).toHaveLength(2);
+    const here = r.cell(0);
+    const near = r.cell(5);
+    expect(r.lamps.burning).toContainEqual(lampSource(here.x, here.y, here.z, 0));
+    expect(r.lamps.burning).toContainEqual(lampSource(near.x, near.y, near.z, 1));
+  });
+
+  it('are the Lights’ alone: a powered turret, Node or Generator throws no light', () => {
+    const r = rig();
+    r.put(0, turret());
+    r.put(3, generator);
+    r.put(6, node);
+    r.put(8, terminal);
+    expect(r.lit(0)).toBe(true);
+    expect(r.lamps.burning).toEqual([]);
+  });
+
+  it('are made known to a watcher made late, as a player who joins a base meets it', () => {
+    const world = createWorld(TEST_SEED, terrain());
+    const y = Math.floor(world.terrain.grid.groundAt(8.5, -3.5));
+    world.setBlock(8, y, -4, light(1));
+    world.setBlock(12, y, -4, generator);
+    const renderer = new ModuleRenderer(new Group(), createTestRegistry(), world);
+    const lamps = new Lamps();
+    new PowerWatcher(world, renderer, lamps);
+    expect(lamps.burning).toEqual([lampSource(8, y, -4, 1)]);
+  });
+
+  it('are put out when the watcher is put away, and not lit again after it', () => {
+    const r = rig();
+    r.put(0, light());
+    r.put(3, generator);
+    expect(r.lamps.burning).toHaveLength(1);
+    r.watcher.dispose();
+    expect(r.lamps.burning).toEqual([]);
+    const lists = r.lamps.lists;
+    r.put(3, 0);
+    r.put(3, generator);
+    expect(r.lamps.lists).toBe(lists);
+    expect(r.lamps.burning).toEqual([]);
+  });
+
+  it('are not needed: a watcher made without a lamp field dresses the lights just the same', () => {
+    const world = createWorld(TEST_SEED, terrain());
+    const renderer = new ModuleRenderer(new Group(), createTestRegistry(), world);
+    const watcher = new PowerWatcher(world, renderer);
+    const y = Math.floor(world.terrain.grid.groundAt(8.5, -3.5));
+    world.setBlock(8, y, -4, light());
+    expect(renderer.isPowered(8, y, -4)).toBe(false);
+    world.setBlock(11, y, -4, generator);
+    expect(renderer.isPowered(8, y, -4)).toBe(true);
+    watcher.dispose();
   });
 });

@@ -15,7 +15,7 @@ import type { EnemySim } from './enemies';
  * seed plays the same waves however the crew played the nights before, which is what Retry needs.
  */
 
-/** A kind of machine in the plan. Until Phase 5 they all fight as crawlers (see `WAVES.kinds`). */
+/** A kind of machine in the plan. The body each one has is in `WAVES.kinds`: the flyer and the breacher fight as crawlers until 5i2 and 5i3. */
 export type WaveKind = keyof typeof WAVES.kinds;
 
 /** One wave of a night. */
@@ -195,12 +195,13 @@ export class WaveDirector {
     for (let i = this.arrivals.length - 1; i >= 0; i--) {
       const arrival = this.arrivals[i] as Arrival;
       while (arrival.next < arrival.wave.kinds.length && inNight >= arrival.at) {
-        const kind = arrival.wave.kinds[arrival.next] as WaveKind;
-        this.machines.spawn(1, plan.healthScale * WAVES.kinds[kind].health, {
-          rng: arrival.rng,
-          bearing: arrival.bearing,
-          arc: WAVES.arc,
-        });
+        const { body, health } = WAVES.kinds[arrival.wave.kinds[arrival.next] as WaveKind];
+        this.machines.spawn(
+          1,
+          plan.healthScale * health,
+          { rng: arrival.rng, bearing: arrival.bearing, arc: WAVES.arc },
+          body,
+        );
         arrival.next++;
         arrival.at += RELEASE_TICKS;
       }

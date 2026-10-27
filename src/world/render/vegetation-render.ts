@@ -140,6 +140,7 @@ void main() {
   vec3 trans = uKeyColor * back * albedo * vec3(1.3, 1.0, 0.55) * occ;
   vec3 amb = ambientLight(N) * mix(0.2, 1.0, occ);
   vec3 lit = albedo * (direct + amb) + trans;
+  lit += albedo * lampLight(vWorld, N) * mix(0.2, 1.0, occ);
 
   lit = applyAtmosphere(lit, vWorld);
   gl_FragColor = vec4(lit, alpha);
@@ -278,6 +279,7 @@ void main() {
   // going black; the fill follows the ambient colour and fades toward the roots.
   vec3 amb = ambientLight(N) * mix(0.5, 1.0, ao) * (1.0 + 0.45 * vUv.y);
   vec3 lit = albedo * (direct + amb) + trans;
+  lit += albedo * lampLight(vWorld, N) * mix(0.5, 1.0, ao);
   lit = applyAtmosphere(lit, vWorld);
   gl_FragColor = vec4(lit, alpha);
 }
