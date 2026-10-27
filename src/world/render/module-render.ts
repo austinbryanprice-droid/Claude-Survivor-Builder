@@ -52,8 +52,13 @@ const BLINK_OFF_GLOW = 0.15;
 /** The name of the group a turning head hangs in, inside the group of the module it belongs to. */
 const HEAD = 'head';
 
-/** How much of its glow a look keeps in a module without power: the lights are on standby, not out, so the module still reads as one. */
-export const DIM_GLOW = 0.16;
+/**
+ * How much of its glow a look keeps in a module without power: the lights are on standby, not out, so the
+ * module still reads as one. Chosen by eye, side by side with a module that has power, by day and by night:
+ * at 0.16 the cyan strips and the amber lamps of a standing module were still bright enough to read as lit
+ * from a few blocks off; at 0.08 they are a dull teal and a brown, and 0.04 and below lose the strips.
+ */
+export const DIM_GLOW = 0.08;
 
 /** The materials of one paint, a lit material for each look, and the glow each is animated through. */
 interface Paint {
