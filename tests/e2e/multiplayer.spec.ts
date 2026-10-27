@@ -16,6 +16,7 @@ import { needsResearch, notEnough, pieceCost } from '../../src/systems/economy/b
 import { NO_PLAYER } from '../../src/shared/protocol';
 import { SHOT_FLAG } from '../../src/shared/shot';
 import { BLASTER, ENEMIES, RESPAWN, TURRET, VITALS } from '../../src/systems/survival/balance';
+import { CORE_FOOTPRINT } from '../../src/world/outpost';
 import { hopFromTheCore, standAt } from './support/power';
 import { recordToasts, toasts } from './support/toasts';
 import { barrelOf, sendCrawlerNear } from './support/turrets';
@@ -1294,6 +1295,178 @@ test.describe('multiplayer', () => {
       }
       expect(await ada.page.evaluate(() => window.__ashbound!.mp!.rejections())).toEqual([]);
       expect(await host.page.evaluate(() => window.__ashbound!.mp!.rejections())).toEqual([]);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
+  test("a host's breacher blows a hole in the ring of walls round the Core: every screen draws it with a mesh of its own, sees the machine go and the hole it leaves in the same cells, the blast reaches every screen, and nobody is wounded and the Core is not touched", async ({
+    browser,
+    baseURL,
+  }) => {
+    const host = await openPlayer(browser, baseURL, 'Host', { stock: 200 });
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and a machine is only listed when one is drawn.
+    const slow = { timeout: 60_000 };
+    /** The ring stands this many cells off the Core's walls, a block high: out of the Core's reach of a blast at it. */
+    const ring = 3;
+    /** Two frames on this page: the host judges a placement from where it last saw the player, so a move needs them first. */
+    const settle = (p: Player) =>
+      p.page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+    const machinesOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.enemies());
+    const blockOf = (p: Player, cell: readonly [number, number, number]) =>
+      p.page.evaluate(([x, y, z]) => window.__ashbound!.mp!.block(x!, y!, z!), cell);
+    const blastsOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.blastCount());
+    const healthOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.vitals())).health;
+    const drawnOf = (p: Player) =>
+      p.page.evaluate(() => {
+        const mesh = window.__ashbound!.stage.world.getObjectByName('breachers') as unknown as
+          { geometry: { instanceCount: number }; visible: boolean } | undefined;
+        return mesh ? { count: mesh.geometry.instanceCount, visible: mesh.visible } : null;
+      });
+    const told = async (p: Player) =>
+      (await toasts(p.page)).filter((t) => t.startsWith('A machine left'));
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) {
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+        await recordToasts(p.page);
+      }
+
+      // The host raises a ring of Scrap round the Core from inside it, a side at a time, standing a
+      // block and a half in from the middle of each: every block is within reach of where they stand.
+      const core = await host.page.evaluate(() => {
+        const world = window.__ashbound!.game.world as unknown as {
+          voxels: { outpost: { x: number; z: number; cellX: number; cellZ: number } };
+        };
+        const { x, z, cellX, cellZ } = world.voxels.outpost;
+        return { x, z, cellX, cellZ };
+      });
+      const lo = core.cellX - ring;
+      const hi = core.cellX + CORE_FOOTPRINT - 1 + ring;
+      const loZ = core.cellZ - ring;
+      const hiZ = core.cellZ + CORE_FOOTPRINT - 1 + ring;
+      const cells = await host.page.evaluate(
+        ([lo, hi, loZ, hiZ]) => {
+          const { game } = window.__ashbound!;
+          const cells: [number, number, number][] = [];
+          for (let x = lo!; x <= hi!; x++) {
+            for (let z = loZ!; z <= hiZ!; z++) {
+              if (x !== lo && x !== hi && z !== loZ && z !== hiZ) continue;
+              cells.push([x, Math.floor(game.world.groundAt(x + 0.5, z + 0.5)), z]);
+            }
+          }
+          return cells;
+        },
+        [lo, hi, loZ, hiZ] as const,
+      );
+      const sides = [
+        { at: { x: lo + 1.5, z: core.z }, has: (c: number[]) => c[0] === lo },
+        { at: { x: hi - 0.5, z: core.z }, has: (c: number[]) => c[0] === hi },
+        { at: { x: core.x, z: loZ + 1.5 }, has: (c: number[]) => c[2] === loZ },
+        { at: { x: core.x, z: hiZ - 0.5 }, has: (c: number[]) => c[2] === hiZ },
+      ];
+      const placed = new Set<string>();
+      for (const side of sides) {
+        await standAt(host.page, side.at.x, side.at.z);
+        await settle(host);
+        const mine = cells.filter((c) => side.has(c) && !placed.has(c.join()));
+        for (const c of mine) placed.add(c.join());
+        await host.page.evaluate(
+          ([mine, state]) => {
+            const { mp } = window.__ashbound!;
+            for (const [x, y, z] of mine as [number, number, number][])
+              mp!.place(x, y, z, state as number);
+          },
+          [mine, SCRAP] as const,
+        );
+        await expect
+          .poll(async () => (await digest(host)).count, { ...slow, message: 'the ring goes up' })
+          .toBe(placed.size);
+      }
+      expect(placed.size).toBe(cells.length);
+      await expectSameWorld(everyone, cells.length);
+
+      // Nobody is near the west wall (a blast wounds whoever is within three blocks of it): the
+      // host and Ada stand well off to the east, and the host sees her there.
+      const hostAway = { x: core.x + 14, z: core.z + 10 };
+      const adaAway = { x: core.x + 16, z: core.z + 12 };
+      await standAt(host.page, hostAway.x, hostAway.z);
+      await standAt(ada.page, adaAway.x, adaAway.z);
+      await settle(host);
+      await expectSeen(host, 'Ada', adaAway);
+      const before = { core: (await clockOf(host)).coreHealth };
+      for (const p of everyone) expect(await blastsOf(p), `${p.name} has heard no blast`).toBe(0);
+
+      // One breacher comes up from the west, in line with the middle of the wall on that side.
+      const cz = Math.floor(core.z);
+      const wall = cells.filter((c) => c[0] === lo && c[2] === cz)[0] as [number, number, number];
+      const id = await host.page.evaluate(
+        ([x, z, kind]) => window.__ashbound!.mp!.spawnCrawlerAt(x!, z!, kind),
+        [lo - 5.5, cz + 0.2, ENEMY_KIND.breacher] as const,
+      );
+      expect(id).not.toBeNull();
+
+      // Every screen draws it as a breacher, whole, with the mesh of its own kind.
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await machinesOf(p)).map((m) => [m.id, m.kind, m.health]), {
+            ...slow,
+            message: `${p.name} sees the breacher`,
+          })
+          .toEqual([[id, ENEMY_KIND.breacher, 1]]);
+        await expect
+          .poll(() => drawnOf(p), { ...slow, message: `${p.name} draws it with its own mesh` })
+          .toEqual({ count: 1, visible: true });
+      }
+
+      // It walks to the wall, charges and goes off: it is gone from every screen, and the cells in
+      // front of it are gone from every world, the wall on the far side of the Core as it was.
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await machinesOf(p)).length, {
+            ...slow,
+            message: `${p.name} sees it go off`,
+          })
+          .toBe(0);
+        await expect
+          .poll(() => blockOf(p, wall), { ...slow, message: `${p.name} sees the hole` })
+          .toBe(0);
+        await expect
+          .poll(async () => (await digest(p)).count, { ...slow, message: `${p.name}'s walls` })
+          .toBeLessThan(cells.length);
+        expect(
+          await blockOf(
+            p,
+            cells.find((c) => c[0] === hi && c[2] === cz) as [number, number, number],
+          ),
+        ).not.toBe(0);
+      }
+      await expectSameWorld(everyone, (await digest(host)).count);
+      // The blast itself, once, reached every screen as an event of its own, and the machine was never felled.
+      for (const p of everyone) {
+        await expect
+          .poll(() => blastsOf(p), { ...slow, message: `the blast reaches ${p.name}` })
+          .toBe(1);
+      }
+      for (const p of everyone) {
+        expect((await clockOf(p)).felled, `${p.name} counts nothing felled`).toBe(0);
+        expect((await clockOf(p)).coreHealth, `${p.name} sees the Core whole`).toBe(before.core);
+        expect(await healthOf(p), `${p.name} is unhurt`).toBe(VITALS.maxHealth);
+        expect(await told(p)).toEqual([]);
+      }
+      expect(await host.page.evaluate(() => window.__ashbound!.mp!.rejections())).toEqual([]);
+      expect(await ada.page.evaluate(() => window.__ashbound!.mp!.rejections())).toEqual([]);
       expectNoProblems(everyone);
     } finally {
       await closeAll(everyone);

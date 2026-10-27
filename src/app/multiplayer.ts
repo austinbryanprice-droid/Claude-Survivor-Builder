@@ -192,6 +192,8 @@ export interface MultiplayerDebug {
   rejections(): Rejection[];
   /** World events applied since the page loaded. */
   eventCount(): number;
+  /** Breacher blasts heard since the page loaded, wherever they went off. */
+  blastCount(): number;
 }
 
 export interface Multiplayer {
@@ -250,8 +252,11 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     if (node) shotFx.strip({ x: node.x, y: node.y + DEBRIS.lift, z: node.z });
   });
   // A breacher going off, in anyone's world, is a flash and a fan of fire where it went off.
+  let blasts = 0;
   const stopBlasts = hub.survival.onEvent((event) => {
-    if (event.k === 'blast') shotFx.blast({ x: event.x, y: event.y, z: event.z });
+    if (event.k !== 'blast') return;
+    blasts++;
+    shotFx.blast({ x: event.x, y: event.y, z: event.z });
   });
 
   const panel = createRoomPanel({
@@ -469,6 +474,7 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     restart: (kind) => hub.restartRun(kind),
     rejections: () => [...refusals],
     eventCount: () => events,
+    blastCount: () => blasts,
   };
 
   if (flags.join !== null) lobby.join(flags.join);
