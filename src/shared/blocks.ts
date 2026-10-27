@@ -73,6 +73,7 @@ export const MODULE = {
   node: 4,
   storage: 5,
   bed: 6,
+  light: 7,
 } as const;
 
 /**
@@ -129,11 +130,11 @@ export interface MaterialDef {
 /**
  * The modules, in the order of their ids. The Research Terminal is the first (Phase 5d), the Basic
  * Turret the second (5f), the Generator the third (5g1), the Power Node the fourth (5g2), Storage the
- * fifth (5h1) and the Bed the sixth (5h2); the light follows them (5h). The costs of building one are
- * Scrap only (about 40, 25, 40, 12, 30 and 20), because the notes price them in Composite, which the
+ * fifth (5h1), the Bed the sixth (5h2) and the Light the seventh (5h3). The costs of building one are
+ * Scrap only (about 40, 25, 40, 12, 30, 20 and 10), because the notes price them in Composite, which the
  * Terminal itself unlocks (docs/decisions.md); the Turret's two steps up are paid in the better materials
- * (5f2). What opens the Generator and the Node, and Storage and the Bed, is a group of research points,
- * not a material (`RESEARCH.groups`).
+ * (5f2). What opens the Generator and the Node, and Storage, the Bed and the Light, is a group of research
+ * points, not a material (`RESEARCH.groups`).
  */
 export const MODULES: readonly ModuleDef[] = [
   {
@@ -190,6 +191,16 @@ export const MODULES: readonly ModuleDef[] = [
     cost: { material: MATERIAL.scrap, amount: 20 },
     // Lying along z with its long side toward +x, and low enough for a body to step up onto.
     body: [0.14, 0, 0.03, 0.86, 0.46, 0.97],
+    facesPlayer: true,
+  },
+  {
+    id: MODULE.light,
+    name: 'Light',
+    raises: [],
+    // The cheapest module, so that a crew can light the whole of a base and not one corner of it.
+    cost: { material: MATERIAL.scrap, amount: 10 },
+    // The footprint of its pad and the height of its mast: a lamp is easy to walk round, and the cursor finds the pad.
+    body: [0.25, 0, 0.25, 0.75, 0.95, 0.75],
     facesPlayer: true,
   },
 ];

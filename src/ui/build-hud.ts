@@ -95,6 +95,7 @@ const MODULE_ICONS: Readonly<Record<number, IconId>> = {
   [MODULE.node]: 'node',
   [MODULE.storage]: 'storage',
   [MODULE.bed]: 'bed',
+  [MODULE.light]: 'light',
 };
 
 /**
@@ -213,18 +214,23 @@ export function upgradePrompt(
 }
 
 /**
- * What the tag under the crosshair says of a turret or Power Node the cursor is on in Build Mode: whether it has
- * power and what that does for it. A turret works without power (it is a boost, never a need), and the words say so.
- * Null for a cell that holds neither, which has no state.
+ * What the tag under the crosshair says of a turret, Light or Power Node the cursor is on in Build Mode: whether
+ * it has power and what that does for it. A turret works without power (it is a boost, never a need), and the
+ * words say so; a Light burns low without it. Null for a cell that holds none of them, which has no state.
  */
 export function powerTag(power: PowerState, module: number): HudPowerTag | null {
   if (power === 'none') return null;
   const turret = module === MODULE.turret;
+  const light = module === MODULE.light;
   if (power === 'on') {
     return {
       state: 'on',
       label: 'Powered',
-      detail: turret ? `Fires ${TURRET.poweredRate}× faster` : 'Passes power on',
+      detail: turret
+        ? `Fires ${TURRET.poweredRate}× faster`
+        : light
+          ? 'Burns bright'
+          : 'Passes power on',
     };
   }
   return {
@@ -232,7 +238,9 @@ export function powerTag(power: PowerState, module: number): HudPowerTag | null 
     label: 'No power',
     detail: turret
       ? 'A Generator or Node in reach boosts it'
-      : 'Needs a Generator or Node in reach',
+      : light
+        ? 'Burns low · a Generator or Node in reach lights it'
+        : 'Needs a Generator or Node in reach',
   };
 }
 

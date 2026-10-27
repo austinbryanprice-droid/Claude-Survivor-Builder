@@ -7,9 +7,9 @@ import type { ModuleSite, ModuleSource, Powered } from './turrets';
 /**
  * The crew's power (SPEC section 9: power by radius, no wiring, "do not require a full simulation").
  * A Generator is a module standing in a cell, and while it stands it has power: a player within its
- * reach gets Energy back, as inside the Core's field, and a turret or a Power Node within its reach
- * has power too. A Node that has power carries it on, to the turrets and Nodes within its own reach,
- * so a few Nodes take power from a Generator across a base. There is no fuel, no wiring and no load:
+ * reach gets Energy back, as inside the Core's field, and a turret, a Light or a Power Node within its
+ * reach has power too. A Node that has power carries it on, to the turrets, Lights and Nodes within its
+ * own reach, so a few Nodes take power from a Generator across a base. There is no fuel, no wiring and no load:
  * standing is powered, being near is powered, and nothing runs out. The host's simulation looks again
  * at which modules stand at the start of every step, from the world's own list of them, so one
  * placed, broken or chewed is known the moment the world knows it; every screen runs the same grid on
@@ -26,14 +26,19 @@ export function reachOfModule(module: number): number {
   return 0;
 }
 
-/** Whether a module takes part in power: it gives it, carries it or takes it (a Terminal does none of these). */
+/** Whether a module takes part in power: it gives it, carries it or takes it (a Terminal, a Storage and a Bed do none of these). */
 function takesPart(module: number): boolean {
-  return module === MODULE.generator || module === MODULE.node || module === MODULE.turret;
+  return (
+    module === MODULE.generator ||
+    module === MODULE.node ||
+    module === MODULE.turret ||
+    module === MODULE.light
+  );
 }
 
 /** Whether a module takes power from the ones around it (a Generator has its own): the ones that are 'on' or 'off', and that the screen tags with which. */
 export function receivesPower(module: number): boolean {
-  return module === MODULE.node || module === MODULE.turret;
+  return module === MODULE.node || module === MODULE.turret || module === MODULE.light;
 }
 
 /** Where Energy comes back besides the Core's field: what a player standing at a spot is given each second. */

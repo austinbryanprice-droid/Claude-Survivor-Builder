@@ -38,7 +38,7 @@ import { TURRET_GUN } from '../../shared/turret';
  */
 
 /** What a part of a model is made of; each look is one material and so one draw call. */
-export type ModuleLook = 'plate' | 'trim' | 'amber' | 'lights' | 'screen' | 'beacon';
+export type ModuleLook = 'plate' | 'trim' | 'amber' | 'lights' | 'screen' | 'beacon' | 'lamp';
 
 export interface ModuleLookSpec {
   readonly color: string;
@@ -51,6 +51,8 @@ export interface ModuleLookSpec {
 /**
  * The looks of the modules, in the Core's palette: dark steel, lighter plates, amber trim and cyan
  * light, the cyan of a module that is powered and the amber of one that is working (the art direction).
+ * The lamp is the Light's own: a warm lantern glow that stays as it is, with no beat or blink, and that
+ * is bright enough to bloom.
  */
 export const MODULE_LOOKS: Readonly<Record<ModuleLook, ModuleLookSpec>> = {
   plate: { color: '#31405a', gloss: 0.55, metalness: 0.65 },
@@ -59,6 +61,7 @@ export const MODULE_LOOKS: Readonly<Record<ModuleLook, ModuleLookSpec>> = {
   lights: { color: '#0e2f36', gloss: 0.5, metalness: 0.1, glow: '#3ad1e0', glowIntensity: 1.4 },
   screen: { color: '#0e2f36', gloss: 0.9, metalness: 0.1, glow: '#2aa9b8', glowIntensity: 0.75 },
   beacon: { color: '#7a4a12', gloss: 0.3, metalness: 0.2, glow: '#f2a43a', glowIntensity: 2.2 },
+  lamp: { color: '#6a5530', gloss: 0.3, metalness: 0.1, glow: '#ffc778', glowIntensity: 2.0 },
 };
 
 /** The looks a model is made of, in the order they are drawn. */
@@ -645,6 +648,44 @@ function bed(): Parts {
   };
 }
 
+/**
+ * Light: a lantern on a mast, on a small steel pad. A slender mast rises from a collar and carries an
+ * arm that leans out toward the front, and at the end of the arm a hood shades a warm lamp that shows
+ * under it and across its front, which is the side a player sees. Cyan strips run round the pad and up
+ * the mast, a ring of amber marks the collar. It takes power, and without it the lamp and the strips
+ * burn low.
+ */
+function light(): Parts {
+  const cheeks = [-1, 1] as const;
+  return {
+    plate: [
+      // The foundation under the pad: it meets the ground where the module floats over it.
+      box(0.3, 0.78, 0.3, 0, -0.59, 0, 0),
+      box(0.5, 0.3, 0.5, 0, -0.07, 0),
+      box(0.42, 0.08, 0.42, 0, 0.12, 0, 0),
+      post(0.1, 0.07, 0, 0.23, 0, 10),
+      post(0.56, 0.028, 0, 0.56, 0, 8),
+      // The hood: a shade over the lamp, a shell behind it and a cheek on each side.
+      box(0.32, 0.045, 0.24, 0.13, 0.905, 0, 0.35),
+      box(0.045, 0.11, 0.24, -0.02, 0.84, 0, 0.3),
+      ...cheeks.map((side) => box(0.28, 0.09, 0.025, 0.13, 0.845, side * 0.1, 0.2)),
+    ],
+    trim: [
+      box(0.44, 0.02, 0.44, 0, 0.17, 0, 0.4),
+      post(0.02, 0.04, 0, 0.38, 0, 8),
+      post(0.02, 0.04, 0, 0.62, 0, 8),
+      box(0.24, 0.03, 0.04, 0.09, 0.835, 0, 0.3),
+    ],
+    amber: [post(0.025, 0.05, 0, 0.3, 0, 8)],
+    lights: [box(0.5, 0.015, 0.5, 0, 0.075, 0, 0), box(0.008, 0.28, 0.02, 0.03, 0.54, 0, 0)],
+    lamp: [
+      // Under the hood and across its front: the lamp is seen from below and from the side it faces.
+      box(0.25, 0.012, 0.17, 0.14, 0.797, 0, 0),
+      box(0.012, 0.07, 0.17, 0.268, 0.84, 0, 0),
+    ],
+  };
+}
+
 /** The models, by module id. */
 const BUILDERS: Readonly<Record<number, (level: number) => Build>> = {
   [MODULE.terminal]: () => ({ body: terminal() }),
@@ -653,6 +694,7 @@ const BUILDERS: Readonly<Record<number, (level: number) => Build>> = {
   [MODULE.node]: () => ({ body: node() }),
   [MODULE.storage]: () => ({ body: storage() }),
   [MODULE.bed]: () => ({ body: bed() }),
+  [MODULE.light]: () => ({ body: light() }),
 };
 
 /** One merged geometry for each look the parts use. */
