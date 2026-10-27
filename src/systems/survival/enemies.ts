@@ -27,6 +27,12 @@ import { NAV_WALLED, type NavCell, type NavGrid } from './nav';
  * bodies over it. Every enemy is a point with a radius: it never leaves the columns the map calls
  * open, so it cannot walk into water, up a cliff or through a wall. What an enemy is, its speed,
  * its bite and how much of a hit it takes, is the body of its kind (`bodyOf`).
+ *
+ * The one exception is a machine that flies (the skimmer, Phase 5i2). It has no use for the routes:
+ * it goes for the nearest player in its pull, else straight for the Core, in a line over water, cliffs
+ * and walls, bites (zaps) from where it hovers, and never chews. Every step it eases its height toward
+ * a hover over the highest of the ground and whatever is built under it and just ahead of it, so it
+ * rises over a wall as it comes to it. It crowds only with others that fly, as walkers do with walkers.
  */
 
 /** What a bite is aimed at: nothing, the Core, or (a positive number) the player with that id. */
@@ -81,12 +87,16 @@ export interface SpawnPlan {
   readonly arc?: number;
 }
 
+/** How a machine that flies keeps its height (`EnemyBody.flies`). */
+type Flight = NonNullable<EnemyBody['flies']>;
+
 interface Enemy {
   readonly id: number;
   readonly kind: number;
   /** What its kind is: read from the table once, when it comes. */
   readonly body: EnemyBody;
   x: number;
+  /** Where its feet rest; for a machine that flies, the underside of its hull. */
   y: number;
   z: number;
   yaw: number;
@@ -170,10 +180,14 @@ export class EnemySim {
     return made;
   }
 
-  /** Puts a machine at a spot, for tests and the debug page. Null where there is no room for it. */
+  /**
+   * Puts a machine at a spot, for tests and the debug page. Null where there is no room for it: a
+   * walker needs open ground, and one that flies only needs the spot to be on the map.
+   */
   spawnAt(x: number, z: number, healthScale = 1, kind: number = ENEMY_KIND.crawler): number | null {
     if (this.list.length >= ENEMIES.maxAlive) return null;
-    if (!this.nav.pointClear(x, z)) return null;
+    const fits = bodyOf(kind)?.flies ? this.nav.indexAt(x, z) >= 0 : this.nav.pointClear(x, z);
+    if (!fits) return null;
     const core = this.options.core;
     return this.add(x, z, Math.atan2(core.x - x, core.z - z), healthScale, kind).id;
   }
@@ -287,10 +301,16 @@ export class EnemySim {
     const victim = this.victimOf(e, targets, count);
     if (victim !== BITE_NOTHING) {
       this.bite(e, victim, dt, strikes);
+      this.settle(e, dt);
       return;
     }
     e.windup = 0;
     e.biting = BITE_NOTHING;
+
+    if (e.body.flies) {
+      this.fly(e, targets, count, dt);
+      return;
+    }
 
     if (this.chaseOf(e, targets, count)) {
       this.walk(e, this.goalX, this.goalZ, dt);
@@ -418,6 +438,7 @@ export class EnemySim {
    */
   private chaseOf(e: Enemy, targets: readonly Target[], count: number): boolean {
     const body = e.body;
+    const flies = body.flies !== undefined;
     let best = 0;
     let bestSquared = Infinity;
     for (let i = 0; i < count; i++) {
@@ -427,8 +448,11 @@ export class EnemySim {
       const dz = t.z - e.z;
       const squared = dx * dx + dz * dz;
       if (squared > reach * reach || squared >= bestSquared) continue;
-      if (Math.abs(t.y - e.y) > body.step + body.reach.height) continue;
-      if (!this.nav.lineClear(e.x, e.z, t.x, t.z)) continue;
+      // A walker goes only for a player it can walk to in a line; one that flies goes over what is between.
+      if (!flies) {
+        if (Math.abs(t.y - e.y) > body.step + body.reach.height) continue;
+        if (!this.nav.lineClear(e.x, e.z, t.x, t.z)) continue;
+      }
       best = t.id;
       bestSquared = squared;
       this.goalX = t.x;
@@ -485,6 +509,57 @@ export class EnemySim {
   }
 
   /**
+   * A machine that flies goes for the nearest player in its pull, else for the middle of the Core, in
+   * a straight line over whatever lies between, and holds its height as it goes.
+   */
+  private fly(e: Enemy, targets: readonly Target[], count: number, dt: number): void {
+    if (!this.chaseOf(e, targets, count)) {
+      this.goalX = this.options.core.x;
+      this.goalZ = this.options.core.z;
+    }
+    const dx = this.goalX - e.x;
+    const dz = this.goalZ - e.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance >= 0.02) {
+      const left = Math.abs(this.turn(e, this.goalX, this.goalZ, dt));
+      if (left <= TURN_FIRST) {
+        const travel = Math.min(distance, e.body.speed * dt * Math.cos(left));
+        e.x += Math.sin(e.yaw) * travel;
+        e.z += Math.cos(e.yaw) * travel;
+        e.speed = travel / dt;
+      }
+    }
+    this.settle(e, dt);
+  }
+
+  /** Eases a machine that flies toward its hover height, no faster than it can climb or sink. Walkers stay on the ground. */
+  private settle(e: Enemy, dt: number): void {
+    const flies = e.body.flies;
+    if (!flies) return;
+    const most = flies.climb * dt;
+    e.y += Math.max(-most, Math.min(most, this.hoverHeight(e.x, e.z, e.yaw, flies) - e.y));
+  }
+
+  /**
+   * The height a machine that flies holds at a spot facing a way: `hover` blocks over the highest of
+   * the ground and what is built in the columns under it and along its way for `lookAhead` blocks, a
+   * block apart, so it is already rising when it reaches a wall or a rise in the land and a wall one
+   * block thick is seen. The Core is left out of what it looks ahead at: it stops short of the Core's
+   * wall to zap it, and does so at the height it flies at, not over the Core.
+   */
+  private hoverHeight(x: number, z: number, yaw: number, flies: Flight): number {
+    let top = this.nav.coverAt(x, z, flies.scan);
+    const dx = Math.sin(yaw);
+    const dz = Math.cos(yaw);
+    for (let ahead = 1; ; ahead++) {
+      const along = Math.min(ahead, flies.lookAhead);
+      top = Math.max(top, this.nav.coverAt(x + dx * along, z + dz * along, flies.scan, false));
+      if (along >= flies.lookAhead) break;
+    }
+    return top + flies.hover;
+  }
+
+  /**
    * True when the body fits at a spot: open ground all round it that it can climb. An enemy that
    * is already stuck (a block was built beside it) may step out into any open column it can climb to.
    */
@@ -500,6 +575,8 @@ export class EnemySim {
       const a = list[i] as Enemy;
       for (let j = i + 1; j < list.length; j++) {
         const b = list[j] as Enemy;
+        // Machines that fly pass over the ones that walk, so the two crowd only among themselves.
+        if ((a.body.flies !== undefined) !== (b.body.flies !== undefined)) continue;
         // Two machines part when their bodies touch: the sum of their radii.
         const need = a.body.radius + b.body.radius;
         const needSquared = need * need;
@@ -520,6 +597,12 @@ export class EnemySim {
   }
 
   private shove(e: Enemy, dx: number, dz: number): void {
+    // Nothing on the ground stops a machine that flies; its height follows on its next step.
+    if (e.body.flies) {
+      e.x += dx;
+      e.z += dz;
+      return;
+    }
     if (!this.canStand(e, e.x + dx, e.z + dz)) return;
     e.x += dx;
     e.z += dz;
@@ -545,6 +628,7 @@ export class EnemySim {
     const rng = plan?.rng ?? this.rng;
     const bearing = plan?.bearing;
     const arc = plan?.arc ?? 0;
+    const flies = bodyOf(kind)?.flies !== undefined;
     for (let attempt = 0; attempt < SPAWN_ATTEMPTS; attempt++) {
       // The first tries keep to the wave's stretch of the ring; the last few take any of it.
       const angle =
@@ -555,8 +639,11 @@ export class EnemySim {
       const x = core.x + Math.cos(angle) * radius;
       const z = core.z + Math.sin(angle) * radius;
       const column = this.nav.indexAt(x, z);
-      if (column < 0 || !Number.isFinite(this.nav.costOf(column))) continue;
-      if (!this.nav.pointClear(x, z)) continue;
+      if (column < 0) continue;
+      // A walker comes up on open ground with a way to the Core; one that flies comes in anywhere on the ring, the lake too.
+      if (!flies && (!Number.isFinite(this.nav.costOf(column)) || !this.nav.pointClear(x, z))) {
+        continue;
+      }
       this.add(x, z, Math.atan2(core.x - x, core.z - z), healthScale, kind);
       return true;
     }
@@ -566,14 +653,15 @@ export class EnemySim {
   private add(x: number, z: number, yaw: number, healthScale: number, kind: number): Enemy {
     // A kind this table does not know is a crawler, so a machine always has a body.
     const known = bodyOf(kind);
-    const body = known ?? ENEMIES.crawler;
+    const body: EnemyBody = known ?? ENEMIES.crawler;
     const maxHealth = body.health * healthScale;
     const enemy: Enemy = {
       id: this.takeId(),
       kind: known ? kind : ENEMY_KIND.crawler,
       body,
       x,
-      y: this.nav.heightAt(x, z),
+      // A machine that flies comes in already at its hover height.
+      y: body.flies ? this.hoverHeight(x, z, yaw, body.flies) : this.nav.heightAt(x, z),
       z,
       yaw,
       health: maxHealth,

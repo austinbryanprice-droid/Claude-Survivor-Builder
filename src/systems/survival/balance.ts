@@ -218,6 +218,19 @@ export interface EnemyBody {
   readonly takes: number;
   /** What the crew finds in the pool when it fells one (Tier 4 cells drop only from special machines), or null. */
   readonly drop: { readonly material: number; readonly amount: number } | null;
+  /**
+   * Set for a machine that flies. It has no use for the map: it goes straight for its goal over walls,
+   * water and cliffs, and keeps `hover` blocks of air under it above the highest of the ground (or the
+   * water) and whatever is built in the column it is over and in the one `lookAhead` blocks ahead,
+   * looking up to `scan` rows above the ground. It rises or sinks at most `climb` blocks a second, so a
+   * wall or a cliff too tall to clear in the time it takes to reach it is brushed past, not leapt.
+   */
+  readonly flies?: {
+    readonly hover: number;
+    readonly climb: number;
+    readonly lookAhead: number;
+    readonly scan: number;
+  };
 }
 
 /** Seconds one machine of the crawler's kind takes to chew through one block, by material: tougher blocks hold longer. */
@@ -315,6 +328,36 @@ export const ENEMIES = {
     takes: 0.6,
     drop: { material: MATERIAL.energy, amount: 3 },
   },
+
+  /**
+   * The flying skimmer (Phase 5i2): a small saucer that does not walk. It crosses water, cliffs and the
+   * crew's walls at a hover, goes for the nearest player and otherwise straight for the Core, and zaps
+   * from above, so a wall holds it back no longer than a lake does. It is quick and fragile: with a
+   * night's tougher steel it takes about three shots of the blaster, and a hit takes all of its points.
+   * Its position is the underside of the hull, which is where a bolt's box starts. A roof over a player
+   * lifts it out of its reach (`reach.height`). A first guess to be tuned by playing (docs/decisions.md,
+   * Phase 5i2) and by the balance simulator of 5j.
+   */
+  flyer: {
+    health: 20,
+    speed: 3.6,
+    turnRate: 10,
+    radius: 0.4,
+    height: 0.45,
+    hitbox: { halfWidth: 0.65, height: 0.55 },
+    /** It crosses everything, so it has no step to climb. */
+    step: 0,
+    bite: { player: 5, core: 4, windup: 0.4, interval: 1.3 },
+    /** Its reach: across to a player or the side of the Core, and how far below its hull a player can be and still be zapped. */
+    reach: { player: 1.8, core: 2.4, height: 4.2 },
+    aggro: 10,
+    /** It never chews (it flies over walls); the times are the same as the others' so that every body is whole. */
+    gnawSeconds: GNAW_SECONDS,
+    gnawDefault: 2,
+    takes: 1,
+    drop: { material: MATERIAL.energy, amount: 2 },
+    flies: { hover: 2.6, climb: 8, lookAhead: 3.5, scan: 32 },
+  },
 } as const;
 
 /**
@@ -343,13 +386,13 @@ export const WAVES = {
 
   /**
    * The body each kind of the plan has (`ENEMY_KIND`), and how many times that body's Health it has.
-   * The armored crawler has its own body (5i1); the flyer and the breacher walk, are drawn and fight
-   * as crawlers until 5i2 and 5i3 give them theirs.
+   * The armored crawler (5i1) and the flying skimmer (5i2) have bodies of their own; the breacher
+   * walks, is drawn and fights as a crawler until 5i3 gives it one.
    */
   kinds: {
     crawler: { body: ENEMY_KIND.crawler, health: 1 },
     armored: { body: ENEMY_KIND.armored, health: 1 },
-    flyer: { body: ENEMY_KIND.crawler, health: 1 },
+    flyer: { body: ENEMY_KIND.flyer, health: 1 },
     breacher: { body: ENEMY_KIND.crawler, health: 1 },
   },
 
@@ -385,6 +428,8 @@ export function bodyOf(kind: number): EnemyBody | undefined {
       return ENEMIES.crawler;
     case ENEMY_KIND.armored:
       return ENEMIES.armored;
+    case ENEMY_KIND.flyer:
+      return ENEMIES.flyer;
     default:
       return undefined;
   }

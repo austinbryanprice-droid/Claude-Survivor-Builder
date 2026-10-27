@@ -255,6 +255,26 @@ export class NavGrid {
     return near * (1 - v) + far * v;
   }
 
+  /**
+   * How high the ground is (the water's surface over a lake), or the top of the highest block that
+   * stands in the cell column holding the point, looking up to `scan` rows above that. The Core's own
+   * blocks count unless `withCore` is false. A machine that flies reads it to keep clear of walls, roofs
+   * and water. It asks the world, not the columns, so it is right about what is built this moment and
+   * for points off the map too.
+   */
+  coverAt(x: number, z: number, scan: number, withCore = true): number {
+    const ground = Math.max(this.heightAt(x, z), this.world.waterLevel);
+    const cx = Math.floor(x);
+    const cz = Math.floor(z);
+    const low = Math.floor(ground + EPSILON);
+    for (let y = low + scan; y >= low; y--) {
+      if (!this.world.solids.isSolid(cx, y, cz)) continue;
+      if (!withCore && this.core.contains(cx, y, cz)) continue;
+      return Math.max(ground, y + 1);
+    }
+    return ground;
+  }
+
   // --------------------------------------------------------------------------------------------
   // Changes.
   // --------------------------------------------------------------------------------------------

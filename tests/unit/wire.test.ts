@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createEnemyState, type EnemyState } from '../../src/shared/enemy-state';
+import {
+  ENEMY_KIND,
+  ENEMY_KIND_COUNT,
+  createEnemyState,
+  type EnemyState,
+} from '../../src/shared/enemy-state';
 import { createRng } from '../../src/shared/hash';
 import { NET } from '../../src/shared/net-config';
 import {
@@ -965,11 +970,14 @@ describe('enemy packets', () => {
       enemy({ id: 1, x: 12.5, y: 8.25, z: -30.0625, yaw: 1.2, health: 255 }),
       enemy({ id: 400, x: -45.4, y: 11.2, z: 60.9, yaw: -2.9, health: 100, flags: 1 }),
       enemy({ id: 65535, x: 0, y: 0, z: 0, yaw: Math.PI - 0.001, health: 1, flags: 3 }),
+      // The other kinds, and a machine that flies hovering high over a tall build.
+      enemy({ id: 8, kind: ENEMY_KIND.armored, x: 3.5, y: 9, z: -2, yaw: 0.5, health: 200 }),
+      enemy({ id: 9, kind: ENEMY_KIND.flyer, x: -3.3, y: 41.5, z: 5.5, yaw: 0.3, health: 120 }),
     ];
     const packet = decodeEnemies(encodeEnemies(65534, 5_000_000, states, states.length))!;
     expect(packet.seq).toBe(65534);
     expect(packet.hostTime).toBe(5_000_000);
-    expect(packet.entries).toHaveLength(3);
+    expect(packet.entries).toHaveLength(5);
     states.forEach((sent, i) => {
       const got = packet.entries[i] as EnemyState;
       expect(got.id).toBe(sent.id);
@@ -1074,6 +1082,15 @@ describe('enemy packets', () => {
     const strange = base.slice();
     strange[10] = 200;
     expect(decodeEnemies(strange)).toBeNull();
+    // Every kind this build has is accepted, and the first one past the last is not.
+    for (const kind of Object.values(ENEMY_KIND)) {
+      const known = base.slice();
+      known[10] = kind;
+      expect(decodeEnemies(known)?.entries[0]?.kind).toBe(kind);
+    }
+    const next = base.slice();
+    next[10] = ENEMY_KIND_COUNT;
+    expect(decodeEnemies(next)).toBeNull();
     const dead = base.slice();
     dead[19] = 0;
     expect(decodeEnemies(dead)).toBeNull();

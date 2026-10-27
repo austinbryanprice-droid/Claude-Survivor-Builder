@@ -8,6 +8,7 @@ import {
   InstancedBufferGeometry,
   Mesh,
   ShaderMaterial,
+  Vector4,
   type BufferGeometry,
 } from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -21,10 +22,11 @@ import type { MaterialRegistry } from './materials';
 /**
  * The machines that come for the Core, each kind drawn as one instanced mesh: a crawler is a low,
  * six-legged walker of dark steel with amber joints and a red eye, built from boxes in code (no
- * assets), the armored crawler is a heavier, plated one, and all the crawlers of a kind cost one draw
- * call and one more for their shadows. The legs, the jaws, the lunge of a bite and the rise out of
- * the ground on arrival are all done in the vertex shader from a few numbers per machine, so a
- * hundred of them cost the CPU a handful of array writes a frame.
+ * assets), the armored crawler is a heavier, plated one, the skimmer is a saucer on four spinning
+ * rotors that hovers, and all the machines of a kind cost one draw call and one more for their
+ * shadows. The legs, the jaws, the rotors, the lunge of a bite and the rise on arrival are all done in
+ * the vertex shader from a few numbers per machine, so a hundred of them cost the CPU a handful of
+ * array writes a frame.
  *
  * The poses come from the network layer already smoothed (`EnemyMirror`); this only dresses them.
  * What it keeps per machine is what the picture needs and the host does not say: how far the legs
@@ -47,16 +49,26 @@ const MAX_STEP = 0.1;
 const SIZE_SPREAD = 0.05;
 
 /** Surface looks. They index the colors in the fragment shader. */
-const LOOK = { shell: 0, plate: 1, amber: 2, eye: 3, blade: 4 } as const;
+const LOOK = { shell: 0, plate: 1, amber: 2, eye: 3, blade: 4, emitter: 5 } as const;
 /** How a vertex moves. */
-const KIND = { body: 0, leg: 1, lowerLeg: 2, jaw: 3 } as const;
+const KIND = { body: 0, leg: 1, lowerLeg: 2, jaw: 3, rotor: 4, beam: 5 } as const;
 
 const ANIMATION_GLSL = /* glsl */ `
 attribute vec3 iPos;
 attribute vec4 iData;   // yaw, size, gait phase, gait amount (0 standing, 1 at full swing)
 attribute vec4 iState;  // health, flash, attack, rise
 attribute vec4 aPart;   // look, how it moves, tripod group, side (-1 left, 1 right)
-attribute vec3 aHip;    // where a leg or a jaw turns, in the model's own space
+attribute vec3 aHip;    // where a leg, a jaw or a rotor turns, in the model's own space
+
+// What sets a kind's carriage apart. x: how far its body leans into a flight, y: how far it bobs,
+// z: how far it lunges for a bite, w: how far its nose dips for one. A walker has only the lunge.
+uniform vec4 uMotion;
+
+vec3 rotX(vec3 v, float a) {
+  float c = cos(a);
+  float s = sin(a);
+  return vec3(v.x, c * v.y - s * v.z, s * v.y + c * v.z);
+}
 
 vec3 rotY(vec3 v, float a) {
   float c = cos(a);
@@ -90,15 +102,32 @@ void poseVertex(vec3 p, vec3 n, out vec3 wp, out vec3 wn) {
     m = rotY(m, -side * swing);
     p = aHip + q;
     n = m;
-  } else if (how > 2.5) {
+  } else if (how > 2.5 && how < 3.5) {
     // The jaws hang a little open and gape for a bite.
     float open = 0.08 + 0.55 * attack;
     p = aHip + rotY(p - aHip, side * open);
     n = rotY(n, side * open);
+  } else if (how > 3.5 && how < 4.5) {
+    // A rotor turns about its hub, the pairs along a diagonal the opposite ways.
+    float turn = (iData.z + aPart.z * 0.785398) * side;
+    p = aHip + rotY(p - aHip, turn);
+    n = rotY(n, turn);
+  } else if (how > 4.5) {
+    // The beam under a skimmer grows out of its emitter as a zap charges, and is gone between zaps.
+    p.y = aHip.y + (p.y - aHip.y) * attack;
   }
 
-  p.y += 0.02 * gait * abs(sin(iData.z));
-  p.z += 0.22 * attack;
+  // A machine that flies leans into its flight, dips its nose to strike and bobs on its lift.
+  float pitch = uMotion.x * gait + uMotion.w * attack;
+  if (pitch != 0.0) {
+    vec3 centre = vec3(0.0, 0.16, 0.0);
+    p = centre + rotX(p - centre, pitch);
+    n = rotX(n, pitch);
+  }
+  // A walker's body rocks with its stride; one that flies bobs, with a period that fits the wrap of the phase.
+  p.y += 0.02 * gait * abs(sin(iData.z)) * step(uMotion.x, 0.0);
+  p.y += uMotion.y * sin(iData.z * 0.09);
+  p.z += uMotion.z * attack;
   p.y -= 0.05 * attack;
   p *= iData.y * mix(0.6, 1.0, rise);
   p.y -= (1.0 - rise) * 0.4;
@@ -118,6 +147,7 @@ varying float vLook;
 varying float vHealth;
 varying float vFlash;
 varying float vPhase;
+varying float vAttack;
 
 void main() {
   vec3 wp;
@@ -132,6 +162,7 @@ void main() {
   vHealth = iState.x;
   vFlash = iState.y;
   vPhase = iData.z;
+  vAttack = iState.z;
   writeShadowVaryings(wp, wn, vViewDepth);
 }
 `;
@@ -147,6 +178,8 @@ uniform vec3 uAmberGlow;
 uniform vec3 uEye;
 uniform vec3 uEyeGlow;
 uniform vec3 uBlade;
+uniform vec3 uEmitter;
+uniform vec3 uEmitterGlow;
 
 varying vec3 vWorld;
 varying vec3 vNormal;
@@ -155,6 +188,7 @@ varying float vLook;
 varying float vHealth;
 varying float vFlash;
 varying float vPhase;
+varying float vAttack;
 
 // The base color, the light it gives off, and x: gloss, y: metalness of a look.
 void surface(float look, out vec3 base, out vec3 glow, out vec2 finish) {
@@ -173,9 +207,14 @@ void surface(float look, out vec3 base, out vec3 glow, out vec2 finish) {
     base = uEye;
     glow = uEyeGlow;
     finish = vec2(0.8, 0.1);
-  } else {
+  } else if (look < 4.5) {
     base = uBlade;
     finish = vec2(0.7, 0.7);
+  } else {
+    // The emitter under a skimmer's belly smoulders, and burns as it charges a zap.
+    base = uEmitter;
+    glow = uEmitterGlow * (0.3 + 1.7 * vAttack);
+    finish = vec2(0.6, 0.2);
   }
 }
 
@@ -435,6 +474,62 @@ function buildArmored(): BufferGeometry {
   return weld(parts, 'armored crawler');
 }
 
+/**
+ * The skimmer in the same space: the underside of its hull is the origin and its face is +Z. A
+ * saucer of dark steel with a deck of plate, a red eye strip across the nose, a fin behind and amber
+ * rim lights; an emitter under the belly that smoulders and burns as a zap charges, with a beam that
+ * grows out of it; and four rotor pods on arms, each with crossed blades that turn. About 0.65 wide and
+ * 1.2 long over the hull, 1.4 across the rotors and 0.4 tall; the picture draws it larger.
+ */
+function buildSkimmer(): BufferGeometry {
+  const parts: BufferGeometry[] = [];
+
+  // Hull, deck of plate with a spine of light, the nose with its eye and the tail with its fin.
+  parts.push(piece(block(0.64, 0.2, 0.86, [0, 0.16, 0], 0.07), LOOK.shell));
+  parts.push(piece(block(0.5, 0.07, 0.6, [0, 0.31, -0.04], 0.025), LOOK.plate));
+  parts.push(piece(block(0.06, 0.025, 0.42, [0, 0.36, -0.04]), LOOK.amber));
+  parts.push(piece(block(0.4, 0.14, 0.22, [0, 0.15, 0.48], 0.05), LOOK.shell));
+  parts.push(piece(block(0.32, 0.05, 0.03, [0, 0.17, 0.595]), LOOK.eye));
+  parts.push(piece(block(0.36, 0.14, 0.2, [0, 0.16, -0.5], 0.04), LOOK.shell));
+  parts.push(piece(block(0.05, 0.16, 0.22, [0, 0.33, -0.5]), LOOK.plate));
+  for (const side of [-1, 1]) {
+    parts.push(piece(block(0.03, 0.04, 0.6, [side * 0.335, 0.16, 0]), LOOK.amber));
+  }
+
+  // The emitter, and the beam that grows out of it (a box that hangs from the lens and is shrunk to nothing between zaps).
+  const lens: Point = [0, 0.02, 0.06];
+  parts.push(piece(block(0.22, 0.06, 0.22, [0, 0.05, 0.06], 0.02), LOOK.plate));
+  parts.push(piece(block(0.14, 0.03, 0.14, lens), LOOK.emitter));
+  parts.push(
+    piece(
+      block(0.035, 1.9, 0.035, [lens[0], lens[1] - 0.95, lens[2]]),
+      LOOK.emitter,
+      KIND.beam,
+      0,
+      0,
+      lens,
+    ),
+  );
+
+  // Four rotor pods on arms. The rotors on a diagonal turn the same way, and the crosses are set a
+  // little apart so that the four do not flash in step.
+  for (const side of [-1, 1]) {
+    for (const row of [-1, 1]) {
+      const z = row * 0.34;
+      const hub: Point = [side * 0.5, 0.325, z];
+      parts.push(piece(block(0.2, 0.045, 0.06, [side * 0.41, 0.2, z]), LOOK.plate));
+      parts.push(piece(block(0.14, 0.09, 0.14, [side * 0.5, 0.25, z], 0.03), LOOK.shell));
+      parts.push(piece(block(0.05, 0.05, 0.05, hub), LOOK.amber));
+      const group = row > 0 ? 1 : 0;
+      const way = side * row;
+      parts.push(piece(block(0.46, 0.014, 0.06, hub), LOOK.blade, KIND.rotor, group, way, hub));
+      parts.push(piece(block(0.06, 0.014, 0.46, hub), LOOK.blade, KIND.rotor, group, way, hub));
+    }
+  }
+
+  return weld(parts, 'skimmer');
+}
+
 /** The colors of a kind: the shell and plate of the body, the amber of its joints and the eye, and the glow of each. */
 interface Palette {
   readonly shell: string;
@@ -444,6 +539,9 @@ interface Palette {
   readonly eye: string;
   readonly eyeGlow: number;
   readonly blade: string;
+  /** The emitter under a skimmer's belly, and how brightly it glows at rest (a walker has none). */
+  readonly emitter: string;
+  readonly emitterGlow: number;
 }
 
 /** What sets a kind of machine apart in the picture: its model, how large it is drawn, how it walks and what color it is. */
@@ -456,8 +554,15 @@ interface Variant {
   /** Radians of gait per block walked, and the speed at which its legs are at full swing. */
   readonly stride: number;
   readonly fullGait: number;
+  /** Radians a second its rotors turn, or 0 for a machine that walks (its stride follows its speed). */
+  readonly spin: number;
+  /** How its body carries itself, as the shader's `uMotion`: lean into a flight, bob, lunge for a bite, dip of the nose for one. */
+  readonly motion: readonly [number, number, number, number];
   readonly palette: Palette;
 }
+
+/** How a walker carries itself: it does not lean, bob or dip, and lunges a fifth of a body for a bite. */
+const WALKER_MOTION = [0, 0, 0.22, 0] as const;
 
 /** The kinds the picture knows, indexed by `ENEMY_KIND`. A kind it does not know is drawn as the first. */
 const VARIANTS: readonly Variant[] = [
@@ -467,6 +572,8 @@ const VARIANTS: readonly Variant[] = [
     scale: 1,
     stride: STRIDE,
     fullGait: FULL_GAIT_SPEED,
+    spin: 0,
+    motion: WALKER_MOTION,
     palette: {
       shell: '#262d35',
       plate: '#414b57',
@@ -475,6 +582,8 @@ const VARIANTS: readonly Variant[] = [
       eye: '#1c0805',
       eyeGlow: 2.6,
       blade: '#9aa4af',
+      emitter: '#201a14',
+      emitterGlow: 0,
     },
   },
   {
@@ -484,6 +593,8 @@ const VARIANTS: readonly Variant[] = [
     scale: 1.2,
     stride: 4,
     fullGait: 1.3,
+    spin: 0,
+    motion: WALKER_MOTION,
     palette: {
       shell: '#1f252c',
       plate: '#5b4838',
@@ -492,6 +603,30 @@ const VARIANTS: readonly Variant[] = [
       eye: '#1c0805',
       eyeGlow: 3.2,
       blade: '#b3a99a',
+      emitter: '#201a14',
+      emitterGlow: 0,
+    },
+  },
+  {
+    // It hovers: its rotors turn all the time, it leans into a flight as far as its speed takes it and
+    // dips its nose to strike. A cooler, bluer steel than the walkers' so that it reads against the sky.
+    name: 'skimmers',
+    build: buildSkimmer,
+    scale: 1.25,
+    stride: 0,
+    fullGait: 3.6,
+    spin: 34,
+    motion: [0.3, 0.035, 0.1, 0.35],
+    palette: {
+      shell: '#2b3644',
+      plate: '#53657a',
+      amber: '#b97b22',
+      amberGlow: 0.8,
+      eye: '#1c0805',
+      eyeGlow: 3,
+      blade: '#b9c3cf',
+      emitter: '#3a2c1c',
+      emitterGlow: 2.4,
     },
   },
 ];
@@ -533,6 +668,8 @@ interface Batch {
   readonly model: BufferGeometry;
   readonly geometry: InstancedBufferGeometry;
   readonly material: ShaderMaterial;
+  /** What its shadow is drawn with: the same pose as the body, so the shadow turns and leans with it. */
+  readonly depth: ShaderMaterial;
   readonly mesh: Mesh;
   readonly positions: Float32Array;
   readonly looks: Float32Array;
@@ -544,12 +681,7 @@ interface Batch {
   count: number;
 }
 
-function createBatch(
-  variant: Variant,
-  registry: MaterialRegistry,
-  depth: ShaderMaterial,
-  capacity: number,
-): Batch {
+function createBatch(variant: Variant, registry: MaterialRegistry, capacity: number): Batch {
   const model = variant.build();
   const geometry = new InstancedBufferGeometry();
   for (const name of ['position', 'normal', 'aPart', 'aHip']) {
@@ -569,6 +701,13 @@ function createBatch(
   geometry.instanceCount = 0;
 
   const { palette } = variant;
+  // The body and its shadow carry themselves the same way, so they share the numbers.
+  const motion = { value: new Vector4(...variant.motion) };
+  const depth = new ShaderMaterial({
+    vertexShader: DEPTH_VERTEX,
+    fragmentShader: DEPTH_FRAGMENT,
+    uniforms: { uMotion: motion },
+  });
   const material = registry.create({
     vertexShader: VERTEX,
     fragmentShader: FRAGMENT,
@@ -580,6 +719,9 @@ function createBatch(
       uEye: { value: new Color(palette.eye) },
       uEyeGlow: { value: new Color('#ff4a26').multiplyScalar(palette.eyeGlow) },
       uBlade: { value: new Color(palette.blade) },
+      uEmitter: { value: new Color(palette.emitter) },
+      uEmitterGlow: { value: new Color('#ffc27a').multiplyScalar(palette.emitterGlow) },
+      uMotion: motion,
     },
   });
 
@@ -595,6 +737,7 @@ function createBatch(
     model,
     geometry,
     material,
+    depth,
     mesh,
     positions,
     looks,
@@ -610,8 +753,7 @@ export function createEnemyRenderer({
   registry,
   capacity = NET.maxEnemies,
 }: EnemyRendererOptions): EnemyRenderer {
-  const depth = new ShaderMaterial({ vertexShader: DEPTH_VERTEX, fragmentShader: DEPTH_FRAGMENT });
-  const batches = VARIANTS.map((variant) => createBatch(variant, registry, depth, capacity));
+  const batches = VARIANTS.map((variant) => createBatch(variant, registry, capacity));
   const crawlers = batches[0] as Batch;
   const object = new Group();
   object.name = 'enemies';
@@ -653,7 +795,9 @@ export function createEnemyRenderer({
           tracks.set(pose.id, track);
         }
         track.seen = true;
-        track.phase = (track.phase + pose.speed * step * variant.stride) % (Math.PI * 200);
+        // A walker's legs turn as far as it walks; a skimmer's rotors turn all the time.
+        const turning = variant.spin > 0 ? variant.spin : pose.speed * variant.stride;
+        track.phase = (track.phase + turning * step) % (Math.PI * 200);
         track.gait = follow(
           track.gait,
           Math.min(1, pose.speed / variant.fullGait),
@@ -727,8 +871,8 @@ export function createEnemyRenderer({
         batch.geometry.dispose();
         batch.model.dispose();
         registry.release(batch.material);
+        batch.depth.dispose();
       }
-      depth.dispose();
       tracks.clear();
       shown = 0;
     },

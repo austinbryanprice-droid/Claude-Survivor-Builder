@@ -20,6 +20,8 @@ const PLAYER = 2;
 const TURRET_STATE = packState(moduleShape(MODULE.turret, 0), 1);
 const ARMORED = ENEMIES.armored;
 const CELLS = ARMORED.drop?.amount ?? 0;
+const FLYER = ENEMIES.flyer;
+const FLYER_CELLS = FLYER.drop?.amount ?? 0;
 
 /** Blows that fell an armored crawler of the first night: its health over the share it takes. */
 const FELLING = ARMORED.health / ARMORED.takes;
@@ -72,6 +74,16 @@ function field() {
     sim.playerVitals(PLAYER)!.step(BLASTER.interval, null);
     return sim.fire(PLAYER, shooter, west, poses(), poses().length, out);
   };
+  /** A shot at a point, from where the shooter stands: true when the bolt went. */
+  const shootAtPoint = (x: number, y: number, z: number): boolean => {
+    sim.playerVitals(PLAYER)!.step(BLASTER.interval, null);
+    const dx = x - shooter.x;
+    const dy = y - shooter.y;
+    const dz = z - shooter.z;
+    const length = Math.hypot(dx, dy, dz);
+    const dir: Vec3 = { x: dx / length, y: dy / length, z: dz / length };
+    return sim.fire(PLAYER, shooter, dir, poses(), poses().length, out);
+  };
   const stand = (x: number, z: number): void => {
     sites.push({ x, y: FLOOR, z, state: TURRET_STATE });
     flat.place(x, FLOOR, z, TURRET_STATE);
@@ -88,6 +100,7 @@ function field() {
     events,
     energy,
     shoot,
+    shootAtPoint,
     out,
     stand,
   };
@@ -186,5 +199,64 @@ describe('what a felled machine leaves in the pool', () => {
     expect(energy()).toBe(0);
     expect(events()).toEqual([]);
     expect(machines.has(armored)).toBe(false);
+  });
+});
+
+describe('what a felled skimmer leaves in the pool', () => {
+  it('is two Tier 4 cells, once, and the crew is told how many', () => {
+    const { machines, put, energy, events } = field();
+    const skimmer = put(ENEMY_KIND.flyer, 14, 3);
+    expect(FLYER_CELLS).toBeGreaterThan(0);
+    expect(FLYER.drop?.material).toBe(MATERIAL.energy);
+    expect(machines.hurt(skimmer, FLYER.health - 0.1)).toBe(false);
+    expect(energy()).toBe(0);
+    expect(events()).toEqual([]);
+    expect(machines.hurt(skimmer, 0.2)).toBe(true);
+    expect(energy()).toBe(FLYER_CELLS);
+    expect(events()).toEqual([{ k: 'drop', n: 1, m: MATERIAL.energy, c: FLYER_CELLS }]);
+    machines.hurt(skimmer, 1000);
+    expect(energy()).toBe(FLYER_CELLS);
+  });
+
+  it('comes from the blaster, aimed up at it: two shots fell one, and the second leaves the cells', () => {
+    const { machines, put, poses, shootAtPoint, out, energy, events } = field();
+    const skimmer = put(ENEMY_KIND.flyer, 14, -3);
+    const at = poses().find((pose) => pose.id === skimmer)!;
+    expect(at.y).toBeCloseTo(FLOOR + FLYER.flies.hover, 6);
+    const middle = at.y + FLYER.hitbox.height / 2;
+    expect(Math.ceil(FLYER.health / BLASTER.damage)).toBe(2);
+    // A shot level with the ground goes under it.
+    expect(shootAtPoint(at.x, FLOOR + 0.5, at.z)).toBe(true);
+    expect(out.flags & SHOT_FLAG.enemy).toBe(0);
+    expect(shootAtPoint(at.x, middle, at.z)).toBe(true);
+    expect(out.flags).toBe(SHOT_FLAG.enemy);
+    expect(out.enemy).toBe(skimmer);
+    expect(machines.has(skimmer)).toBe(true);
+    expect(energy()).toBe(0);
+    expect(shootAtPoint(at.x, middle, at.z)).toBe(true);
+    expect(out.flags).toBe(SHOT_FLAG.enemy | SHOT_FLAG.kill);
+    expect(machines.has(skimmer)).toBe(false);
+    expect(energy()).toBe(FLYER_CELLS);
+    expect(events()).toEqual([{ k: 'drop', n: 1, m: MATERIAL.energy, c: FLYER_CELLS }]);
+  });
+
+  it('comes from a turret too, which aims up at it: the shot that fells it leaves the cells', () => {
+    const { flat, machines, put, stand, sim, energy, events } = field();
+    // Only the skimmer is left on the field for the turret to pick.
+    machines.clear();
+    const skimmer = put(ENEMY_KIND.flyer, 14, 0);
+    stand(Math.floor(flat.core.x) - 8, Math.floor(flat.core.z));
+    // Leave it one basic turret shot's worth of health.
+    machines.hurt(skimmer, FLYER.health - 4);
+    expect(energy()).toBe(0);
+    const shots: TurretShot[] = [];
+    for (let i = 0; i < 20 && energy() === 0; i++) {
+      sim.warp(0.05);
+      sim.drainTurretShots(shots);
+    }
+    expect(shots.some((shot) => (shot.flags & SHOT_FLAG.kill) !== 0)).toBe(true);
+    expect(machines.has(skimmer)).toBe(false);
+    expect(energy()).toBe(FLYER_CELLS);
+    expect(events()).toEqual([{ k: 'drop', n: 1, m: MATERIAL.energy, c: FLYER_CELLS }]);
   });
 });

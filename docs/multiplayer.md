@@ -284,6 +284,15 @@ From 5i1 a night can send an armored crawler, and the crew that fells one finds 
 - **The pool is the pool's.** The cells reach a guest's count the way every change to the pool does, in the pool frame that follows it (`ec`), whether or not the event reached them, so a guest that missed the word still shows the right count and a latecomer is shown how things stand. They also count with what the crew has gathered for the results (`sv.st`).
 - **Protocol version 21.** `drop` is an event a version 20 build does not know, and kind 1 is a machine it would refuse the packet for. A host and a guest on different versions refuse each other and say why.
 
+### The flying skimmer (Phase 5i2)
+
+From 5i2 a night can send a skimmer, a machine that flies (the numbers and the reasons are in [decisions](decisions.md#phase-5i2-the-flying-skimmer-2026-10-27)). Every rule is the host's: where it flies, how high it hangs, when it zaps and whether a shot hit it are worked out in its simulation, and a guest is shown the result.
+
+- **A kind in the enemy packet.** The skimmer is kind 2 (`ENEMY_KIND.flyer`). The packet's shape does not change: the machine's height is the `y` of its pose, in the same 1/16-block steps as ever, so a guest draws it hanging where the host has it with the mesh and the model of its kind, and its Health is the same byte. A packet that names a kind past `ENEMY_KIND_COUNT`, now 3, is refused whole, as before.
+- **No new event.** Its zap is the bite every machine has: the wind-up is the flag in its pose that a crawler's bite sets, a zap on the Core is the `sv` frame's health and a zap on a player is that player's `vt`, as before. The cells it leaves are the `drop` event of 5i1 with a count of 2.
+- **Shots at it are judged as for any machine.** The host takes the skimmer's pose from where the shooter's screen had it (`EnemyMirror.sample`, never more than half a second back) and judges the bolt against the box of its kind standing on that pose's `y`, so a guest's shot at a machine in the air is judged as a shot at one on the ground is, and the host's word for it comes back the same way.
+- **Protocol version 22.** Kind 2 is a machine a version 21 build would refuse the packet for. A host and a guest on different versions refuse each other and say why.
+
 ## URL switches
 
 None are needed to play. They exist for tests, for a private server, and for a host on a strict network.
