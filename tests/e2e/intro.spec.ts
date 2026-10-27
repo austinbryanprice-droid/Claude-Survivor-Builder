@@ -237,7 +237,10 @@ test.describe('the intro film', () => {
     page,
   }) => {
     test.setTimeout(240_000);
-    const problems = await open(page, '?debug&introAt=3&quality=low');
+    // The slowest of the film's tests (over three minutes on a slow runner), so it draws at half the
+    // render scale and waits two frames a moment: a shader error, the caption and the title do not
+    // depend on either.
+    const problems = await open(page, '?debug&introAt=3&quality=low&scale=0.5');
     await page.waitForFunction(() => !!window.__ashbound?.intro?.playback, null, {
       timeout: STATE_TIMEOUT,
     });
@@ -257,7 +260,7 @@ test.describe('the intro film', () => {
     ];
     for (const moment of moments) {
       await page.evaluate((seconds) => window.__ashbound?.intro?.playback?.seek(seconds), moment);
-      await framesPassed(page, 3);
+      await framesPassed(page, 2);
       expect(await filmTime(page)).toBeCloseTo(moment, 6);
       const seen = await page.evaluate(() => {
         const opacity = (selector: string): number =>
