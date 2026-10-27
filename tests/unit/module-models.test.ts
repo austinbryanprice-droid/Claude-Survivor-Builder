@@ -882,16 +882,25 @@ describe('the Light model', () => {
     }
   });
 
-  it('looks toward +x: the lamp shows under the hood and across its front, in front of the mast and high up', () => {
-    const lamp = pointsWhere(model.lamp as BufferGeometry, () => true);
+  it('looks toward +x and a little down: the lens is in front of the mast and high up, and its face leans toward the ground', () => {
+    const lens = model.lamp as BufferGeometry;
+    const lamp = pointsWhere(lens, () => true);
     expect(lamp.length).toBeGreaterThan(0);
-    expect(lamp.every((p) => p.y > 0.7)).toBe(true);
+    expect(lamp.every((p) => p.y > 0.65)).toBe(true);
     expect(lamp.every((p) => p.x > 0)).toBe(true);
-    // The front lens faces the player: a sheet of points at the same x, the farthest the lamp reaches.
-    const reach = Math.max(...lamp.map((p) => p.x));
-    expect(
-      pointsWhere(model.lamp as BufferGeometry, (p) => p.x > reach - 0.001).length,
-    ).toBeGreaterThan(4);
+    // The big face of the lens looks forward and below level, as a floodlight's does: the mean of the
+    // normals that face forward, which for a lens tipped by the lamp's lean is that lean from level.
+    const normal = lens.getAttribute('normal');
+    const face = new Vector3();
+    for (let i = 0; i < normal.count; i++) {
+      if (normal.getX(i) > 0.5)
+        face.add(new Vector3(normal.getX(i), normal.getY(i), normal.getZ(i)));
+    }
+    expect(face.length()).toBeGreaterThan(0);
+    face.normalize();
+    expect(face.y).toBeLessThan(-0.1);
+    expect(face.y).toBeGreaterThan(-0.5);
+    expect(face.z).toBeCloseTo(0, 6);
     // The mast stands at the middle of the pad, and the cyan strip up it is on its front.
     const strip = pointsWhere(model.lights as BufferGeometry, (p) => p.y > 0.4);
     expect(strip.length).toBeGreaterThan(0);
