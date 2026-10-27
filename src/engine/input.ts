@@ -23,12 +23,29 @@ export interface LookDelta {
 }
 
 export interface Input {
-  /** True while the pointer is locked to the canvas. Movement keys only count while it is. */
+  /** True while the pointer is locked to the canvas and the game is listening to it. Movement keys only count while it is. */
   readonly locked: boolean;
-  /** True after the browser refused a lock request, until a request succeeds. */
+  /** True while the pointer is locked to the canvas, whether the game is listening to it or not. */
+  readonly captured: boolean;
+  /** True while the game is deaf to a locked pointer, which `hold` asks for. */
+  readonly held: boolean;
+  /** True after the browser refused a lock request, until the next request. */
   readonly blocked: boolean;
   requestLock(): void;
   releaseLock(): void;
+  /**
+   * Keeps the pointer in hand but makes the game deaf to it, so that a cinematic can play and hand
+   * the player a mouse that is already captured: while held, `locked` reads false and no key,
+   * movement, button or wheel reaches the game. It can be asked for before the lock arrives. It
+   * lasts only as long as the capture: when the lock is lost (Esc) or refused, the hold ends by
+   * itself, and every listener to `onChange` hears of it.
+   */
+  hold(held: boolean): void;
+  /**
+   * Called inside `requestLock`, before the browser is asked and while the click that triggered it
+   * is still on the stack. A listener may `hold` the input there, so that the lock arrives held.
+   */
+  onLockRequest(listener: () => void): () => void;
   /** Mouse movement in CSS pixels since the previous call; zero unless the pointer is locked. */
   takeLook(out: LookDelta): void;
   /** Writes the movement keys into `out` (everything but yaw); neutral unless the pointer is locked. */
@@ -84,6 +101,7 @@ const WHEEL_PAGE = 400;
 export function createInput(canvas: HTMLCanvasElement): Input {
   const pressed = new Set<string>();
   const changeListeners = new Set<() => void>();
+  const lockRequestListeners = new Set<() => void>();
   const actionListeners = new Set<(action: InputAction) => void>();
   const pointerListeners = new Set<(button: PointerButton, down: boolean) => void>();
   const hotbarListeners = new Set<(change: HotbarChange) => void>();
@@ -93,8 +111,11 @@ export function createInput(canvas: HTMLCanvasElement): Input {
   let lookY = 0;
   let skipNextMove = false;
   let blocked = false;
+  let held = false;
 
   const isLocked = (): boolean => document.pointerLockElement === canvas;
+  /** True while the game acts on the mouse and the keys: the pointer is locked and nothing holds it. */
+  const listening = (): boolean => isLocked() && !held;
   const emitChange = (): void => changeListeners.forEach((listener) => listener());
   const emitAction = (action: InputAction): void => actionListeners.forEach((l) => l(action));
   const emitPointer = (button: PointerButton, down: boolean): void =>
@@ -109,8 +130,16 @@ export function createInput(canvas: HTMLCanvasElement): Input {
     }
   };
 
+  /** Requests the browser has not answered yet. */
+  let asking = 0;
+
   const refused = (): void => {
+    // A browser that cannot give raw movement says no to that request and yes to the plain one that
+    // follows, and may report the no after the yes. That is not a refusal of the pointer, and it
+    // must not take the hold from a film that is playing over the lock or put a warning on the card.
+    if (isLocked() || asking > 0) return;
     blocked = true;
+    held = false;
     emitChange();
   };
 
@@ -119,6 +148,9 @@ export function createInput(canvas: HTMLCanvasElement): Input {
    * with pointer acceleration, and falls back to a plain lock where that is not supported.
    */
   const requestLock = (): void => {
+    lockRequestListeners.forEach((listener) => listener());
+    // A refusal is news about the request that follows, not the one before.
+    blocked = false;
     const attempt = (unadjusted: boolean): void => {
       let pending: Promise<void> | undefined;
       try {
@@ -131,11 +163,18 @@ export function createInput(canvas: HTMLCanvasElement): Input {
       }
       // Older browsers return nothing and report failure through the `pointerlockerror` event only.
       if (pending instanceof Promise) {
-        pending.catch((error: unknown) => {
-          const unsupported = error instanceof DOMException && error.name === 'NotSupportedError';
-          if (unadjusted && unsupported) attempt(false);
-          else refused();
-        });
+        asking++;
+        pending.then(
+          () => {
+            asking--;
+          },
+          (error: unknown) => {
+            asking--;
+            const unsupported = error instanceof DOMException && error.name === 'NotSupportedError';
+            if (unadjusted && unsupported) attempt(false);
+            else refused();
+          },
+        );
       }
     };
     attempt(true);
@@ -149,11 +188,12 @@ export function createInput(canvas: HTMLCanvasElement): Input {
     lookY = 0;
     skipNextMove = isLocked();
     if (isLocked()) blocked = false;
+    else held = false;
     emitChange();
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
-    const locked = isLocked();
+    const locked = listening();
     const code = event.code;
     if (code === OVERLAY_KEY) {
       event.preventDefault();
@@ -203,11 +243,11 @@ export function createInput(canvas: HTMLCanvasElement): Input {
 
   const onKeyUp = (event: KeyboardEvent): void => {
     pressed.delete(event.code);
-    if (isLocked() && SWALLOWED_KEYS.has(event.code)) event.preventDefault();
+    if (listening() && SWALLOWED_KEYS.has(event.code)) event.preventDefault();
   };
 
   const onMouseMove = (event: MouseEvent): void => {
-    if (!isLocked()) return;
+    if (!listening()) return;
     if (skipNextMove) {
       skipNextMove = false;
       return;
@@ -221,7 +261,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
 
   const onMouseDown = (event: MouseEvent): void => {
     const button = buttonOf(event);
-    if (!button || !isLocked()) return;
+    if (!button || !listening()) return;
     event.preventDefault();
     if (buttonsDown.has(button)) return;
     buttonsDown.add(button);
@@ -235,7 +275,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
   };
 
   const onWheel = (event: WheelEvent): void => {
-    if (!isLocked()) return;
+    if (!listening()) return;
     const scale = event.deltaMode === 1 ? WHEEL_LINE : event.deltaMode === 2 ? WHEEL_PAGE : 1;
     const delta = event.deltaY * scale;
     // A change of direction starts over, so a flick back is not eaten by what was left of the last one.
@@ -272,13 +312,34 @@ export function createInput(canvas: HTMLCanvasElement): Input {
 
   return {
     get locked() {
+      return listening();
+    },
+    get captured() {
       return isLocked();
+    },
+    get held() {
+      return held;
     },
     get blocked() {
       return blocked;
     },
     requestLock,
     releaseLock: () => document.exitPointerLock(),
+    hold(next) {
+      if (next === held) return;
+      held = next;
+      // Whatever was going on stops, and what the hands do meanwhile is not counted.
+      pressed.clear();
+      releaseButtons();
+      wheel = 0;
+      lookX = 0;
+      lookY = 0;
+      emitChange();
+    },
+    onLockRequest(listener) {
+      lockRequestListeners.add(listener);
+      return () => lockRequestListeners.delete(listener);
+    },
     takeLook(out) {
       out.dx = lookX;
       out.dy = lookY;
@@ -286,7 +347,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
       lookY = 0;
     },
     readKeys(out) {
-      const active = isLocked();
+      const active = listening();
       out.forward = active ? axis(FORWARD, BACK) : 0;
       out.strafe = active ? axis(RIGHT, LEFT) : 0;
       out.jump = active && pressed.has(JUMP);
@@ -322,6 +383,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
       canvas.removeEventListener('click', onCanvasClick);
       canvas.removeEventListener('contextmenu', onContextMenu);
       changeListeners.clear();
+      lockRequestListeners.clear();
       actionListeners.clear();
       pointerListeners.clear();
       hotbarListeners.clear();
