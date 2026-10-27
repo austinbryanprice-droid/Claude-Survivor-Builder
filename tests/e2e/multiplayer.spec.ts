@@ -44,6 +44,7 @@ const GENERATOR_NAME = MODULES.find((module) => module.id === MODULE.generator)!
 const GENERATOR_STATE = packState(moduleShape(MODULE.generator, 0), 1);
 const NODE_STATE = packState(moduleShape(MODULE.node, 0), 1);
 const STORAGE_STATE = packState(moduleShape(MODULE.storage, 0), 1);
+const BED_STATE = packState(moduleShape(MODULE.bed, 0), 1);
 /** The points that open the Power row of the ladder, which opens the Generator and the Power Node. */
 const POWER_AT = RESEARCH.groups[0].points;
 /** The points that open the Camp row, which opens the Storage. */
@@ -2363,6 +2364,150 @@ test.describe('multiplayer', () => {
           slow,
         );
       }
+      expect(await rejectionsOf(host)).toEqual([]);
+      expect(await rejectionsOf(ada)).toEqual([]);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
+  test("a Bed is where the Core brings a fallen guest back: her Bed stands on every screen without raising the pool's ceiling, the host puts her in front of it on her screen and its own wherever she fell, and with it broken she is back at her seat", async ({
+    browser,
+    baseURL,
+  }) => {
+    const host = await openPlayer(browser, baseURL, 'Host', { stock: 200 });
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone: Player[] = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and the screen only changes when one is drawn.
+    const slow = { timeout: 60_000 };
+    const positionOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.position());
+    const vitalsOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.vitals());
+    const poolOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.pool());
+    const rejectionsOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.rejections())).map((r) => r.reason);
+    // What this page draws of the modules: the valley view's renderer, which the typed hook does not name.
+    const drawnOf = (p: Player) =>
+      p.page.evaluate(
+        () =>
+          (
+            window.__ashbound!.game.world as unknown as {
+              view: { modules: { count: number } };
+            }
+          ).view.modules.count,
+      );
+    const apart = (a: { x: number; z: number }, b: { x: number; z: number }) =>
+      Math.hypot(a.x - b.x, a.z - b.z);
+    const respawnsLeft = (n: number) => `${n} ${n === 1 ? 'respawn' : 'respawns'} left`;
+    /**
+     * Fells Ada where she stands and waits for the Core to bring her back. The Core counts its wait on the
+     * run's clock, which a frame every second and a half would take the best part of ten seconds to run
+     * through, so the host spends it at once.
+     */
+    const fellAndBroughtBack = async (id: number) => {
+      await host.page.evaluate(([who]) => window.__ashbound!.mp!.hurtPlayer(1000, who!), [
+        id,
+      ] as const);
+      await expect
+        .poll(async () => (await vitalsOf(ada)).health, { ...slow, message: 'Ada is down' })
+        .toBe(0);
+      await host.page.evaluate(
+        (seconds) => window.__ashbound!.mp!.warp(seconds),
+        RESPAWN.delaySeconds + 1,
+      );
+      await expect
+        .poll(async () => (await vitalsOf(ada)).health, {
+          ...slow,
+          message: 'the Core brings Ada back',
+        })
+        .toBe(VITALS.maxHealth);
+    };
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) await recordToasts(p.page);
+      const adaId = (await session(ada)).localId;
+      // Her seat is a little way along from the world's spawn point, once she has been put there.
+      const spawn = await ada.page.evaluate(() => {
+        const { x, z } = window.__ashbound!.game.world.spawn;
+        return { x, z };
+      });
+      await expect
+        .poll(async () => apart(await positionOf(ada), spawn), {
+          ...slow,
+          message: 'Ada takes her seat',
+        })
+        .toBeGreaterThan(1);
+      const seat = await positionOf(ada);
+      await host.page.evaluate((n) => window.__ashbound!.mp!.setResearch(n), CAMP_AT);
+      const ceiling = (await poolOf(host)).cap;
+
+      // Ada goes out to a ring thirteen blocks from the Core and builds a Bed three blocks from where she
+      // stands: it stands in every world and on every screen, and the pool holds no more for it.
+      const adaAt = await hopFromTheCore(ada.page, 13, 0.9);
+      await expectSeen(host, 'Ada', adaAt);
+      const bed = await ada.page.evaluate(
+        ([state]) => window.__ashbound!.mp!.placeNear(3, 0, state!),
+        [BED_STATE] as const,
+      );
+      await expectSameWorld(everyone, 1);
+      const bedMiddle = { x: bed.x + 0.5, z: bed.z + 0.5 };
+      expect(apart(bedMiddle, seat), 'the Bed is well away from her seat').toBeGreaterThan(5);
+      for (const p of everyone) {
+        await expect
+          .poll(() => drawnOf(p), { ...slow, message: `${p.name}'s screen draws the Bed` })
+          .toBe(1);
+        expect((await poolOf(p)).cap).toBe(ceiling);
+      }
+
+      // Ada walks off to a spot seven blocks from the Bed, and the host sees her there. She falls there,
+      // and the Core brings her back where the Bed is, on her screen and on the host's.
+      const fellAt = { x: bedMiddle.x, z: bedMiddle.z + 7 };
+      await standAt(ada.page, fellAt.x, fellAt.z);
+      await expectSeen(host, 'Ada', fellAt);
+      await fellAndBroughtBack(adaId);
+      await expect
+        .poll(async () => apart(await positionOf(ada), bedMiddle), {
+          ...slow,
+          message: 'Ada is back at the Bed on her own screen',
+        })
+        .toBeLessThan(1.6);
+      await expectSeen(host, 'Ada', bedMiddle);
+      const first = 2 * RESPAWN.startPerPlayer - 1;
+      await expect
+        .poll(() => toasts(ada.page), slow)
+        .toContain(`The Core brought you back, shaken · ${respawnsLeft(first)}`);
+      await expect
+        .poll(() => toasts(host.page), slow)
+        .toContain(`Ada is back, shaken · ${respawnsLeft(first)}`);
+
+      // She breaks the Bed from beside it, and the next fall brings her back at her seat as it always did.
+      await ada.page.evaluate(([x, y, z]) => window.__ashbound!.mp!.breakBlock(x!, y!, z!), [
+        bed.x,
+        bed.y,
+        bed.z,
+      ] as const);
+      await expectSameWorld(everyone, 0);
+      for (const p of everyone) {
+        await expect
+          .poll(() => drawnOf(p), { ...slow, message: `${p.name}'s screen lets the Bed go` })
+          .toBe(0);
+      }
+      const fellAgainAt = { x: bedMiddle.x - 6, z: bedMiddle.z };
+      await standAt(ada.page, fellAgainAt.x, fellAgainAt.z);
+      await expectSeen(host, 'Ada', fellAgainAt);
+      await fellAndBroughtBack(adaId);
+      await expect
+        .poll(async () => apart(await positionOf(ada), seat), {
+          ...slow,
+          message: 'Ada is back at her seat with no Bed standing',
+        })
+        .toBeLessThan(0.6);
+      await expectSeen(host, 'Ada', seat);
+      await expect
+        .poll(() => toasts(ada.page), slow)
+        .toContain(`The Core brought you back, shaken · ${respawnsLeft(first - 1)}`);
       expect(await rejectionsOf(host)).toEqual([]);
       expect(await rejectionsOf(ada)).toEqual([]);
       expectNoProblems(everyone);

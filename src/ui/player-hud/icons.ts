@@ -33,6 +33,7 @@ export type IconId =
   | 'generator'
   | 'node'
   | 'storage'
+  | 'bed'
   | 'block-scrap'
   | 'block-composite'
   | 'block-alloy'
@@ -72,6 +73,7 @@ export const ICON_IDS: readonly IconId[] = [
   'generator',
   'node',
   'storage',
+  'bed',
   'block-scrap',
   'block-composite',
   'block-alloy',
@@ -506,6 +508,20 @@ const SPRITE_BODY = /* html */ `
   <rect x="8.4" y="32.6" width="3.8" height="3.8" rx="0.8" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="1"/>
   <rect x="35.8" y="32.6" width="3.8" height="3.8" rx="0.8" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="1"/>
   <path d="M10.6 15.2 H21" stroke="#f6faff" stroke-opacity="0.7" stroke-width="1" stroke-linecap="round"/>
+</symbol>
+
+<symbol id="ph-i-bed" viewBox="0 0 48 48">
+  <rect x="6.4" y="38.6" width="4.2" height="4.6" rx="0.9" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="1.1"/>
+  <rect x="37.4" y="38.6" width="4.2" height="4.6" rx="0.9" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="1.1"/>
+  <rect x="4.6" y="13.4" width="5.2" height="26.2" rx="1.6" fill="url(#ph-steel-dark)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
+  <rect x="38.4" y="26.2" width="5" height="13.4" rx="1.6" fill="url(#ph-steel-dark)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
+  <rect x="8.4" y="30.6" width="31.6" height="5.4" rx="1.4" fill="url(#ph-steel-dark)" stroke="${INK}" stroke-width="1.6"/>
+  <rect x="8.6" y="23.6" width="31.2" height="8" rx="3" fill="url(#ph-steel)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M19.6 22.6 H38.4 Q40 22.6 40 24.2 V30.6 H19.6 Z" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M24.6 24 V30 M29.4 24 V30" stroke="${INK}" stroke-opacity="0.35" stroke-width="1.2" stroke-linecap="round"/>
+  <rect x="10.6" y="19.6" width="9" height="4.6" rx="2.3" fill="#e4eef6" stroke="${INK}" stroke-width="1.4"/>
+  <rect x="5.8" y="16.2" width="2.8" height="5" rx="1.1" fill="url(#ph-core)"/>
+  <path d="M12.6 21 H17.4" stroke="#ffffff" stroke-opacity="0.7" stroke-width="1" stroke-linecap="round"/>
 </symbol>
 ${BLOCK_SYMBOLS}
 ${SHAPE_SYMBOLS}

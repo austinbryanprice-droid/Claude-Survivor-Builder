@@ -720,6 +720,110 @@ describe('the Storage model', () => {
   });
 });
 
+describe('the Bed model', () => {
+  const kit = buildModuleKit(MODULE.bed) as ModuleKit;
+  const model = kit.model;
+
+  it('is a body that stands still, in every look the table defines, in the Core’s paint', () => {
+    expect(kit.head).toBeUndefined();
+    expect(kit.palette).toBe(MODULE_LOOKS);
+    expect(Object.keys(model).sort()).toEqual([...MODULE_LOOK_NAMES].sort());
+    for (const geometry of partsOf(model)) {
+      const position = geometry.getAttribute('position');
+      const normal = geometry.getAttribute('normal');
+      expect(position.count).toBeGreaterThan(0);
+      expect(normal.count).toBe(position.count);
+      for (let i = 0; i < position.count; i++) {
+        expect(Number.isFinite(position.getX(i) + position.getY(i) + position.getZ(i))).toBe(true);
+        expect(Math.hypot(normal.getX(i), normal.getY(i), normal.getZ(i))).toBeCloseTo(1, 3);
+      }
+    }
+  });
+
+  it('fills the body the cursor aims at and stays inside it, with a foundation below the floor', () => {
+    const box = boundsOf(partsOf(model));
+    const [x0, , z0, x1, y1, z1] = MODULES.find((def) => def.id === MODULE.bed)!.body;
+    const slack = 0.03;
+    expect(box.min.x).toBeGreaterThanOrEqual(x0 - 0.5 - slack);
+    expect(box.max.x).toBeLessThanOrEqual(x1 - 0.5 + slack);
+    expect(box.min.z).toBeGreaterThanOrEqual(z0 - 0.5 - slack);
+    expect(box.max.z).toBeLessThanOrEqual(z1 - 0.5 + slack);
+    expect(box.min.y).toBeCloseTo(-MODULE_SKIRT, 6);
+    expect(box.max.y).toBeLessThanOrEqual(y1 + slack);
+    const size = box.getSize(new Vector3());
+    expect(size.x).toBeGreaterThan(0.7);
+    expect(size.z).toBeGreaterThan(0.9);
+    expect(box.max.y).toBeGreaterThan(0.4);
+  });
+
+  it('is the lowest module: a cot a player can step onto, under every other module', () => {
+    const own = boundsOf(partsOf(model)).max.y;
+    for (const other of [
+      MODULE.terminal,
+      MODULE.turret,
+      MODULE.generator,
+      MODULE.node,
+      MODULE.storage,
+    ]) {
+      const rival = boundsOf(partsOf((buildModuleKit(other) as ModuleKit).model)).max.y;
+      expect(own, `module ${other}`).toBeLessThan(rival);
+    }
+  });
+
+  it('lies along z with its side toward +x: the status strip is on that side, the pillow and the beacon at the head, the blanket over the foot', () => {
+    const screen = pointsWhere(model.screen as BufferGeometry, () => true);
+    expect(screen.length).toBeGreaterThan(0);
+    expect(screen.every((p) => p.x > 0.3)).toBe(true);
+    // The pillow is the only trim up on the mattress, and it lies at the head (-z).
+    const pillow = pointsWhere(model.trim as BufferGeometry, (p) => p.y > 0.27);
+    expect(pillow.length).toBeGreaterThan(0);
+    expect(pillow.every((p) => p.z < -0.1)).toBe(true);
+    // The blanket covers the foot (+z) end of the mattress, more than the head end.
+    const blanket = pointsWhere(model.amber as BufferGeometry, () => true);
+    expect(blanket.length).toBeGreaterThan(0);
+    const mean = blanket.reduce((sum, p) => sum + p.z, 0) / blanket.length;
+    expect(mean).toBeGreaterThan(0.1);
+    // The beacon blinks on the headboard, the highest thing on the cot.
+    const beacon = pointsWhere(model.beacon as BufferGeometry, () => true);
+    expect(beacon.every((p) => p.z < -0.35)).toBe(true);
+    const tallest = Math.max(
+      ...partsOf(model).flatMap((g) => pointsWhere(g, () => true).map((p) => p.y)),
+    );
+    expect(Math.max(...beacon.map((p) => p.y))).toBeCloseTo(tallest, 6);
+  });
+
+  it('is built the same way every time, so two pictures of it agree', () => {
+    const again = (buildModuleKit(MODULE.bed) as ModuleKit).model;
+    for (const look of MODULE_LOOK_NAMES) {
+      const a = (model[look] as BufferGeometry).getAttribute('position').array;
+      const b = (again[look] as BufferGeometry).getAttribute('position').array;
+      expect(Array.from(b), look).toEqual(Array.from(a));
+    }
+  });
+
+  it('is a few hundred triangles, in six draw calls', () => {
+    const count = partsOf(model).reduce((sum, geometry) => sum + triangles(geometry), 0);
+    expect(count).toBeGreaterThan(100);
+    expect(count).toBeLessThan(1500);
+    expect(partsOf(model).length).toBe(6);
+  });
+
+  it('is a model of its own, not any other module’s', () => {
+    const positions = (m: ModuleModel) =>
+      MODULE_LOOK_NAMES.map((look) => m[look]?.getAttribute('position').count);
+    for (const other of [
+      MODULE.terminal,
+      MODULE.turret,
+      MODULE.generator,
+      MODULE.node,
+      MODULE.storage,
+    ]) {
+      const rival = (buildModuleKit(other) as ModuleKit).model;
+      expect(positions(model), `module ${other}`).not.toEqual(positions(rival));
+    }
+  });
+});
+
 describe('the paint of a module’s grade', () => {
   const channels = (hex: string) => {
     const value = parseInt(hex.slice(1), 16);
@@ -831,8 +935,8 @@ describe('the ghost of a module', () => {
     }
   });
 
-  it('keeps a Generator, a Power Node and a Storage inside their cell whichever way they face', () => {
-    for (const module of [MODULE.generator, MODULE.node, MODULE.storage]) {
+  it('keeps a Generator, a Power Node, a Storage and a Bed inside their cell whichever way they face', () => {
+    for (const module of [MODULE.generator, MODULE.node, MODULE.storage, MODULE.bed]) {
       for (let facing = 0; facing < MODULE_FACINGS; facing++) {
         const box = boundsOf([moduleGhostGeometry(moduleShape(module, facing)) as BufferGeometry]);
         expect(box.min.x, `module ${module} facing ${facing}`).toBeGreaterThanOrEqual(0);

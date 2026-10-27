@@ -621,6 +621,30 @@ function storage(): Parts {
   };
 }
 
+/**
+ * Bed: a steel cot lying along z with its long side toward the front, low enough to step onto. A frame
+ * on a foundation carries a mattress with a pillow at the head and an amber blanket over the foot, between
+ * a headboard and a low footboard; a cyan strip runs round the frame and along the headboard, a status
+ * strip along the side a player sees, and a small amber beacon blinks on the headboard. It takes no power,
+ * so its lights are always lit.
+ */
+function bed(): Parts {
+  return {
+    plate: [
+      // The foundation under the frame: it meets the ground where the module floats over it.
+      box(0.52, 0.78, 0.82, 0, -0.59, 0, 0),
+      box(0.72, 0.3, 0.94, 0, -0.05, 0),
+      box(0.72, 0.32, 0.06, 0, 0.26, -0.44, 0.25),
+      box(0.72, 0.14, 0.05, 0, 0.17, 0.445, 0.3),
+    ],
+    trim: [box(0.64, 0.14, 0.86, 0, 0.17, 0, 0.35), box(0.44, 0.08, 0.2, 0, 0.28, -0.3, 0.5)],
+    amber: [box(0.66, 0.05, 0.5, 0, 0.255, 0.17, 0.4)],
+    lights: [box(0.76, 0.014, 0.98, 0, 0.1, 0, 0), box(0.4, 0.025, 0.012, 0, 0.36, -0.404, 0)],
+    screen: [box(0.012, 0.03, 0.5, 0.362, 0.045, 0.05, 0)],
+    beacon: [box(0.04, 0.03, 0.04, 0.28, 0.435, -0.44, 0)],
+  };
+}
+
 /** The models, by module id. */
 const BUILDERS: Readonly<Record<number, (level: number) => Build>> = {
   [MODULE.terminal]: () => ({ body: terminal() }),
@@ -628,6 +652,7 @@ const BUILDERS: Readonly<Record<number, (level: number) => Build>> = {
   [MODULE.generator]: () => ({ body: generator() }),
   [MODULE.node]: () => ({ body: node() }),
   [MODULE.storage]: () => ({ body: storage() }),
+  [MODULE.bed]: () => ({ body: bed() }),
 };
 
 /** One merged geometry for each look the parts use. */

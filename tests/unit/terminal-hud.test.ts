@@ -62,7 +62,7 @@ describe('the research ladder', () => {
     // The Node's name holds a no-break space, so a narrow row wraps after the comma and not inside it.
     expect(ladder.rows[1]?.need).toBe(`${pointsText(powerAt)} · Generator, Power\u00a0Node`);
     expect(ladder.rows[2]?.need).toBe(pointsText(compositeAt));
-    expect(ladder.rows[3]?.need).toBe(`${pointsText(campAt)} · Storage`);
+    expect(ladder.rows[3]?.need).toBe(`${pointsText(campAt)} · Storage, Bed`);
     expect(ladder.rows.slice(4).map((row) => row.need)).toEqual([
       pointsText(alloyAt),
       pointsText(energyAt),
