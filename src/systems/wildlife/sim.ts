@@ -366,9 +366,11 @@ export class WildlifeSim {
     if (c.hurt > 0) c.hurt = Math.max(0, c.hurt - dt);
     c.speed = 0;
 
-    this.sense(c, dt, targets, count, threats);
-
+    // A creature out for the player who hurt it is afraid of nothing else (not of the crew's other
+    // players beside it, not of the machines) until it has had enough, so nothing cuts its blow short.
     if (c.anger > 0 && this.fight(c, dt, targets, count, strikes)) return;
+
+    this.sense(c, dt, targets, count, threats);
 
     if (c.alarm > 0) {
       c.alarm -= dt;
@@ -391,8 +393,7 @@ export class WildlifeSim {
   /**
    * Looks for what startles the creature: the nearest machine within its `scare`, the nearest player
    * within its `shy`, and, while a skittish creature is still afraid of the player who hurt it, that
-   * player within `attackerRadius`. A defiant creature that is angry is not afraid of the player it is
-   * angry with.
+   * player within `attackerRadius`. A creature that is angry never gets this far: it is fighting.
    */
   private sense(
     c: Creature,
@@ -421,7 +422,6 @@ export class WildlifeSim {
       const reach = body.shy * body.shy;
       for (let i = 0; i < count; i++) {
         const t = targets[i] as Target;
-        if (c.anger > 0 && t.id === c.grudge) continue;
         const dx = t.x - c.x;
         const dz = t.z - c.z;
         const squared = dx * dx + dz * dz;

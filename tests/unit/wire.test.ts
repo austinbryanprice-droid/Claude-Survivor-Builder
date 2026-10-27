@@ -757,7 +757,7 @@ describe('host control frames', () => {
       { e: [NET.move.limit + 1, 0, 0] },
       { f: undefined },
       { f: -1 },
-      { f: 8 },
+      { f: 16 },
       { f: 1.5 },
       { f: '1' },
       { h: undefined },

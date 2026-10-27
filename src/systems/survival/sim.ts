@@ -14,10 +14,13 @@ import {
   type SurvivalReading,
 } from '../../shared/survival-state';
 import type { VitalsReading } from '../../shared/vitals-state';
+import type { WildPose } from '../../shared/wildlife-state';
 import type { Outpost } from '../../world/outpost';
 import { builtOver } from '../economy/build-rules';
 import { Economy, evenStock } from '../economy/economy';
 import { debrisField } from '../economy/field';
+import { wildHitboxOf } from '../wildlife/balance';
+import { Threats, WildlifeSim } from '../wildlife/sim';
 import { BLASTER, RESPAWN, SURVIVAL, VITALS, bodyOf, hitboxOf } from './balance';
 import { EnemySim, type Target } from './enemies';
 import { NavGrid, type NavCell, type NavWorld } from './nav';
@@ -26,6 +29,9 @@ import { Storehouse } from './storehouse';
 import { Turrets, type ModuleSource, type TurretShot } from './turrets';
 import { PlayerVitals } from './vitals';
 import { WaveDirector } from './waves';
+
+/** What a shot meets when the host gives the survival simulation no creatures to look at. */
+const NO_CREATURES: readonly WildPose[] = [];
 
 const CYCLE_TICKS = CYCLE_SECONDS * SIM_HZ;
 const DAY_TICKS = DAY_SECONDS * SIM_HZ;
@@ -87,6 +93,13 @@ export interface SurvivalOptions {
    * turret shoots, no Generator gives and no Storage stores.
    */
   modules?: ModuleSource | null;
+  /**
+   * True fills the valley with wildlife: herds of creatures that roam the ground, the lake and the sky,
+   * startle at the machines and at players, and fight back only against a player who has hurt one
+   * (`WildlifeSim`). It needs the same ground the machines walk, so a run without it has none. Off by
+   * default so a test gets a valley with nothing in it; the game turns it on (`?wildlife=0` turns it off).
+   */
+  wildlife?: boolean;
 }
 
 /** How a shot of the blaster ended. One object is filled by every call to `fire`. */
@@ -97,7 +110,7 @@ export interface ShotOutcome {
   z: number;
   /** `SHOT_FLAG` bits. */
   flags: number;
-  /** The machine it struck, or 0. */
+  /** The machine it struck, or (with `SHOT_FLAG.wild`) the creature, or 0. */
   enemy: number;
 }
 
@@ -146,6 +159,8 @@ export class SurvivalSim {
   private readonly players = new Map<number, PlayerVitals>();
   private readonly pending: SurvivalEvent[] = [];
   private readonly machines: EnemySim | null;
+  /** The valley's creatures, where the run has wildlife on. They are afraid of the machines and answer only to a player who hurts one. */
+  private readonly wild: WildlifeSim | null;
   private readonly waves: WaveDirector | null;
   private readonly wealth: Economy | null;
   private readonly standing: ((module: number) => boolean) | null;
@@ -160,7 +175,18 @@ export class SurvivalSim {
   private readonly feet = { x: 0, y: 0, z: 0 };
   private readonly ray: RayWorld | null;
   private readonly trace = createShotTrace();
+  private readonly wildTrace = createShotTrace();
+  /** Where the machines are, for the creatures to keep away from: filled again each step. */
+  private readonly threats = new Threats();
   private readonly isAlive = (id: number): boolean => this.machines?.has(id) ?? false;
+  private readonly isWildAlive = (id: number): boolean => this.wild?.has(id) ?? false;
+  private readonly addThreat = (
+    _id: number,
+    _kind: number,
+    x: number,
+    _y: number,
+    z: number,
+  ): void => this.threats.add(x, z);
 
   constructor(options: SurvivalOptions = {}) {
     this.tickValue = Math.max(0, Math.round((options.startAt ?? 0) * SIM_HZ));
@@ -174,6 +200,10 @@ export class SurvivalSim {
             core: this.core,
             seed: options.seed ?? 0,
           })
+        : null;
+    this.wild =
+      options.wildlife && options.nav && this.core
+        ? new WildlifeSim(options.nav, { core: this.core, seed: options.seed ?? 0 })
         : null;
     this.waves =
       this.machines && options.waves !== false
@@ -220,6 +250,11 @@ export class SurvivalSim {
   /** The machines that come for the Core, or null where the world gave the run no ground for them to walk. */
   get enemies(): EnemySim | null {
     return this.machines;
+  }
+
+  /** The wildlife of the valley, or null where the run has none (it is off, or the world gave the run no ground). */
+  get wildlife(): WildlifeSim | null {
+    return this.wild;
   }
 
   /** Steps taken since the run began. */
@@ -398,9 +433,12 @@ export class SurvivalSim {
    * A player fires the blaster. The bolt leaves `origin` along the unit vector `dir`, stops at the
    * first block, hill or Core in its way and hurts the first of the first `count` of `bodies` it
    * meets before that: they are where the machines were on the screen the player aimed on, so the
-   * host passes the poses of a moment ago and a shot that looked true is one. The shot costs the
-   * player Energy. Returns false, and does nothing, for someone not here or down, once the run is
-   * over, or for a shot that comes before the blaster is ready again. A player who is shaken hits softer.
+   * host passes the poses of a moment ago and a shot that looked true is one. The creatures of the
+   * wildlife (`creatures`, the first `creatureCount` of them, posed the same way) are in the bolt's
+   * way too: it hurts whichever of the two it reaches first, and a creature it hurts is the player's
+   * to answer for (`WildlifeSim.hurt`). The shot costs the player Energy. Returns false, and does
+   * nothing, for someone not here or down, once the run is over, or for a shot that comes before the
+   * blaster is ready again. A player who is shaken hits softer.
    */
   fire(
     id: number,
@@ -409,6 +447,8 @@ export class SurvivalSim {
     bodies: readonly EnemyPose[],
     count: number,
     out: ShotOutcome,
+    creatures: readonly WildPose[] = NO_CREATURES,
+    creatureCount = 0,
   ): boolean {
     const vitals = this.players.get(id);
     if (!vitals || this.over || !vitals.alive || !vitals.takeShot()) return false;
@@ -423,15 +463,44 @@ export class SurvivalSim {
       this.isAlive,
       this.trace,
     );
-    out.x = origin.x + dir.x * trace.distance;
-    out.y = origin.y + dir.y * trace.distance;
-    out.z = origin.z + dir.z * trace.distance;
-    out.flags = trace.flags;
+    let distance = trace.distance;
+    let flags = trace.flags;
+    let struck = 0;
+    let wounded = false;
+    if (this.wild && creatureCount > 0) {
+      // Only what is nearer than the machine, block or ground the bolt would have stopped at.
+      const near = traceShot(
+        null,
+        origin,
+        dir,
+        distance,
+        creatures,
+        creatureCount,
+        wildHitboxOf,
+        this.isWildAlive,
+        this.wildTrace,
+      );
+      if (near.flags & SHOT_FLAG.enemy) {
+        distance = near.distance;
+        flags = SHOT_FLAG.wild;
+        struck = (creatures[near.index] as WildPose).id;
+        wounded = true;
+      }
+    }
+    out.x = origin.x + dir.x * distance;
+    out.y = origin.y + dir.y * distance;
+    out.z = origin.z + dir.z * distance;
+    out.flags = flags;
     out.enemy = 0;
-    if (trace.flags & SHOT_FLAG.enemy) {
-      const struck = (bodies[trace.index] as EnemyPose).id;
+    if (wounded) {
       out.enemy = struck;
-      if (this.machines?.hurt(struck, BLASTER.damage * vitals.damageScale)) {
+      if (this.wild?.hurt(struck, BLASTER.damage * vitals.damageScale, id, origin.x, origin.z)) {
+        out.flags |= SHOT_FLAG.kill;
+      }
+    } else if (flags & SHOT_FLAG.enemy) {
+      const hit = (bodies[trace.index] as EnemyPose).id;
+      out.enemy = hit;
+      if (this.machines?.hurt(hit, BLASTER.damage * vitals.damageScale)) {
         out.flags |= SHOT_FLAG.kill;
         this.felledCount++;
       }
@@ -627,5 +696,12 @@ export class SurvivalSim {
       count++;
     }
     machines.step(SIM_STEP_SECONDS, this.targets, count, this);
+    // The creatures keep clear of the machines, so they go after them have moved.
+    const wild = this.wild;
+    if (wild) {
+      this.threats.clear();
+      machines.forEach(this.addThreat);
+      wild.step(SIM_STEP_SECONDS, this.targets, count, this.threats, this);
+    }
   }
 }

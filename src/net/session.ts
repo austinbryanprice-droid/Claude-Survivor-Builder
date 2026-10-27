@@ -1,6 +1,7 @@
 import type { BlockWorld } from '../shared/block-world';
 import type { EconomyView } from '../shared/economy';
 import type { EnemyPose } from '../shared/enemy-state';
+import type { WildPose } from '../shared/wildlife-state';
 import type { Vec3 } from '../shared/look';
 import type {
   BlockCommand,
@@ -168,6 +169,13 @@ export interface GameSession {
    * reused: read them before the next call.
    */
   sampleEnemies(): readonly EnemyPose[];
+
+  /**
+   * Where to draw the creatures of the valley's wildlife right now: the same smoothing as the machines
+   * (a record of a creature is a machine's, with its species in `kind`). The array and the poses in it
+   * are reused: read them before the next call. Empty where the host runs no wildlife.
+   */
+  sampleWildlife(): readonly WildPose[];
 
   /** Leaves the room, or closes it when hosting. Safe to call more than once. */
   close(): void;

@@ -17,10 +17,13 @@ import {
   type WorldEvent,
 } from '../shared/protocol';
 import { SHOT_FLAG, type ShotEvent } from '../shared/shot';
+import type { WildPose } from '../shared/wildlife-state';
 import {
   KIND_ENEMIES,
+  KIND_WILDLIFE,
   decodeEdits,
   decodeEnemies,
+  decodeWildlife,
   decodeHostFrame,
   decodeRelay,
   encodeFrame,
@@ -78,6 +81,7 @@ const GOODBYE_GRACE_MS = 400;
 const STEP_MS = 500;
 /** What a guest that is not in the world yet draws. */
 const NO_ENEMIES: readonly EnemyPose[] = [];
+const NO_WILDLIFE: readonly WildPose[] = [];
 
 const REASON_FOR_ERROR: Record<string, CloseReason> = {
   'broker-unreachable': 'broker-unreachable',
@@ -99,6 +103,7 @@ export class GuestSession implements GameSession {
   private readonly vitalsMirror = new VitalsMirror();
   private readonly economyMirror = new EconomyMirror();
   private readonly enemyMirror = new EnemyMirror();
+  private readonly wildMirror = new EnemyMirror(NET.maxWildlife);
 
   private phaseValue: SessionPhase = 'connecting';
   private closedInfo: CloseInfo | null = null;
@@ -114,6 +119,7 @@ export class GuestSession implements GameSession {
   private readonly sync = new ClockSync();
   private lastRelaySeq: number | null = null;
   private lastEnemySeq: number | null = null;
+  private lastWildSeq: number | null = null;
   /** Which run this screen is in: 1 for the first, one more each time the host starts over. */
   private runValue = 1;
   /** The run whose world is being built now, or 0. */
@@ -289,6 +295,11 @@ export class GuestSession implements GameSession {
   sampleEnemies(): readonly EnemyPose[] {
     if (this.phaseValue !== 'open' || !this.sync.ready) return NO_ENEMIES;
     return this.enemyMirror.sample(this.sync.remoteNow(this.scheduler.now()) - NET.enemyDelayMs);
+  }
+
+  sampleWildlife(): readonly WildPose[] {
+    if (this.phaseValue !== 'open' || !this.sync.ready) return NO_WILDLIFE;
+    return this.wildMirror.sample(this.sync.remoteNow(this.scheduler.now()) - NET.enemyDelayMs);
   }
 
   sampleRemotes(): readonly RemotePose[] {
@@ -549,7 +560,7 @@ export class GuestSession implements GameSession {
           y: frame.e[1],
           z: frame.e[2],
           flags: frame.f,
-          enemy: frame.f & SHOT_FLAG.enemy ? frame.h : 0,
+          enemy: frame.f & (SHOT_FLAG.enemy | SHOT_FLAG.wild) ? frame.h : 0,
           ...(frame.c ? { turret: frame.c } : {}),
         });
         break;
@@ -649,6 +660,7 @@ export class GuestSession implements GameSession {
     this.sent.clear();
     this.tracks.clear();
     this.enemyMirror.clear();
+    this.wildMirror.clear();
     this.mirror.reset();
     this.vitalsMirror.reset();
     this.setPhase('loading');
@@ -690,8 +702,13 @@ export class GuestSession implements GameSession {
   }
 
   private onState(bytes: Uint8Array): void {
-    if (packetKind(bytes) === KIND_ENEMIES) {
+    const kind = packetKind(bytes);
+    if (kind === KIND_ENEMIES) {
       this.onEnemies(bytes);
+      return;
+    }
+    if (kind === KIND_WILDLIFE) {
+      this.onWildlife(bytes);
       return;
     }
     const packet = decodeRelay(bytes);
@@ -737,6 +754,24 @@ export class GuestSession implements GameSession {
     this.enemyMirror.push(packet.hostTime, packet.entries, packet.entries.length);
   }
 
+  /** The host's word on where the creatures of the wildlife are: the machines' rules, with a sequence of its own. */
+  private onWildlife(bytes: Uint8Array): void {
+    const packet = decodeWildlife(bytes);
+    if (!packet) {
+      this.counters.badFrames++;
+      return;
+    }
+    const now = this.scheduler.now();
+    this.lastHeard = now;
+    if (this.lastWildSeq !== null && !seqNewer(packet.seq, this.lastWildSeq)) {
+      this.counters.staleDropped++;
+      return;
+    }
+    this.lastWildSeq = packet.seq;
+    this.sync.observe(now, packet.hostTime);
+    this.wildMirror.push(packet.hostTime, packet.entries, packet.entries.length);
+  }
+
   // --------------------------------------------------------------------------------------------
   // Upkeep.
   // --------------------------------------------------------------------------------------------
@@ -780,6 +815,7 @@ export class GuestSession implements GameSession {
     this.parts.clear();
     this.tracks.clear();
     this.enemyMirror.clear();
+    this.wildMirror.clear();
     this.setPhase('closed');
     this.playerChanges.emit();
   }

@@ -438,6 +438,25 @@ describe('being hit', () => {
     expect(times[0]!).toBeGreaterThanOrEqual(blow.windup - 0.1);
   });
 
+  it('is not put off its grudge by another player at its side, or by a machine near it', () => {
+    const w = lake();
+    const sim = newSim(w);
+    const stag = sim.spawnAt(WILD_SPECIES.stag, 40, 40);
+    const blow = (SPECIES[WILD_SPECIES.stag] as Species).retaliation!;
+    sim.hurt(stag, 10, 1, 40, 46);
+    // Both players are well inside the stag's shy distance and a machine is inside its scare, any one
+    // of which would send it running if it were not fighting.
+    const threats = new Threats();
+    threats.add(46, 42);
+    const targets = [player(1, 40, 41.5), player(2, 38, 41)];
+    const strikes = play(sim, 8, { targets, threats });
+    expect(strikes.hits).toHaveLength(blow.strikes);
+    for (const [id, amount] of strikes.hits) {
+      expect(id).toBe(1);
+      expect(amount).toBe(blow.player);
+    }
+  });
+
   it('forgets a player who gets away, or who it cannot reach', () => {
     const w = lake();
     for (let x = -90; x <= 20; x++) {
