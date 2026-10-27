@@ -889,10 +889,8 @@ export class WildlifeSim {
       const body = SPECIES[species] as Species;
       let herds = 0;
       for (const herd of this.herds) if (herd.species === species) herds++;
-      if (herds < body.herds) {
-        this.newHerd(species, targets, count);
-        continue;
-      }
+      // A species short of a herd gets one, and when there is no spot for one, a creature to a herd that has lost some.
+      if (herds < body.herds && this.newHerd(species, targets, count)) continue;
       for (const herd of this.herds) {
         if (herd.species !== species || herd.members.length >= herd.want) continue;
         if (this.nearPlayer(targets, count, herd.x, herd.z, WILDLIFE.unseen)) continue;

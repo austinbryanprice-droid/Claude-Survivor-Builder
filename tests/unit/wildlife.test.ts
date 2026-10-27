@@ -104,6 +104,12 @@ describe('the species table', () => {
     }
   });
 
+  it('keeps the creatures well clear of the Core and out of sight of a herd that comes back', () => {
+    // Wildlife is never between a machine and its wall, and nobody watches a herd arrive.
+    expect(WILDLIFE.avoid).toBeGreaterThanOrEqual(16);
+    expect(WILDLIFE.unseen).toBeGreaterThanOrEqual(30);
+  });
+
   it('fits the population under the cap', () => {
     const most = SPECIES.reduce((sum, s) => sum + s.herds * s.size[1], 0);
     expect(most).toBeLessThanOrEqual(WILDLIFE.maxAlive);
@@ -201,6 +207,23 @@ describe('the valley they are put in', () => {
         }
       });
     }
+  });
+
+  it('puts no herd in the Core’s clearing, whichever way the valley is dealt', () => {
+    const w = flatWorld({ half: 60 });
+    let seen = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const sim = new WildlifeSim(w.world, { core: w.core, seed });
+      sim.forEach((_id, species, x, _y, z) => {
+        seen++;
+        // A herd comes in a bunch a few blocks wide, round a spot outside the clearing.
+        expect(
+          Math.hypot(x - w.core.x, z - w.core.z),
+          `seed ${seed} ${(SPECIES[species] as Species).name}`,
+        ).toBeGreaterThan(WILDLIFE.avoid - 4);
+      });
+    }
+    expect(seen).toBeGreaterThan(100);
   });
 
   it('keeps clear of the Core and the clearing round it', () => {
@@ -522,6 +545,53 @@ describe('being hit', () => {
     const other = sim.spawnAt(WILD_SPECIES.hare, 40, 40);
     expect(sim.hurt(other, 0, 1, 0, 0)).toBe(false);
     expect(sim.hurt(other, -5, 1, 0, 0)).toBe(false);
+  });
+
+  it('puts a herd that comes back where no player can see it arrive', () => {
+    // A small valley with the player in the middle: only its outer part is out of sight.
+    const w = flatWorld({ half: 56, waterLevel: 0 });
+    const sim = new WildlifeSim(w.world, { core: w.core, seed: 5 });
+    const everyone: number[] = [];
+    sim.forEach((id) => everyone.push(id));
+    for (const id of everyone) sim.hurt(id, 10000, 1, 0, 0);
+    expect(sim.count).toBe(0);
+    const targets = [player(1, 0, 0)];
+    let arrived = 0;
+    for (let pass = 0; pass < 3; pass++) {
+      const before = new Set<number>();
+      sim.forEach((id) => before.add(id));
+      play(sim, WILDLIFE.topUpSeconds + 0.1, { targets });
+      sim.forEach((id, species, x, _y, z) => {
+        if (before.has(id)) return;
+        arrived++;
+        // A herd comes in a bunch a few blocks wide, round a spot that is out of sight.
+        expect(Math.hypot(x, z), `${(SPECIES[species] as Species).name} ${id}`).toBeGreaterThan(
+          WILDLIFE.unseen - 4,
+        );
+      });
+    }
+    expect(arrived).toBeGreaterThan(10);
+  });
+
+  it('brings back the one a herd has lost only when no player is near enough to see it come', () => {
+    // On low ground the valley has mossback herds of its own; on high ground (above their band) it has none.
+    for (const ground of [4, 10]) {
+      const w = flatWorld({ half: 96, height: () => ground });
+      const sim = new WildlifeSim(w.world, { core: w.core, seed: 9 });
+      // A pair of mossbacks, which no player startles, so their herd stays where it is.
+      const first = sim.spawnHerd(WILD_SPECIES.mossback, 50, 0, 2);
+      expect(first, `ground ${ground}`).toBeGreaterThan(0);
+      const mossbacks = sim.countOf(WILD_SPECIES.mossback);
+      const at = whereIs(sim, first);
+      expect(sim.hurt(first, 1000, 1, at.x, at.z)).toBe(true);
+      expect(sim.countOf(WILD_SPECIES.mossback)).toBe(mossbacks - 1);
+      // A player who stays beside the herd sees nothing come, however many top-ups go by.
+      play(sim, WILDLIFE.topUpSeconds * 2 + 1, { targets: [player(1, at.x - 5, at.z)] });
+      expect(sim.countOf(WILD_SPECIES.mossback), `ground ${ground}`).toBe(mossbacks - 1);
+      // Once they have gone far off, the herd is whole again.
+      play(sim, WILDLIFE.topUpSeconds * 2 + 1, { targets: [player(1, -400, 400)] });
+      expect(sim.countOf(WILD_SPECIES.mossback), `ground ${ground}`).toBe(mossbacks);
+    }
   });
 
   it('brings a thinned-out herd back, away from the players, after a while', () => {
