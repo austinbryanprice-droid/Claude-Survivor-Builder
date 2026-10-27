@@ -2024,7 +2024,7 @@ test.describe('multiplayer', () => {
     }
   });
 
-  test("a Generator charges the guest beside it on her own screen: the crew's points open it, every screen draws it, the host far away is not charged, and breaking it ends the charge", async ({
+  test("a Generator charges the guest beside it on the guest's own screen: the crew's points open it, every screen draws it, the host far away is not charged, and breaking it ends the charge", async ({
     browser,
     baseURL,
   }) => {
@@ -2065,7 +2065,7 @@ test.describe('multiplayer', () => {
             const seen = (await remotes(host)).find((r) => r.name === 'Ada');
             return !!seen && Math.hypot(seen.x - adaAt.x, seen.z - adaAt.z) < 2;
           },
-          { ...slow, message: 'the host sees Ada where she stands' },
+          { ...slow, message: 'the host sees Ada in place' },
         )
         .toBe(true);
       for (const p of everyone) {
@@ -2095,8 +2095,8 @@ test.describe('multiplayer', () => {
         await expect.poll(() => drawnOf(p), { ...slow, message: `${p.name} draws it` }).toBe(1);
       }
 
-      // Her battery is low and she stands three blocks from the Generator: the host tells her screen
-      // that she is charged, and her Energy climbs. The host, far on the other side of the Core, is not.
+      // Ada's battery is low and Ada stands three blocks from the Generator: the host tells Ada's screen
+      // that Ada is charged, and the Energy climbs. The host, far on the other side of the Core, is not.
       await host.page.evaluate((id) => window.__ashbound!.mp!.setVitals({ energy: 30 }, id), adaId);
       await standAt(ada.page, cell.x + 0.5 - 3, cell.z + 0.5);
       await expect.poll(() => chargingOf(ada), { ...slow, message: 'Ada is charged' }).toBe(true);
@@ -2108,7 +2108,7 @@ test.describe('multiplayer', () => {
         .toBeGreaterThan(36);
       expect(await chargingOf(host)).toBe(false);
 
-      // Out of its reach she is not charged, and back within it she is again (a hop of ten blocks, which the host believes).
+      // Out of its reach Ada is not charged, and back within it Ada is again (a hop of ten blocks, which the host believes).
       await standAt(ada.page, cell.x + 0.5 - 3 - 10, cell.z + 0.5);
       await expect
         .poll(() => chargingOf(ada), { ...slow, message: 'Ada walks out of the reach' })
@@ -2118,7 +2118,7 @@ test.describe('multiplayer', () => {
         .poll(() => chargingOf(ada), { ...slow, message: 'Ada walks back in' })
         .toBe(true);
 
-      // She breaks it: gone from both worlds and both screens, and the charge stops on her screen.
+      // Ada breaks it: gone from both worlds and both screens, and the charge stops on Ada's screen.
       await ada.page.evaluate(([x, y, z]) => window.__ashbound!.mp!.breakBlock(x!, y!, z!), [
         cell.x,
         cell.y,
