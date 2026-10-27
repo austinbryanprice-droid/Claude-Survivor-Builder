@@ -1,7 +1,12 @@
 import type { InstancedBufferGeometry, Mesh, ShaderMaterial } from 'three';
 import { describe, expect, it } from 'vitest';
 import { createEnemyRenderer } from '../../src/engine/enemy-render';
-import { ENEMY_FLAG, createEnemyPose, type EnemyPose } from '../../src/shared/enemy-state';
+import {
+  ENEMY_FLAG,
+  ENEMY_KIND,
+  createEnemyPose,
+  type EnemyPose,
+} from '../../src/shared/enemy-state';
 import { NET } from '../../src/shared/net-config';
 import { createTestRegistry } from './helpers/registry';
 
@@ -22,9 +27,9 @@ function setup(capacity?: number) {
 }
 
 describe('the machines on screen', () => {
-  it('are one mesh, drawn in one call whatever their number, and hidden when there are none', () => {
+  it('are one mesh for each kind, drawn in one call whatever their number, and hidden when there are none', () => {
     const { renderer, mesh, geometry } = setup();
-    expect(renderer.object.children).toHaveLength(1);
+    expect(renderer.object.children.map((child) => child.name)).toEqual(['crawlers', 'armored']);
     expect(mesh.visible).toBe(false);
     renderer.update(0.016, [pose(1), pose(2), pose(3)]);
     expect(mesh.visible).toBe(true);
@@ -157,6 +162,79 @@ describe('the machines on screen', () => {
     expect(renderer.trianglesPerMachine * 100).toBeLessThan(100_000);
   });
 
+  it('draw the armored crawlers in a mesh of their own, larger, in the order of the poses among the rest', () => {
+    const { renderer, geometry } = setup();
+    const [crawlers, armored] = renderer.object.children as Mesh[];
+    const plated = armored!.geometry as InstancedBufferGeometry;
+    renderer.update(0.016, [
+      pose(1),
+      pose(2, { kind: ENEMY_KIND.armored, x: 5, y: 12, z: -3 }),
+      pose(3),
+      pose(4, { kind: ENEMY_KIND.armored }),
+    ]);
+    expect(geometry.instanceCount).toBe(2);
+    expect(plated.instanceCount).toBe(2);
+    expect(crawlers!.visible).toBe(true);
+    expect(armored!.visible).toBe(true);
+    const at = (name: string, index: number, width: number): number[] =>
+      Array.from(
+        (plated.getAttribute(name).array as Float32Array).slice(
+          index * width,
+          index * width + width,
+        ),
+      );
+    expect(at('iPos', 0, 3)).toEqual([5, 12, -3]);
+    // The same spread of sizes, on a larger body.
+    for (const index of [0, 1]) {
+      const size = at('iData', index, 4)[1] as number;
+      expect(size).toBeGreaterThan(0.94 * 1.2);
+      expect(size).toBeLessThan(1.06 * 1.2);
+    }
+    // The list reads every machine on screen, in the order the poses came.
+    expect(renderer.list().map((machine) => [machine.id, machine.kind])).toEqual([
+      [1, 0],
+      [2, 1],
+      [3, 0],
+      [4, 1],
+    ]);
+    // Without crawlers the crawlers' mesh is hidden, and the armored ones stay.
+    renderer.update(0.016, [pose(2, { kind: ENEMY_KIND.armored })]);
+    expect(crawlers!.visible).toBe(false);
+    expect(armored!.visible).toBe(true);
+  });
+
+  it('stride more slowly in armor, and draw a kind it does not know as a crawler', () => {
+    const { renderer, geometry } = setup();
+    const plated = (renderer.object.children[1] as Mesh).geometry as InstancedBufferGeometry;
+    const phase = (g: InstancedBufferGeometry, index: number): number =>
+      (g.getAttribute('iData').array as Float32Array)[index * 4 + 2] as number;
+    // The same id walks the same distance in the same time: only the stride differs.
+    renderer.update(0.05, [pose(5), pose(5 + 1000, { kind: ENEMY_KIND.armored })]);
+    const crawlerStart = phase(geometry, 0);
+    const armoredStart = phase(plated, 0);
+    renderer.update(0.05, [
+      pose(5, { speed: 2 }),
+      pose(5 + 1000, { kind: ENEMY_KIND.armored, speed: 2 }),
+    ]);
+    const crawlerStep = phase(geometry, 0) - crawlerStart;
+    const armoredStep = phase(plated, 0) - armoredStart;
+    expect(crawlerStep).toBeGreaterThan(0);
+    expect(armoredStep).toBeGreaterThan(0);
+    expect(armoredStep).toBeLessThan(crawlerStep);
+    // A kind the picture has no model for is a crawler.
+    renderer.update(0.016, [pose(9, { kind: 7 })]);
+    expect(geometry.instanceCount).toBe(1);
+    expect(plated.instanceCount).toBe(0);
+    expect(renderer.trianglesOf(7)).toBe(renderer.trianglesPerMachine);
+  });
+
+  it('give the armored crawler more of a body than the crawler, still within the budget of a hundred', () => {
+    const { renderer } = setup();
+    expect(renderer.trianglesOf(ENEMY_KIND.armored)).toBeGreaterThan(renderer.trianglesPerMachine);
+    expect(renderer.trianglesOf(ENEMY_KIND.armored)).toBeLessThan(2000);
+    expect(renderer.trianglesOf(ENEMY_KIND.armored) * 100).toBeLessThan(200_000);
+  });
+
   it('are lit like the rest of the world, and cast a shadow that moves the same way', () => {
     const { mesh, registry } = setup();
     const material = mesh.material as ShaderMaterial;
@@ -175,7 +253,8 @@ describe('the machines on screen', () => {
     const host = { children: [] as unknown[] };
     renderer.update(0.016, [pose(1)]);
     const materials = Reflect.get(registry, 'materials') as Set<unknown>;
-    expect(materials.size).toBe(1);
+    // One material for each kind: they differ in color.
+    expect(materials.size).toBe(2);
     renderer.dispose();
     expect(materials.size).toBe(0);
     expect(renderer.object.children).toHaveLength(0);
