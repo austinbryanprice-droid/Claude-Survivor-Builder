@@ -6,9 +6,11 @@
  *
  * The film is a short, skippable prologue to a fresh run, with no dialogue and no choices: the
  * station's reactor falls out of the dusk, lands in the valley, the machines of the wreck wake in
- * the night and the dawn that follows is the first morning of the run. Its sky is the game's own
- * day-night cycle run through in a few seconds, and it ends on exactly the sky the run opens with,
- * so the hand-over to the player is not a cut.
+ * the night and the dawn that follows is the first morning of the run. A narrator tells it: the
+ * captions are what it says, line by line, shown whether or not a voice speaks them (`narration.ts`
+ * reads them for the voice). Its sky is the game's own day-night cycle run through in a few
+ * seconds, and it ends on exactly the sky the run opens with, so the hand-over to the player is
+ * not a cut.
  */
 import { CYCLE_SECONDS, DAY_SECONDS } from './daycycle';
 
@@ -78,26 +80,69 @@ export interface Caption {
   readonly text: string;
 }
 
+/**
+ * What the narrator says, and when: the film's story in the words of one of Vesper's crew, which
+ * the letterbox also shows as captions whether or not anyone hears them. Each line sits inside one
+ * scene, so that no caption is cut by a dip to black, and the crash itself (the touchdown, the
+ * skid) is left to the picture and the sound. The story it tells: the station, its reactor that
+ * became the Core, the machines the Core's light woke, the day that puts them to sleep and the
+ * name of the place the crew holds.
+ */
 export const CAPTIONS: readonly Caption[] = [
   {
-    from: sceneTime('skyfall', 1.2),
-    to: sceneTime('skyfall', 6.6),
-    text: `Station ${STATION_NAME} lost her reactor over an unnamed world.`,
+    from: sceneTime('skyfall', 0.8),
+    to: sceneTime('skyfall', 4.7),
+    text: `${STATION_NAME} watched over a world no one had named.`,
   },
   {
-    from: sceneTime('crater', 1.6),
-    to: sceneTime('crater', 6.8),
-    text: 'What the fall left standing, the night came to take.',
+    from: sceneTime('skyfall', 4.95),
+    to: sceneTime('skyfall', 7.75),
+    text: 'Then her reactor tore free.',
   },
   {
-    from: sceneTime('eyes', 1.2),
-    to: sceneTime('eyes', 6),
-    text: 'The wreck was not empty. Its machines woke in the dark.',
+    from: sceneTime('crater', 0.35),
+    to: sceneTime('crater', 3.95),
+    text: 'The reactor survived. We call it the Core.',
+  },
+  {
+    from: sceneTime('crater', 4.25),
+    to: sceneTime('crater', 7.85),
+    text: 'While it burns, we get back up.',
+  },
+  {
+    from: sceneTime('eyes', 0.35),
+    to: sceneTime('eyes', 3.15),
+    text: `Its light woke ${STATION_NAME}'s machines.`,
+  },
+  {
+    from: sceneTime('eyes', 3.45),
+    to: sceneTime('eyes', 6.85),
+    text: 'They come for it every night. More each time.',
+  },
+  {
+    from: sceneTime('dawn', 0.35),
+    to: sceneTime('dawn', 2.65),
+    text: 'By day, they sleep.',
+  },
+  {
+    from: sceneTime('dawn', 2.9),
+    to: sceneTime('dawn', 5.5),
+    text: 'This is Ashbound Outpost.',
+  },
+  {
+    from: sceneTime('dawn', 5.75),
+    to: sceneTime('dawn', 8.1),
+    text: 'We mean to keep it.',
+  },
+  {
+    from: sceneTime('wake', 0.95),
+    to: sceneTime('wake', 4.85),
+    text: 'Wake up. You have until dusk.',
   },
 ];
 
 /** Seconds a caption takes to fade in and to fade out. */
-export const CAPTION_FADE = 0.7;
+export const CAPTION_FADE = 0.4;
 
 /** When the title card is up (fades included), and how long it takes to arrive and to leave. */
 export const TITLE_WINDOW = {
