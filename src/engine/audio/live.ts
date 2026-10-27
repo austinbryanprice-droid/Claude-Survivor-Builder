@@ -1,4 +1,14 @@
 import {
+  Governor,
+  costOf,
+  createHeard,
+  hearAt,
+  placeCues,
+  type Effect,
+  type EffectKind,
+  type Listener,
+} from '../../shared/effect-sound';
+import {
   Composer,
   MIX,
   ambienceFor,
@@ -20,6 +30,10 @@ import { VOICES, type VoiceEnv } from './voices';
  * The game's clock is the only clock: every frame says how long it was and how the valley stands,
  * and anything that starts is placed a moment ahead of the audio thread's own time.
  *
+ * The things people do (a block set down, a module coming on, a click turned away) are `Effect`s: they
+ * are placed where the listener hears them from, held to a budget of sounds at once, and struck with
+ * the same voices, through a bus of their own.
+ *
  * Nothing here is needed to play: a recipe that throws is reported once and the game goes on
  * in silence where it failed.
  */
@@ -39,6 +53,10 @@ export interface LiveSoundEvent {
   readonly name: string;
   /** Seconds on the audio clock it was started at. */
   readonly when: number;
+  /** For a cue of an effect: the kind of effect it belongs to, where it was placed between the speakers (-1 to 1) and its level in decibels once the distance had taken its share. */
+  readonly effect?: EffectKind;
+  readonly pan?: number;
+  readonly level?: number;
 }
 
 export interface LiveSoundStats {
@@ -48,6 +66,9 @@ export interface LiveSoundStats {
   beds: number;
   /** Cues or beds whose recipe threw. */
   failed: number;
+  /** Effects that sounded, and effects turned away because too many sounds were alive already. */
+  effects: number;
+  dropped: number;
   state: 'playing' | 'fading' | 'stopped';
 }
 
@@ -58,6 +79,14 @@ export interface LiveSound {
   play(cue: LiveCue, after?: number): void;
   /** Starts every sound in a list, each at its own offset. */
   playAll(cues: readonly MusicCue[]): void;
+  /** Tells the sound where the listener is and which way the view faces. Call it every frame, before the effects of that frame. */
+  listen(pose: Listener): void;
+  /**
+   * Sounds an effect: placed where the listener hears it from (an effect with no place is in the
+   * head), left out if it is beyond earshot or if too many sounds are alive for its kind. Returns
+   * whether it sounded.
+   */
+  effect(effect: Effect): boolean;
   /** The sound fades out over `seconds` and is taken apart. */
   fadeOut(seconds: number): void;
   readonly stats: LiveSoundStats;
@@ -95,10 +124,24 @@ export function createLiveSound(
   const reverb = createReverb(ctx);
   reverb.output.connect(bus);
   const env: VoiceEnv = { ctx, dry, wet: reverb.input, noise: createNoiseBank(ctx), bus };
+  // What people do has a bus of its own into the same room, so that one place sets how loud it all is next to the valley.
+  const effects = ctx.createGain();
+  effects.connect(bus);
+  const effectEnv: VoiceEnv = { ...env, dry: effects };
+  const governor = new Governor();
+  const heard = createHeard();
+  let pose: Listener | null = null;
 
   const composer = new Composer(seed);
   const beds = new Map<BedName, Steering>();
-  const stats: LiveSoundStats = { voices: 0, beds: 0, failed: 0, state: 'playing' };
+  const stats: LiveSoundStats = {
+    voices: 0,
+    beds: 0,
+    failed: 0,
+    effects: 0,
+    dropped: 0,
+    state: 'playing',
+  };
   let started = false;
   let over = false;
   let reported = false;
@@ -111,13 +154,27 @@ export function createLiveSound(
     console.error(`The game's sound failed at ${what}; the game goes on without it.`, error);
   };
 
-  const strike = (cue: LiveCue, when: number): void => {
+  /** Starts one voice. False where its recipe threw, which is reported and goes no further. */
+  const strike = (cue: LiveCue, when: number, into: VoiceEnv = env, kind?: EffectKind): boolean => {
     try {
-      VOICES[cue.voice](env, when, { ...cue, at: 0 });
+      VOICES[cue.voice](into, when, { ...cue, at: 0 });
       stats.voices++;
-      trace?.({ kind: 'cue', name: cue.voice, when });
+      trace?.(
+        kind
+          ? {
+              kind: 'cue',
+              name: cue.voice,
+              when,
+              effect: kind,
+              pan: cue.pan ?? 0,
+              level: cue.level,
+            }
+          : { kind: 'cue', name: cue.voice, when },
+      );
+      return true;
     } catch (error) {
       fail(`a ${cue.voice}`, error);
+      return false;
     }
   };
 
@@ -182,6 +239,29 @@ export function createLiveSound(
     strike(cue, ctx.currentTime + LOOKAHEAD + Math.max(0, after));
   };
 
+  const effect = (made: Effect): boolean => {
+    if (over) return false;
+    if (live && ctx.state !== 'running') return false;
+    let cues = made.cues;
+    if (made.at && pose) {
+      if (!hearAt(pose, made.at.x, made.at.y, made.at.z, heard)) return false;
+      cues = placeCues(cues, heard);
+      if (cues.length === 0) return false;
+    }
+    const now = ctx.currentTime;
+    if (!governor.admit(made.kind, costOf(cues), now, made.key ?? 0)) {
+      stats.dropped++;
+      return false;
+    }
+    let started = 0;
+    for (const { after, cue } of cues) {
+      if (strike(cue, now + LOOKAHEAD + Math.max(0, after), effectEnv, made.kind)) started++;
+    }
+    if (started === 0) return false;
+    stats.effects++;
+    return true;
+  };
+
   return {
     update(dt, scene) {
       if (over) return;
@@ -199,6 +279,10 @@ export function createLiveSound(
     playAll(cues) {
       for (const { after, cue } of cues) play(cue, after);
     },
+    listen(next) {
+      pose = next;
+    },
+    effect,
     fadeOut(seconds) {
       if (over) return;
       over = true;
