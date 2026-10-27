@@ -2,6 +2,7 @@ import {
   BoxGeometry,
   CylinderGeometry,
   ExtrudeGeometry,
+  OctahedronGeometry,
   Shape,
   Vector2,
   type BufferGeometry,
@@ -525,11 +526,65 @@ function generator(): Parts {
   };
 }
 
+/**
+ * The Power Node: a relay pylon on a small steel pad. A slender column rises from a collar and carries
+ * three rings that shrink toward the top, like the coils of a relay, with amber insulators between them
+ * and a bright cyan crystal in a cradle at the top under a blinking amber needle. A little console on the
+ * front, a screen with its readout and three lamps, is the side a player sees. The cyan means it carries
+ * power on, and a Node that has none shows every light of it dim (`ModuleRenderer.setPowered`).
+ */
+function node(): Parts {
+  const x = -0.05;
+  const sides = [-1, 1] as const;
+  const corners = sides.flatMap((sx) => sides.map((sz) => [sx, sz] as const));
+  // The crystal: an octahedron stretched upward and turned to stand on a corner of the pylon.
+  const crystal = new OctahedronGeometry(0.06);
+  crystal.scale(0.85, 1.3, 0.85);
+  crystal.rotateY(Math.PI / 4);
+  crystal.translate(x, 0.83, 0);
+  return {
+    plate: [
+      // The foundation under the pad: it meets the ground where the module floats over it.
+      box(0.4, 0.78, 0.4, 0, -0.59, 0, 0),
+      box(0.6, 0.36, 0.6, 0, -0.12, 0),
+      box(0.54, 0.12, 0.54, 0, 0.12, 0),
+      post(0.1, 0.12, x, 0.23, 0, 10),
+      post(0.52, 0.05, x, 0.48, 0, 8),
+      box(0.14, 0.18, 0.22, 0.17, 0.27, 0, 0.2),
+    ],
+    trim: [
+      box(0.56, 0.025, 0.56, 0, 0.1925, 0, 0.4),
+      post(0.028, 0.16, x, 0.4, 0, 14),
+      post(0.028, 0.13, x, 0.52, 0, 14),
+      post(0.028, 0.1, x, 0.64, 0, 14),
+      post(0.03, 0.08, x, 0.755, 0, 10),
+      box(0.15, 0.02, 0.23, 0.17, 0.37, 0, 0.4),
+      ...corners.map(([sx, sz]) => box(0.06, 0.04, 0.06, sx * 0.24, 0.205, sz * 0.24, 0)),
+    ],
+    amber: [
+      post(0.04, 0.065, x, 0.46, 0, 8),
+      post(0.04, 0.065, x, 0.58, 0, 8),
+      ...[-0.06, 0, 0.06].map((z) => box(0.016, 0.022, 0.03, 0.245, 0.205, z, 0)),
+    ],
+    lights: [
+      post(0.05, 0.062, x, 0.3, 0, 8),
+      post(0.05, 0.062, x, 0.7, 0, 8),
+      box(0.6, 0.02, 0.6, 0, 0.075, 0, 0),
+      crystal,
+      box(0.006, 0.012, 0.1, 0.2475, 0.3, 0, 0),
+      box(0.006, 0.012, 0.07, 0.2475, 0.27, -0.015, 0),
+    ],
+    screen: [box(0.012, 0.1, 0.15, 0.241, 0.285, 0, 0)],
+    beacon: [box(0.03, 0.04, 0.03, x, 0.925, 0, 0)],
+  };
+}
+
 /** The models, by module id. */
 const BUILDERS: Readonly<Record<number, (level: number) => Build>> = {
   [MODULE.terminal]: () => ({ body: terminal() }),
   [MODULE.turret]: turret,
   [MODULE.generator]: () => ({ body: generator() }),
+  [MODULE.node]: () => ({ body: node() }),
 };
 
 /** One merged geometry for each look the parts use. */
