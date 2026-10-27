@@ -246,6 +246,70 @@ describe('holding the input while a film plays', () => {
     expect(input.blocked).toBe(false);
   });
 
+  it('keeps the hold when the error event of the raw-movement request comes after the plain one is answered, before the lock shows', async () => {
+    canvas.requestPointerLock = vi.fn(
+      (options?: { unadjustedMovement?: boolean }): Promise<void> =>
+        options?.unadjustedMovement
+          ? Promise.reject(new DOMException('not here', 'NotSupportedError'))
+          : Promise.resolve(),
+    );
+    const changed = vi.fn();
+    input.onChange(changed);
+    input.onLockRequest(() => input.hold(true));
+    input.requestLock();
+    for (let turn = 0; turn < 4; turn++) await Promise.resolve();
+    expect(canvas.requestPointerLock).toHaveBeenCalledTimes(2);
+    changed.mockClear();
+
+    // Nothing is pending and nothing is locked yet, which is how a real refusal looks.
+    doc.refuse();
+    expect(input.held).toBe(true);
+    expect(input.blocked).toBe(false);
+    expect(changed).not.toHaveBeenCalled();
+    doc.grant(canvas);
+    expect(input.captured).toBe(true);
+    expect(input.held).toBe(true);
+    expect(input.blocked).toBe(false);
+  });
+
+  it('still ends the hold when the plain request is refused as well, and the two error events change nothing more', async () => {
+    canvas.requestPointerLock = vi.fn((options?: { unadjustedMovement?: boolean }): Promise<void> =>
+      Promise.reject(
+        new DOMException(
+          'no',
+          options?.unadjustedMovement ? 'NotSupportedError' : 'NotAllowedError',
+        ),
+      ),
+    );
+    input.onLockRequest(() => input.hold(true));
+    input.requestLock();
+    for (let turn = 0; turn < 4; turn++) await Promise.resolve();
+    expect(input.held).toBe(false);
+    expect(input.blocked).toBe(true);
+    doc.refuse();
+    doc.refuse();
+    expect(input.held).toBe(false);
+    expect(input.blocked).toBe(true);
+  });
+
+  it('does not let an error event that never came hide the refusal of the next request', async () => {
+    canvas.requestPointerLock = vi.fn(
+      (options?: { unadjustedMovement?: boolean }): Promise<void> =>
+        options?.unadjustedMovement
+          ? Promise.reject(new DOMException('not here', 'NotSupportedError'))
+          : Promise.resolve(),
+    );
+    input.requestLock();
+    for (let turn = 0; turn < 4; turn++) await Promise.resolve();
+    // The event for the first request was lost. An older browser, which answers with nothing, is asked next.
+    canvas.requestPointerLock = vi.fn((): Promise<void> => undefined as unknown as Promise<void>);
+    input.onLockRequest(() => input.hold(true));
+    input.requestLock();
+    doc.refuse();
+    expect(input.held).toBe(false);
+    expect(input.blocked).toBe(true);
+  });
+
   it('still hears the keys that are not play: Esc as a cancel and F3 as the overlay', () => {
     const actions: InputAction[] = [];
     input.onAction((action) => actions.push(action));

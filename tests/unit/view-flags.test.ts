@@ -18,6 +18,7 @@ describe('view URL switches', () => {
     expect(v.research).toBeNull();
     expect(v.intro).toBe('auto');
     expect(v.introAt).toBeNull();
+    expect(v.title).toBe('auto');
     expect(v.freeze).toBe(false);
     expect(v.terrain).toBe('surface-nets');
     expect(v.scale).toBeNull();
@@ -114,6 +115,19 @@ describe('view URL switches', () => {
     for (const other of ['', '?intro=maybe', '?intro=2', '?hud=0']) {
       expect(readViewFlags(other).intro, other).toBe('auto');
     }
+  });
+
+  it('asks for the title screen, or for none, and otherwise leaves it to the page', () => {
+    for (const on of ['?title', '?title=', '?title=on', '?title=1', '?title=true', '?title=ON']) {
+      expect(readViewFlags(on).title, on).toBe('on');
+    }
+    for (const off of ['?title=off', '?title=0', '?title=false', '?title=OFF']) {
+      expect(readViewFlags(off).title, off).toBe('off');
+    }
+    for (const other of ['', '?title=maybe', '?title=2', '?hud=0']) {
+      expect(readViewFlags(other).title, other).toBe('auto');
+    }
+    expect(readViewFlags('?title=off&intro=on')).toMatchObject({ title: 'off', intro: 'on' });
   });
 
   it('holds the film at the second it is asked for, for pictures and tests', () => {

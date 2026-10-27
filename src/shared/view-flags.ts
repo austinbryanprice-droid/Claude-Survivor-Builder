@@ -1,6 +1,7 @@
 import { TIME_PRESETS } from './daycycle';
 import type { IntroMode } from './intro';
 import { QUALITY_NAMES, isQualityName, type QualityName } from './quality';
+import type { TitleMode } from './title';
 
 /** How the terrain mesh is built: the real mesher, or the smoothed heightfield it is measured against. */
 export type TerrainMode = 'surface-nets' | 'heightfield';
@@ -48,6 +49,8 @@ export interface ViewFlags {
   readonly intro: IntroMode;
   /** `?introAt=12.5` shows the film as it is 12.5 seconds in and holds it there, for pictures and tests; null plays it as normal. */
   readonly introAt: number | null;
+  /** `?title=on` opens on the title screen whatever else the URL asks for, `?title=off` never does; by default every plain start opens on it. */
+  readonly title: TitleMode;
 }
 
 /** The latest night `?night=` can ask for. */
@@ -78,8 +81,11 @@ function readResearch(value: string | null): number | null {
   return Math.min(MAX_START_RESEARCH, Number(value));
 }
 
-/** `?intro` and `?intro=on` ask for the film, `?intro=off` (or 0) for none; anything else leaves it to the settings. */
-function readIntro(value: string | null): IntroMode {
+/**
+ * A switch with three states: `?name` and `?name=on` ask for the thing, `?name=off` (or 0) for none
+ * of it, and anything else leaves it to the page. The intro film and the title screen read it.
+ */
+function readSwitch(value: string | null): TitleMode {
   if (value === null) return 'auto';
   const word = value.toLowerCase();
   if (word === 'off' || word === '0' || word === 'false') return 'off';
@@ -126,7 +132,8 @@ export function readViewFlags(search: string): ViewFlags {
     freeze: p.has('freeze') && p.get('freeze') !== '0',
     scale: p.has('scale') && Number.isFinite(scale) && scale > 0 ? Math.min(1, scale) : null,
     benchPresets: readBenchPresets(p.get('benchPresets')),
-    intro: readIntro(p.get('intro')),
+    intro: readSwitch(p.get('intro')),
     introAt: readIntroAt(p.get('introAt')),
+    title: readSwitch(p.get('title')),
   };
 }

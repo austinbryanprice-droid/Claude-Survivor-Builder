@@ -16,7 +16,9 @@ async function open(page: Page, query: string): Promise<string[]> {
   });
   page.on('pageerror', (error) => problems.push(`page error: ${error.message}`));
   await page.goto(`./${query}`);
-  await expect(page.locator('html')).toHaveAttribute('data-ready', 'true');
+  await expect(page.locator('html')).toHaveAttribute('data-ready', 'true', {
+    timeout: STATE_TIMEOUT,
+  });
   return problems;
 }
 
@@ -172,6 +174,43 @@ test.describe('the intro film', () => {
     expect(problems).toEqual([]);
   });
 
+  test('keeps the film when the page is too busy to read the browser’s answer about the mouse in time', async ({
+    page,
+  }) => {
+    // The film gives up on the mouse after two and a half seconds. A page that is stalled for longer
+    // than that right after asking (the film's shaders compiling in its first frame, a slow machine)
+    // comes to that timer before it has read the answer the browser sent meanwhile, and must not
+    // take its own silence for a refusal.
+    await page.addInitScript(() => {
+      const request = HTMLCanvasElement.prototype.requestPointerLock;
+      HTMLCanvasElement.prototype.requestPointerLock = function (
+        ...args: Parameters<typeof request>
+      ) {
+        const result = request.apply(this, args);
+        const until = performance.now() + 3500;
+        while (performance.now() < until) {
+          // busy: nothing the browser says is read until this returns
+        }
+        return result;
+      };
+    });
+    const problems = await open(page, '?debug&intro=on&quality=low');
+    await waitForTheFilm(page);
+    await page.getByRole('button', { name: 'Play' }).click();
+    await expect(page.locator('#hud')).toHaveAttribute('data-intro', 'on', {
+      timeout: STATE_TIMEOUT,
+    });
+    await page.waitForFunction(() => (window.__ashbound?.intro?.playback?.time ?? 0) > 1.5, null, {
+      timeout: STATE_TIMEOUT,
+    });
+    const mouse = await page.evaluate(() => {
+      const input = window.__ashbound?.game.input;
+      return { captured: input?.captured, held: input?.held };
+    });
+    expect(mouse).toEqual({ captured: true, held: true });
+    expect(problems).toEqual([]);
+  });
+
   test('stays out of the way of a run that is not fresh, of the plain page under automation, and of an off switch', async ({
     page,
   }) => {
@@ -188,7 +227,9 @@ test.describe('the intro film', () => {
 
     // `?intro=off` wins over `?intro=on` coming from anywhere else.
     await page.goto('./?debug&intro=off&quality=low');
-    await expect(page.locator('html')).toHaveAttribute('data-ready', 'true');
+    await expect(page.locator('html')).toHaveAttribute('data-ready', 'true', {
+      timeout: STATE_TIMEOUT,
+    });
     await page.waitForFunction(() => !!window.__ashbound?.mp, null, { timeout: STATE_TIMEOUT });
     await page.getByRole('button', { name: 'Play' }).click();
     await expect(page.locator('#hud')).toHaveAttribute('data-pointer', 'locked', {
@@ -211,12 +252,15 @@ test.describe('the intro film', () => {
     const problems = await open(page, '?quality=low');
     // The film's code has loaded once its overlay is in the page.
     await page.locator('.intro').waitFor({ state: 'attached', timeout: STATE_TIMEOUT });
+    // A plain page opens on the title screen, and the film starts from its Play.
+    await expect(page.locator('.title')).toBeVisible();
     await page.getByRole('button', { name: 'Play' }).click();
 
     await expect(page.locator('#hud')).toHaveAttribute('data-intro', 'on', {
       timeout: STATE_TIMEOUT,
     });
     await expect(page.locator('.intro')).toBeVisible();
+    await expect(page.locator('.title')).toBeHidden({ timeout: STATE_TIMEOUT });
     await expect(page.locator('.pause')).toBeHidden();
     await expect(page.locator('.intro-flash')).toHaveCSS('filter', 'opacity(0.35)');
 
