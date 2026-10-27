@@ -38,7 +38,7 @@ import { TURRET_GUN } from '../../shared/turret';
  */
 
 /** What a part of a model is made of; each look is one material and so one draw call. */
-export type ModuleLook = 'plate' | 'trim' | 'amber' | 'lights' | 'screen' | 'beacon';
+export type ModuleLook = 'plate' | 'trim' | 'amber' | 'lights' | 'screen' | 'beacon' | 'lamp';
 
 export interface ModuleLookSpec {
   readonly color: string;
@@ -51,6 +51,8 @@ export interface ModuleLookSpec {
 /**
  * The looks of the modules, in the Core's palette: dark steel, lighter plates, amber trim and cyan
  * light, the cyan of a module that is powered and the amber of one that is working (the art direction).
+ * The lamp is the Light's own: a warm lantern glow that stays as it is, with no beat or blink, and that
+ * is bright enough to bloom.
  */
 export const MODULE_LOOKS: Readonly<Record<ModuleLook, ModuleLookSpec>> = {
   plate: { color: '#31405a', gloss: 0.55, metalness: 0.65 },
@@ -59,6 +61,7 @@ export const MODULE_LOOKS: Readonly<Record<ModuleLook, ModuleLookSpec>> = {
   lights: { color: '#0e2f36', gloss: 0.5, metalness: 0.1, glow: '#3ad1e0', glowIntensity: 1.4 },
   screen: { color: '#0e2f36', gloss: 0.9, metalness: 0.1, glow: '#2aa9b8', glowIntensity: 0.75 },
   beacon: { color: '#7a4a12', gloss: 0.3, metalness: 0.2, glow: '#f2a43a', glowIntensity: 2.2 },
+  lamp: { color: '#6a5530', gloss: 0.3, metalness: 0.1, glow: '#ffc778', glowIntensity: 2.0 },
 };
 
 /** The looks a model is made of, in the order they are drawn. */
@@ -645,6 +648,53 @@ function bed(): Parts {
   };
 }
 
+/** How far the lamp's head leans toward the ground in front of it, in radians (about fourteen degrees). */
+const LAMP_TILT = 0.25;
+/** Where the head sits on the mast: the height above the cell's floor of the point it leans about. */
+const LAMP_HEIGHT = 0.8;
+
+/**
+ * Light: a floodlight on a mast, on a small steel pad. A slender mast rises from a collar to a head that
+ * leans toward the ground in front of it: a shallow housing with a lens in a frame and a short visor over
+ * it, on a bracket. The lens is the warm lamp, on the side a player sees; cyan strips run round the pad
+ * and up the mast, and a ring of amber marks the collar. It takes power, and without it the lamp and the
+ * strips burn low.
+ */
+function light(): Parts {
+  // The head is built looking toward +x about the point it leans on, then tipped and set on the mast.
+  const housing = [
+    box(0.34, 0.15, 0.34, 0.05, 0, 0),
+    box(0.1, 0.012, 0.3, 0.27, 0.078, 0, 0),
+    post(0.1, 0.045, 0, -0.085, 0, 8),
+  ];
+  const frame = [box(0.02, 0.12, 0.28, 0.23, 0, 0, 0)];
+  const lens = [box(0.012, 0.09, 0.22, 0.2415, 0, 0, 0)];
+  for (const part of [...housing, ...frame, ...lens]) {
+    part.rotateZ(-LAMP_TILT);
+    part.translate(0, LAMP_HEIGHT, 0);
+  }
+  return {
+    plate: [
+      // The foundation under the pad: it meets the ground where the module floats over it.
+      box(0.3, 0.78, 0.3, 0, -0.59, 0, 0),
+      box(0.5, 0.3, 0.5, 0, -0.07, 0),
+      box(0.42, 0.08, 0.42, 0, 0.12, 0, 0),
+      post(0.1, 0.07, 0, 0.23, 0, 10),
+      post(0.56, 0.028, 0, 0.56, 0, 8),
+      ...housing,
+    ],
+    trim: [
+      box(0.44, 0.02, 0.44, 0, 0.17, 0, 0.4),
+      post(0.02, 0.04, 0, 0.38, 0, 8),
+      post(0.02, 0.04, 0, 0.62, 0, 8),
+      ...frame,
+    ],
+    amber: [post(0.025, 0.05, 0, 0.3, 0, 8)],
+    lights: [box(0.5, 0.015, 0.5, 0, 0.075, 0, 0), box(0.008, 0.28, 0.02, 0.03, 0.54, 0, 0)],
+    lamp: lens,
+  };
+}
+
 /** The models, by module id. */
 const BUILDERS: Readonly<Record<number, (level: number) => Build>> = {
   [MODULE.terminal]: () => ({ body: terminal() }),
@@ -653,6 +703,7 @@ const BUILDERS: Readonly<Record<number, (level: number) => Build>> = {
   [MODULE.node]: () => ({ body: node() }),
   [MODULE.storage]: () => ({ body: storage() }),
   [MODULE.bed]: () => ({ body: bed() }),
+  [MODULE.light]: () => ({ body: light() }),
 };
 
 /** One merged geometry for each look the parts use. */

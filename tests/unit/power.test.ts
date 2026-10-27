@@ -14,6 +14,9 @@ const GENERATOR = packState(moduleShape(MODULE.generator, 0), 1);
 const TERMINAL = packState(moduleShape(MODULE.terminal, 0), 1);
 const TURRET = packState(moduleShape(MODULE.turret, 0), 1);
 const NODE = packState(moduleShape(MODULE.node, 0), 1);
+const LIGHT = packState(moduleShape(MODULE.light, 0), 1);
+const STORAGE = packState(moduleShape(MODULE.storage, 0), 1);
+const BED = packState(moduleShape(MODULE.bed, 0), 1);
 const STEP = 0.05;
 /** Half the height of a player: their body is measured from the middle. */
 const HALF = PLAYER.height / 2;
@@ -424,8 +427,8 @@ describe('the grid of power', () => {
     expect(grid.stateAt(0, 0, 0)).toBe('on');
   });
 
-  it('powers a turret or a Node within a Generator’s reach, from the middle of one cell to the middle of the other, and not past it', () => {
-    for (const state of [TURRET, NODE]) {
+  it('powers a turret, a Light or a Node within a Generator’s reach, from the middle of one cell to the middle of the other, and not past it', () => {
+    for (const state of [TURRET, NODE, LIGHT]) {
       const lone = (x: number, z = 0) =>
         look(at(0, GENERATOR), at(x, state, 0, z)).stateAt(x, 0, z);
       expect(lone(gen), 'at the radius').toBe('on');
@@ -548,6 +551,39 @@ describe('the grid of power', () => {
     expect(forward.stateAt(gen + 2 * hop + 9, 0, 0)).toBe('off');
   });
 
+  it('lights a Light from a Generator or through a Node, and leaves it dark out of reach of both', () => {
+    const near = look(at(0, GENERATOR), at(3, LIGHT));
+    expect(near.stateAt(3, 0, 0)).toBe('on');
+    expect(near.powered(3, 0, 0)).toBe(true);
+    // Past the Generator's reach, a Node in between carries it on.
+    expect(look(at(0, GENERATOR), at(gen + 4, LIGHT)).stateAt(gen + 4, 0, 0)).toBe('off');
+    const relayed = look(at(0, GENERATOR), at(gen, NODE), at(gen + hop - 1, LIGHT));
+    expect(relayed.stateAt(gen + hop - 1, 0, 0)).toBe('on');
+    // Break the Node and the Light goes dark again at the next look.
+    expect(look(at(0, GENERATOR), at(gen + hop - 1, LIGHT)).stateAt(gen + hop - 1, 0, 0)).toBe(
+      'off',
+    );
+  });
+
+  it('does not let a Light pass power on: only a Generator and a Node do', () => {
+    const grid = look(
+      at(0, GENERATOR),
+      at(gen, LIGHT),
+      at(gen + 4, LIGHT),
+      at(gen + 4, TURRET, 0, 3),
+    );
+    expect(grid.stateAt(gen, 0, 0)).toBe('on');
+    expect(grid.stateAt(gen + 4, 0, 0)).toBe('off');
+    expect(grid.stateAt(gen + 4, 0, 3)).toBe('off');
+  });
+
+  it('has no state for a Storage or a Bed, which take no part in power, and none for a Terminal or air', () => {
+    const grid = look(at(0, GENERATOR), at(2, STORAGE), at(3, BED));
+    expect(grid.stateAt(2, 0, 0)).toBe('none');
+    expect(grid.stateAt(3, 0, 0)).toBe('none');
+    expect(reachOfModule(MODULE.light)).toBe(0);
+  });
+
   it('has no state for a Terminal or for air, and no power for them', () => {
     const grid = look(at(0, GENERATOR), at(2, TERMINAL));
     expect(grid.stateAt(2, 0, 0)).toBe('none');
@@ -621,13 +657,20 @@ describe('the grid of power', () => {
   });
 
   it('tells each module that takes part, and whether it has power, and not the Terminal', () => {
-    const grid = look(at(0, GENERATOR), at(3, NODE), at(50, TURRET), at(2, TERMINAL, 0, 5));
+    const grid = look(
+      at(0, GENERATOR),
+      at(3, NODE),
+      at(50, TURRET),
+      at(5, LIGHT, 0, 2),
+      at(2, TERMINAL, 0, 5),
+    );
     const seen: [number, number, number, boolean][] = [];
     grid.forEach((x, y, z, on) => seen.push([x, y, z, on]));
     expect(seen).toEqual([
       [0, 0, 0, true],
       [3, 0, 0, true],
       [50, 0, 0, false],
+      [5, 0, 2, true],
     ]);
   });
 

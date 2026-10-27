@@ -34,6 +34,7 @@ export type IconId =
   | 'node'
   | 'storage'
   | 'bed'
+  | 'light'
   | 'block-scrap'
   | 'block-composite'
   | 'block-alloy'
@@ -74,6 +75,7 @@ export const ICON_IDS: readonly IconId[] = [
   'node',
   'storage',
   'bed',
+  'light',
   'block-scrap',
   'block-composite',
   'block-alloy',
@@ -522,6 +524,17 @@ const SPRITE_BODY = /* html */ `
   <rect x="10.6" y="19.6" width="9" height="4.6" rx="2.3" fill="#e4eef6" stroke="${INK}" stroke-width="1.4"/>
   <rect x="5.8" y="16.2" width="2.8" height="5" rx="1.1" fill="url(#ph-core)"/>
   <path d="M12.6 21 H17.4" stroke="#ffffff" stroke-opacity="0.7" stroke-width="1" stroke-linecap="round"/>
+</symbol>
+
+<symbol id="ph-i-light" viewBox="0 0 48 48">
+  <path d="M8.4 43.2 H39.6 Q41.4 43.2 41 41.6 L40.2 38.2 H7.8 L7 41.6 Q6.6 43.2 8.4 43.2 Z" fill="url(#ph-steel-dark)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M21.8 38.2 L22.8 11 H26.2 L27.2 38.2 Z" fill="url(#ph-steel)" stroke="${INK}" stroke-width="1.7" stroke-linejoin="round"/>
+  <rect x="21.2" y="30.4" width="5.6" height="2.6" rx="1" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="0.9"/>
+  <rect x="12.6" y="35.6" width="22.8" height="2.6" rx="1.3" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="1.1"/>
+  <path d="M10 12.4 Q10 4 24 4 Q38 4 38 12.4 Z" fill="url(#ph-steel-dark)" stroke="${INK}" stroke-width="1.7" stroke-linejoin="round"/>
+  <ellipse cx="24" cy="12.9" rx="12.6" ry="3" fill="url(#ph-sun)" stroke="${INK}" stroke-width="1.4"/>
+  <path d="M14.4 18.4 L11.8 23.4 M19 18.4 L17.6 24 M29 18.4 L30.4 24 M33.6 18.4 L36.2 23.4" stroke="#ffd36a" stroke-opacity="0.8" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M14 7.6 Q17 5.6 21 5.4" stroke="#f6faff" stroke-opacity="0.7" stroke-width="1" stroke-linecap="round" fill="none"/>
 </symbol>
 ${BLOCK_SYMBOLS}
 ${SHAPE_SYMBOLS}
