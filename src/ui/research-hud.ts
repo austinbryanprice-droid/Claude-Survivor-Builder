@@ -1,8 +1,14 @@
 import type { CellState } from '../shared/block-world';
-import { MATERIALS } from '../shared/blocks';
+import { MATERIALS, moduleOfShape, stateShape } from '../shared/blocks';
 import type { EconomyReading } from '../shared/economy';
 import { pieceCost } from '../systems/economy/build-rules';
-import { nextStep, researchLock, tierAt, tierName } from '../systems/economy/research';
+import {
+  RESEARCH_ROWS,
+  moduleLock,
+  nextRow,
+  researchLock,
+  rowsReached,
+} from '../systems/economy/research';
 import { clamp01 } from './player-hud/format';
 import type { HudResearch } from './player-hud/player-hud';
 
@@ -24,7 +30,7 @@ export const RESEARCH_SECONDS = 10;
 
 /** True when the points the crew has earned reach a row of the ladder that the points a Terminal has read do not: only a Terminal is missing. */
 export function researchWaiting(points: number, claimed: number): boolean {
-  return tierAt(points) > tierAt(claimed);
+  return RESEARCH_ROWS.some((row) => row.points <= points && row.points > claimed);
 }
 
 /**
@@ -33,7 +39,7 @@ export function researchWaiting(points: number, claimed: number): boolean {
  * points a Terminal has read; it defaults to all of them.
  */
 export function researchForHud(points: number, gains = 0, claimed = points): HudResearch {
-  const next = nextStep(points);
+  const next = nextRow(points);
   const waiting = researchWaiting(points, claimed);
   const label = waiting ? 'Needs Terminal' : 'Research';
   if (!next) {
@@ -91,13 +97,13 @@ const NO_MESSAGES: readonly string[] = [];
 
 /**
  * Watches the crew's research and says what changed since it last looked: the points that arrived,
- * the materials a Terminal has opened (at a dawn, or the moment one is placed), and that points are
- * waiting for a Terminal to read them. The first look, a screen that has not heard the host yet and
- * a run that starts over (the points fall) are not changes.
+ * the rows a Terminal has opened, a material or a group of modules (at a dawn, or the moment one is
+ * placed), and that points are waiting for a Terminal to read them. The first look, a screen that has
+ * not heard the host yet and a run that starts over (the points fall) are not changes.
  */
 export class ResearchWatcher {
   private points = -1;
-  private tier = 1;
+  private claimed = 0;
 
   /** The messages for what changed, in the order to show them; none when nothing did. The array is not yours to keep. */
   update(reading: EconomyReading): readonly string[] {
@@ -110,8 +116,8 @@ export class ResearchWatcher {
       const gained = reading.research - this.points;
       const said: string[] = [];
       if (gained > 0) said.push(`Research +${gained}`);
-      for (let tier = this.tier + 1; tier <= reading.tier; tier++) {
-        said.push(`${tierName(tier)} unlocked`);
+      for (const row of rowsReached(this.claimed, reading.claimed)) {
+        said.push(`${row.name} unlocked`);
       }
       if (gained > 0 && researchWaiting(reading.research, reading.claimed)) {
         said.push(TERMINAL_NEEDED);
@@ -119,7 +125,7 @@ export class ResearchWatcher {
       if (said.length > 0) messages = said;
     }
     this.points = reading.research;
-    this.tier = reading.tier;
+    this.claimed = reading.claimed;
     return messages;
   }
 }
@@ -134,10 +140,11 @@ export interface HudLock {
 }
 
 /**
- * The lock on the material that pays for a piece, or null when it is open, the slot holds no piece or
- * there is no pool to be locked out of. A module's cell byte is its level, not a material, so for one
- * this is the material its level is paid in: a raise to the Auto Turret is closed while Reinforced
- * Composite is, and a Terminal or a Basic Turret, paid in Scrap, never is.
+ * The lock on a piece, or null when it is open, the slot holds no piece or there is no pool to be locked
+ * out of. A block is closed while its material is; a module's cell byte is its level, not a material, so
+ * for one it is the material its level is paid in (a raise to the Auto Turret is closed while Reinforced
+ * Composite is, and a Terminal or a Basic Turret, paid in Scrap, never is) and then the group of research
+ * the module belongs to, which names the module (the Generator waits for Power).
  */
 export function lockForPiece(piece: CellState, reading: EconomyReading): HudLock | null {
   if (reading.cap <= 0) return null;
@@ -145,18 +152,33 @@ export function lockForPiece(piece: CellState, reading: EconomyReading): HudLock
   const material = cost && MATERIALS.find((m) => m.id === cost.material);
   if (!material) return null;
   const lock = researchLock(material.id, reading.claimed);
-  if (!lock) return null;
+  if (lock) {
+    return {
+      name: material.name,
+      have: reading.research,
+      need: lock.need,
+      terminal: reading.research >= lock.need,
+    };
+  }
+  const module = moduleOfShape(stateShape(piece));
+  const closed = module && moduleLock(module.id, reading.claimed);
+  if (!module || !closed) return null;
   return {
-    name: material.name,
+    name: module.name,
     have: reading.research,
-    need: lock.need,
-    terminal: reading.research >= lock.need,
+    need: closed.need,
+    terminal: reading.research >= closed.need,
   };
 }
 
 /** True when the material of a hotbar slot is closed to the crew, so the slot is drawn dim behind a padlock. */
 export function slotLocked(material: number, reading: EconomyReading): boolean {
   return reading.cap > 0 && researchLock(material, reading.claimed) !== null;
+}
+
+/** True when the group of research a module (a `MODULE` id) belongs to is closed to the crew, so the module slot is drawn dim behind a padlock. */
+export function moduleSlotLocked(module: number, reading: EconomyReading): boolean {
+  return reading.cap > 0 && moduleLock(module, reading.claimed) !== null;
 }
 
 /** The words under a piece that is closed: how many points the crew has and how many open it, or that a Terminal has to read the points it has. */

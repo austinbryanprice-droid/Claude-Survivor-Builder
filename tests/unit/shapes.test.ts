@@ -53,10 +53,10 @@ function topAt(boxes: readonly CellBox[], x: number, z: number): number {
 describe('the shape table', () => {
   it('names a slab, a wedge and a block, in every orientation', () => {
     expect(SHAPES.map((s) => s.id)).toEqual([
-      1, 8, 9, 16, 17, 18, 19, 20, 21, 22, 23, 32, 33, 34, 35, 36, 37, 38, 39,
+      1, 8, 9, 16, 17, 18, 19, 20, 21, 22, 23, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43,
     ]);
     expect(new Set(SHAPES.map((s) => s.name))).toEqual(
-      new Set(['Block', 'Slab', 'Wedge', 'Research Terminal', 'Basic Turret']),
+      new Set(['Block', 'Slab', 'Wedge', 'Research Terminal', 'Basic Turret', 'Generator']),
     );
     expect(pieceName(packState(slabShape(false), MATERIAL.alloy))).toBe('Advanced Alloy Slab');
     expect(pieceName(packState(wedgeShape(2), MATERIAL.scrap))).toBe('Scrap Wedge');
@@ -76,7 +76,7 @@ describe('the shape table', () => {
       if (shape.kind === 'module') continue;
       expect(isKnownState(packState(shape.id, MATERIAL.energy))).toBe(true);
     }
-    for (const id of [2, 7, 10, 15, 24, 31, 40, 255]) {
+    for (const id of [2, 7, 10, 15, 24, 31, 44, 255]) {
       expect(isKnownState(packState(id, MATERIAL.scrap))).toBe(false);
     }
   });

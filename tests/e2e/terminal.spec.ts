@@ -216,6 +216,7 @@ test.describe('the Research Terminal and the points it reads', () => {
       await poll(() => researchToasts(page)).toEqual([
         `Research +${COMPOSITE_AT}`,
         TERMINAL_NEEDED,
+        'Power unlocked',
         'Reinforced Composite unlocked',
       ]);
       await wait(slotAt(page, 1)).not.toHaveAttribute('data-locked', '');
@@ -235,16 +236,18 @@ test.describe('the Research Terminal and the points it reads', () => {
       await wait(page.locator('.ph-ladder')).toBeVisible();
       await expect(page.locator('.ph-interact')).toBeHidden();
       await expect(page.locator('.ph-ladder-points')).toHaveText(String(COMPOSITE_AT));
+      // Scrap, Power, Reinforced Composite, Advanced Alloy and Energy-Infused, in the order the points reach them.
       const rows = page.locator('.ph-ladder-row');
-      await expect(rows).toHaveCount(4);
+      await expect(rows).toHaveCount(5);
       await expect(rows.nth(0)).toHaveAttribute('data-state', 'open');
       await expect(rows.nth(1)).toHaveAttribute('data-state', 'open');
-      await expect(rows.nth(2)).toHaveAttribute('data-state', 'shut');
+      await expect(rows.nth(2)).toHaveAttribute('data-state', 'open');
       await expect(rows.nth(3)).toHaveAttribute('data-state', 'shut');
-      await expect(rows.nth(2).locator('.ph-ladder-note')).toHaveText(
+      await expect(rows.nth(4)).toHaveAttribute('data-state', 'shut');
+      await expect(rows.nth(3).locator('.ph-ladder-note')).toHaveText(
         `${ALLOY_AT - COMPOSITE_AT} to go`,
       );
-      await expect(rows.nth(3).locator('.ph-ladder-note')).toHaveText(
+      await expect(rows.nth(4).locator('.ph-ladder-note')).toHaveText(
         `${ENERGY_AT - COMPOSITE_AT} to go`,
       );
       await page.screenshot({ path: testInfo.outputPath('terminal-ladder.png') });
@@ -261,12 +264,12 @@ test.describe('the Research Terminal and the points it reads', () => {
       await wait(page.locator('.ph-ladder')).toBeVisible();
       await setResearch(page, ALLOY_AT, false);
       await expect(page.locator('.ph-ladder-points')).toHaveText(String(ALLOY_AT));
-      await expect(page.locator('.ph-ladder-row').nth(2)).toHaveAttribute('data-state', 'waiting');
-      await expect(page.locator('.ph-ladder-row').nth(2).locator('.ph-ladder-note')).toHaveText(
+      await expect(page.locator('.ph-ladder-row').nth(3)).toHaveAttribute('data-state', 'waiting');
+      await expect(page.locator('.ph-ladder-row').nth(3).locator('.ph-ladder-note')).toHaveText(
         'Not read yet',
       );
       await setResearch(page, ALLOY_AT, true);
-      await expect(page.locator('.ph-ladder-row').nth(2)).toHaveAttribute('data-state', 'open');
+      await expect(page.locator('.ph-ladder-row').nth(3)).toHaveAttribute('data-state', 'open');
       await page.keyboard.press('KeyE');
       await wait(page.locator('.ph-ladder')).toBeHidden();
     });

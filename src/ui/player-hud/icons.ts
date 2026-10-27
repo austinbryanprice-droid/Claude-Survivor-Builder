@@ -30,6 +30,7 @@ export type IconId =
   | 'research'
   | 'terminal'
   | 'turret'
+  | 'generator'
   | 'block-scrap'
   | 'block-composite'
   | 'block-alloy'
@@ -66,6 +67,7 @@ export const ICON_IDS: readonly IconId[] = [
   'research',
   'terminal',
   'turret',
+  'generator',
   'block-scrap',
   'block-composite',
   'block-alloy',
@@ -454,6 +456,25 @@ const SPRITE_BODY = /* html */ `
   <rect x="22.6" y="17.9" width="4.2" height="2.4" rx="1" fill="url(#ph-core)"/>
   <path d="M11 16.8 H19.6" stroke="#f6faff" stroke-opacity="0.75" stroke-width="1.1" stroke-linecap="round"/>
   <path d="M10.4 26.8 H26.4" stroke="${INK}" stroke-opacity="0.45" stroke-width="1.3" stroke-linecap="round"/>
+</symbol>
+
+<symbol id="ph-i-generator" viewBox="0 0 48 48">
+  <path d="M20 10 V5.6" stroke="${INK}" stroke-width="4.2" stroke-linecap="round"/>
+  <path d="M20 10 V5.6" stroke="url(#ph-steel)" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="20" cy="4.8" r="2.4" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="1.3"/>
+  <path d="M8.4 43.2 H39.6 Q41.4 43.2 41 41.6 L40.2 38.2 H7.8 L7 41.6 Q6.6 43.2 8.4 43.2 Z" fill="url(#ph-steel-dark)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M30 32.6 H35" stroke="${INK}" stroke-width="4" stroke-linecap="round"/>
+  <path d="M30 32.6 H35" stroke="url(#ph-bronze)" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M34.2 38.2 V27 Q34.2 25 36.2 25 H39.4 Q41.4 25 41.4 27 V38.2 Z" fill="url(#ph-steel)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
+  <rect x="35.6" y="27.4" width="4.2" height="4.4" rx="1" fill="#1b2a36" stroke="${INK}" stroke-width="1"/>
+  <rect x="36.4" y="28.4" width="2.6" height="2.4" rx="0.6" fill="url(#ph-core)"/>
+  <circle cx="37.8" cy="34.8" r="1.2" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="0.8"/>
+  <path d="M8.2 38.2 V17.8 Q8.2 11.4 14.6 11.4 H25.4 Q31.8 11.4 31.8 17.8 V38.2 Z" fill="url(#ph-steel)" stroke="${INK}" stroke-width="1.7" stroke-linejoin="round"/>
+  <rect x="8.2" y="20.4" width="23.6" height="11" fill="#1b2a36" stroke="${INK}" stroke-width="1.4"/>
+  <rect x="9.6" y="21.8" width="20.8" height="8.2" rx="1.2" fill="url(#ph-core)"/>
+  <path d="M22.6 22.4 L16.8 27.4 H20.6 L18.8 30 L25.4 24.4 H21.6 Z" fill="#0e2f36" fill-opacity="0.72"/>
+  <path d="M11.4 15 H21" stroke="#f6faff" stroke-opacity="0.7" stroke-width="1" stroke-linecap="round"/>
+  <rect x="9.6" y="34" width="20.8" height="2.6" rx="1.3" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="1.1"/>
 </symbol>
 ${BLOCK_SYMBOLS}
 ${SHAPE_SYMBOLS}

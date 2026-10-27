@@ -2,6 +2,7 @@ import { MOVEMENT, PLAYER } from '../../shared/movement';
 import type { VitalsReading } from '../../shared/vitals-state';
 import { outpostDistance, type Outpost } from '../../world/outpost';
 import { BLASTER, RESPAWN, VITALS } from './balance';
+import type { ChargeSource } from './power';
 
 /** How low Energy is: 0 while it is not low, rising to 1 with none left. */
 function lowness(fraction: number): number {
@@ -32,7 +33,7 @@ const SECOND_EPSILON = 1e-6;
  * simulation, so it runs the same under a Worker, a test and the browser.
  *
  * Energy is the hunger analog: it drains slowly all the time, faster while sprinting, fighting
- * and building, and refills inside the Core's charge field. Health mends by itself a while after
+ * and building, and refills inside a charge field (the Core's, or a standing Generator's). Health mends by itself a while after
  * the last wound, as long as there is some Energy left. Both are kept as fractions of a point;
  * what is read out is whole points, and 0 only when a bar is truly empty.
  *
@@ -70,7 +71,7 @@ export class PlayerVitals {
     return Math.ceil(this.energyPoints);
   }
 
-  /** True while the player stands within the Core's charge field. */
+  /** True while the player stands within a charge field: the Core's, or a Generator's. */
   get charging(): boolean {
     return this.inField;
   }
@@ -178,9 +179,10 @@ export class PlayerVitals {
 
   /**
    * Plays `dt` seconds. `core` is the Outpost Core while it stands, or null where there is none
-   * (or it has fallen), and its field is then not there to charge anyone.
+   * (or it has fallen), and its field is then not there to charge anyone. `chargers` is whatever else
+   * gives Energy back by radius (the crew's Generators); a player in more than one field gets the best.
    */
-  step(dt: number, core: Outpost | null): void {
+  step(dt: number, core: Outpost | null, chargers: ChargeSource | null = null): void {
     // Someone who is down only lies there: no Energy drains or charges, no wound mends.
     if (this.healthPoints <= 0) {
       this.downFor = Math.max(0, this.downFor) + dt;
@@ -204,12 +206,14 @@ export class PlayerVitals {
     if (this.sinceHurt < energy.combatSeconds) drain += energy.combatPerSecond;
     if (this.shakenLeft > 0) drain *= RESPAWN.shaken.drainScale;
 
-    this.inField =
+    const inCore =
       core !== null &&
       this.placed &&
       outpostDistance(core, this.x, this.y + PLAYER.height / 2, this.z) <=
         VITALS.chargeField.radius;
-    const charge = this.inField ? VITALS.chargeField.perSecond : 0;
+    const given = this.placed && chargers ? chargers.chargeAt(this.x, this.y, this.z) : 0;
+    const charge = Math.max(inCore ? VITALS.chargeField.perSecond : 0, given);
+    this.inField = charge > 0;
     this.energyPoints = Math.min(
       VITALS.maxEnergy,
       Math.max(0, this.energyPoints + (charge - drain) * dt),

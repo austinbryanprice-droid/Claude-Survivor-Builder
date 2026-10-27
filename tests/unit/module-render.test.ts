@@ -18,6 +18,7 @@ import { TEST_SEED, terrain } from './helpers/valley';
 const terminal = (facing: number) => packState(moduleShape(MODULE.terminal, facing), 1);
 /** A turret's cell state: its level is the cell's material byte. */
 const turret = (facing: number, level = 1) => packState(moduleShape(MODULE.turret, facing), level);
+const generator = (facing: number) => packState(moduleShape(MODULE.generator, facing), 1);
 
 /** A world with the cell where the tests build, and a renderer drawing it. */
 function build() {
@@ -131,6 +132,64 @@ describe('the modules as they are drawn', () => {
       expect(mesh.geometry).toBe(b[i]?.geometry);
       expect(mesh.material).toBe(b[i]?.material);
     });
+  });
+});
+
+describe('a Generator as it is drawn', () => {
+  it('stands on the floor of its cell with a mesh for each look, and no head to turn', () => {
+    const { renderer, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, generator(0));
+    const group = renderer.at(cell.x, cell.y, cell.z) as Group;
+    expect(group.userData).toEqual({ module: MODULE.generator, level: 1 });
+    expect(group.position.toArray()).toEqual([cell.x + 0.5, cell.y, cell.z + 0.5]);
+    expect(meshesOf(group)).toHaveLength(MODULE_LOOK_NAMES.length);
+    expect(group.getObjectByName('head')).toBeUndefined();
+    expect(renderer.aim(cell.x, cell.y, cell.z, cell.x + 5, cell.y + 1, cell.z)).toBe(false);
+  });
+
+  it('turns so its front looks the way it faces', () => {
+    const { renderer, world, cell } = build();
+    const fronts = [
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+      [0, -1],
+    ];
+    for (let facing = 0; facing < MODULE_FACINGS; facing++) {
+      world.setBlock(cell.x, cell.y, cell.z, 0);
+      world.setBlock(cell.x, cell.y, cell.z, generator(facing));
+      const group = renderer.at(cell.x, cell.y, cell.z) as Group;
+      const front = new Vector3(1, 0, 0).applyEuler(new Euler().copy(group.rotation));
+      expect(front.x, `facing ${facing}`).toBeCloseTo(fronts[facing]?.[0] as number, 9);
+      expect(front.z, `facing ${facing}`).toBeCloseTo(fronts[facing]?.[1] as number, 9);
+    }
+  });
+
+  it('wears the Core’s paint, the same materials as a Terminal and a turret, and shares its model with other Generators', () => {
+    const { renderer, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, generator(0));
+    world.setBlock(cell.x + 2, cell.y, cell.z, generator(2));
+    world.setBlock(cell.x + 4, cell.y, cell.z, terminal(0));
+    const [a, b, t] = [0, 2, 4].map((dx) =>
+      meshesOf(renderer.at(cell.x + dx, cell.y, cell.z) as Group),
+    );
+    expect(a).toHaveLength(b?.length as number);
+    a?.forEach((mesh, i) => {
+      expect(mesh.geometry).toBe(b?.[i]?.geometry);
+      expect(mesh.material).toBe(b?.[i]?.material);
+    });
+    // The Terminal has a mesh for every look too, so the nth mesh of each is the same look and the same material.
+    a?.forEach((mesh, i) => expect(mesh.material).toBe(t?.[i]?.material));
+    expect(renderer.object.children).toHaveLength(3);
+  });
+
+  it('is drawn when it is placed and gone when it is broken', () => {
+    const { renderer, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, generator(1));
+    expect(renderer.count).toBe(1);
+    world.setBlock(cell.x, cell.y, cell.z, 0);
+    expect(renderer.count).toBe(0);
+    expect(renderer.at(cell.x, cell.y, cell.z)).toBeUndefined();
   });
 });
 

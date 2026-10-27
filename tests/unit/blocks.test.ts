@@ -123,12 +123,16 @@ describe('modules', () => {
     expect(SHAPE.module).toBe(32);
     expect(MODULE.terminal).toBe(1);
     expect(MODULE.turret).toBe(2);
+    expect(MODULE.generator).toBe(3);
     expect(MODULE_FACINGS).toBe(4);
     expect([0, 1, 2, 3].map((facing) => moduleShape(MODULE.terminal, facing))).toEqual([
       32, 33, 34, 35,
     ]);
     expect([0, 1, 2, 3].map((facing) => moduleShape(MODULE.turret, facing))).toEqual([
       36, 37, 38, 39,
+    ]);
+    expect([0, 1, 2, 3].map((facing) => moduleShape(MODULE.generator, facing))).toEqual([
+      40, 41, 42, 43,
     ]);
     const ids = MODULES.flatMap((def) =>
       Array.from({ length: MODULE_FACINGS }, (_, facing) => moduleShape(def.id, facing)),
@@ -150,7 +154,7 @@ describe('modules', () => {
   });
 
   it('are not found in a shape that is not a module', () => {
-    for (const shape of [0, SHAPE.cube, SHAPE.slab, SHAPE.slab + 1, SHAPE.wedge + 7, 40, 255]) {
+    for (const shape of [0, SHAPE.cube, SHAPE.slab, SHAPE.slab + 1, SHAPE.wedge + 7, 44, 255]) {
       expect(moduleOfShape(shape), `shape ${shape}`).toBeUndefined();
       expect(moduleFacing(shape), `shape ${shape}`).toBe(-1);
     }
@@ -217,6 +221,7 @@ describe('modules', () => {
         'Research Terminal',
       );
       expect(pieceName(packState(moduleShape(MODULE.turret, facing), 1))).toBe('Basic Turret');
+      expect(pieceName(packState(moduleShape(MODULE.generator, facing), 1))).toBe('Generator');
     }
     expect(pieceName(packState(moduleShape(MODULE.terminal, 0), 9))).toBe('');
   });
@@ -234,6 +239,8 @@ describe('modules', () => {
     expect(terminal?.cost).toEqual({ material: MATERIAL.scrap, amount: 40 });
     const turret = MODULES.find((def) => def.id === MODULE.turret);
     expect(turret?.cost).toEqual({ material: MATERIAL.scrap, amount: 25 });
+    const generator = MODULES.find((def) => def.id === MODULE.generator);
+    expect(generator?.cost).toEqual({ material: MATERIAL.scrap, amount: 40 });
   });
 
   it('have a body inside their cell that stands on its floor', () => {

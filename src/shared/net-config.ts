@@ -4,7 +4,7 @@
  */
 export const NET = {
   /** Bumped whenever a message changes shape; a host and a guest on different versions refuse each other. */
-  protocolVersion: 15,
+  protocolVersion: 16,
   maxPlayers: 4,
 
   /** The local player's state is sent about this often (about 20 Hz). */

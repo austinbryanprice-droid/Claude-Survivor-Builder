@@ -19,6 +19,7 @@ import {
   FULLY_UPGRADED,
   NOTHING_TO_UPGRADE,
   builtOver,
+  groupRefusal,
   heapInTheWay,
   keepsClear,
   lockedRefusal,
@@ -218,18 +219,23 @@ describe('ground a block stands on where a heap would come up', () => {
 });
 
 describe('what a screen asks before it shows a block as placeable', () => {
-  /** A pool that holds `stock`, for a crew that has researched up to `tier` (all of them, unless said). */
+  /**
+   * A pool that holds `stock`, for a crew that has researched up to `tier` (all of them, unless said)
+   * and whose Terminal has read `claimed` points (none, unless said).
+   */
   function view(
     stock: number[],
     cap: number,
     left: Record<number, number>,
     tier = 4,
+    claimed = 0,
   ): PlacementEconomy {
     return {
       read(out) {
         out.stock.splice(0, out.stock.length, ...stock);
         out.cap = cap;
         out.tier = tier;
+        out.claimed = claimed;
         return out;
       },
       debris: { nodes: [heap(0)], leftOf: (index) => left[index] ?? 0 },
@@ -300,6 +306,79 @@ describe('what a screen asks before it shows a block as placeable', () => {
   it('locks nothing where there is no pool to read', () => {
     const none = view([0, 0, 0, 0], 0, {}, 1);
     expect(placementRefusal(none, scratch, 30, 10, -7, COMPOSITE)).toBeNull();
+  });
+
+  it('refuses a module whose group of research the Terminal has not read, whatever the tier and the pool', () => {
+    const generator = packState(moduleShape(MODULE.generator, 0), 1);
+    const plenty = [99, 99, 99, 99];
+    expect(placementRefusal(view(plenty, 400, {}, 4, 0), scratch, 30, 10, -7, generator)).toBe(
+      needsResearch('Generator'),
+    );
+    expect(placementRefusal(view(plenty, 400, {}, 4, 9), scratch, 30, 10, -7, generator)).toBe(
+      needsResearch('Generator'),
+    );
+    // It is paid in Scrap, so the tier does not matter once the group is read.
+    expect(
+      placementRefusal(view(plenty, 400, {}, 1, 10), scratch, 30, 10, -7, generator),
+    ).toBeNull();
+  });
+
+  it('asks about the group before the pool, and about the heap before the group', () => {
+    const generator = packState(moduleShape(MODULE.generator, 0), 1);
+    const empty = [0, 0, 0, 0];
+    expect(placementRefusal(view(empty, 400, {}, 1, 0), scratch, 30, 10, -7, generator)).toBe(
+      needsResearch('Generator'),
+    );
+    expect(placementRefusal(view(empty, 400, {}, 1, 10), scratch, 30, 10, -7, generator)).toBe(
+      'not enough Scrap',
+    );
+    expect(
+      placementRefusal(view([39, 0, 0, 0], 400, {}, 1, 10), scratch, 30, 10, -7, generator),
+    ).toBe('not enough Scrap');
+    expect(
+      placementRefusal(view([40, 0, 0, 0], 400, {}, 1, 10), scratch, 30, 10, -7, generator),
+    ).toBeNull();
+    expect(placementRefusal(view(empty, 400, { 0: 3 }, 1, 0), scratch, 20, 10, -7, generator)).toBe(
+      DEBRIS_IN_THE_WAY,
+    );
+  });
+
+  it('locks no group where there is no pool to read', () => {
+    const generator = packState(moduleShape(MODULE.generator, 0), 1);
+    expect(
+      placementRefusal(view([0, 0, 0, 0], 0, {}, 1, 0), scratch, 30, 10, -7, generator),
+    ).toBeNull();
+  });
+});
+
+describe('the words for a module whose group of research is shut', () => {
+  const generator = (facing = 0) => packState(moduleShape(MODULE.generator, facing), 1);
+
+  it('name the module, as the words for a material name the material', () => {
+    expect(groupRefusal(0, generator())).toBe('Generator needs research');
+    expect(groupRefusal(0, generator())).toBe(needsResearch('Generator'));
+    expect(groupRefusal(9, generator())).toBe(needsResearch('Generator'));
+    expect(groupRefusal(10, generator())).toBeNull();
+    expect(groupRefusal(400, generator())).toBeNull();
+  });
+
+  it('say the same whichever way the module faces', () => {
+    for (let facing = 0; facing < 4; facing++) {
+      expect(groupRefusal(0, generator(facing))).toBe(needsResearch('Generator'));
+      expect(groupRefusal(10, generator(facing))).toBeNull();
+    }
+  });
+
+  it('say nothing of a block, a module no group gates, or a state the tables do not know', () => {
+    expect(groupRefusal(0, SCRAP)).toBeNull();
+    expect(groupRefusal(0, COMPOSITE)).toBeNull();
+    expect(groupRefusal(0, packState(moduleShape(MODULE.terminal, 0), 1))).toBeNull();
+    expect(groupRefusal(0, packState(moduleShape(MODULE.turret, 0), 1))).toBeNull();
+    expect(groupRefusal(0, 0)).toBeNull();
+  });
+
+  it('leave the material lock alone: the Generator is paid in Scrap, which is never locked', () => {
+    for (let tier = 1; tier <= 4; tier++) expect(lockedRefusal(tier, generator())).toBeNull();
   });
 });
 

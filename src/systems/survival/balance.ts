@@ -122,6 +122,27 @@ export const TURRET = {
 } as const;
 
 /**
+ * Power (Phase 5g, SPEC section 9): a module that gives something off gives it by radius, to whatever is
+ * within reach of the middle of its cell, with no wiring and nothing to run. A first guess to be tuned
+ * by playing (docs/decisions.md, Phase 5g) and by the balance simulator of 5j.
+ */
+export const POWER = {
+  /**
+   * The Generator's charge field: a player within `radius` blocks of the middle of its cell, measured to
+   * the middle of their body, gets `perSecond` Energy back for as long as it stands. It is a smaller,
+   * slower copy of the Core's field (`VITALS.chargeField`: 8 blocks and 2.5 a second), so a crew that
+   * works out at a wall or a turret does not have to walk home to recover. It more than pays for a run
+   * (0.5 a second for sprinting on top of the idle drain) and for a slow build, but not for a held
+   * click at full pace (six edits a second cost 1.5). It does not stack with another field: a player
+   * gets the best one they stand in.
+   */
+  generator: {
+    radius: 6,
+    perSecond: 1,
+  },
+} as const;
+
+/**
  * Going down and coming back. A player at no Health lies where they fell and the machines leave
  * them be, until the Core brings them back at the base, if the crew has a respawn charge to spend
  * (SPEC section 8: death is soft). The charges are shared: each player brings a few, each dawn

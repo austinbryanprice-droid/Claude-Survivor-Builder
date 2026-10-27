@@ -11,6 +11,7 @@ import { CoreRenderer } from './core-render';
 import { bakeFoliageTextures, type FoliageTextures } from './foliage-textures';
 import { GhostRenderer } from './ghost-render';
 import { ModuleRenderer } from './module-render';
+import { ReachRing } from './reach-ring';
 import { bakeGroundMaps, TerrainRenderer } from './terrain-render';
 import { VegetationRenderer } from './vegetation-render';
 import { VoxelRenderer } from './voxel-render';
@@ -42,6 +43,8 @@ export class ValleyView {
   readonly modules: ModuleRenderer;
   /** The ghost block and the outline of the block a click would break. */
   readonly ghost: GhostRenderer;
+  /** The ring on the ground that shows how far a module's power reaches. */
+  readonly reach: ReachRing;
   /** The Outpost Core at the crash site; null in a world that has none. */
   readonly core: CoreRenderer | null;
   readonly foliage: FoliageTextures;
@@ -92,6 +95,7 @@ export class ValleyView {
     this.structures = new VoxelRenderer(stage, voxels);
     this.modules = new ModuleRenderer(world, registry, voxels);
     this.ghost = new GhostRenderer(stage);
+    this.reach = new ReachRing(world, (x, z) => grid.groundAt(x, z));
     this.core = voxels.outpost ? new CoreRenderer(world, registry, voxels.outpost) : null;
     this.vegetation.setObstacles(voxels);
 
@@ -127,6 +131,7 @@ export class ValleyView {
     this.structures.update(camera);
     this.core?.update(this.stage.animTime);
     this.modules.update(this.stage.animTime);
+    this.reach.update(this.stage.animTime);
   }
 
   dispose(): void {
@@ -135,6 +140,7 @@ export class ValleyView {
     this.stage.pipeline.beforeScene = null;
     this.core?.dispose();
     this.modules.dispose();
+    this.reach.dispose();
     this.ghost.dispose();
     this.structures.dispose();
     this.vegetation.dispose();

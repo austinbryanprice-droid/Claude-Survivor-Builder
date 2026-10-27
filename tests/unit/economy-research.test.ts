@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { MATERIAL, MATERIALS } from '../../src/shared/blocks';
+import { MATERIAL, MATERIALS, MODULE, MODULES } from '../../src/shared/blocks';
 import { RESEARCH } from '../../src/systems/economy/balance';
 import {
+  RESEARCH_GROUPS,
+  RESEARCH_ROWS,
   RESEARCH_STEPS,
   Research,
-  nextStep,
+  groupOfModule,
+  moduleLock,
+  nextRow,
   pointsForTier,
   researchLock,
+  rowsReached,
   tierAt,
   tierName,
 } from '../../src/systems/economy/research';
@@ -38,11 +43,14 @@ describe('the research ladder', () => {
   });
 
   it('names the next row the points have not reached, and none once the ladder is climbed', () => {
-    expect(nextStep(0)).toBe(RESEARCH_STEPS[0]);
-    expect(nextStep(RESEARCH_STEPS[0]!.points - 1)).toBe(RESEARCH_STEPS[0]);
-    expect(nextStep(RESEARCH_STEPS[0]!.points)).toBe(RESEARCH_STEPS[1]);
-    expect(nextStep(RESEARCH_STEPS[2]!.points - 1)).toBe(RESEARCH_STEPS[2]);
-    expect(nextStep(RESEARCH_STEPS[2]!.points)).toBeNull();
+    const [power, composite, alloy, energy] = RESEARCH_ROWS;
+    expect(nextRow(0)).toBe(power);
+    expect(nextRow(power!.points - 1)).toBe(power);
+    expect(nextRow(power!.points)).toBe(composite);
+    expect(nextRow(composite!.points)).toBe(alloy);
+    expect(nextRow(energy!.points - 1)).toBe(energy);
+    expect(nextRow(energy!.points)).toBeNull();
+    expect(nextRow(RESEARCH.max)).toBeNull();
   });
 
   it('says how many points open a tier: none for the first, and never for a tier the ladder lacks', () => {
@@ -64,6 +72,81 @@ describe('the research ladder', () => {
     expect(tierName(3)).toBe('Advanced Alloy');
     expect(tierName(4)).toBe('Energy-Infused');
     expect(tierName(9)).toBe('Tier 9');
+  });
+});
+
+describe('the groups of modules the points open', () => {
+  it('has the Power group at 10 points, the first night survived, holding the Generator', () => {
+    expect(RESEARCH_GROUPS).toHaveLength(1);
+    const power = RESEARCH_GROUPS[0]!;
+    expect(power).toMatchObject({ id: 'power', name: 'Power', points: 10 });
+    expect(power.modules).toEqual([MODULE.generator]);
+    // One night is worth at least what it takes, so the first dawn opens it.
+    expect(RESEARCH.perNight).toBeGreaterThanOrEqual(power.points);
+  });
+
+  it('holds only modules the tables define, each in one group', () => {
+    const held = RESEARCH_GROUPS.flatMap((group) => group.modules);
+    expect(new Set(held).size).toBe(held.length);
+    for (const id of held)
+      expect(
+        MODULES.some((module) => module.id === id),
+        `module ${id}`,
+      ).toBe(true);
+    for (const group of RESEARCH_GROUPS) {
+      expect(group.points, group.id).toBeGreaterThan(0);
+      expect(group.name, group.id).not.toBe('');
+    }
+  });
+
+  it('finds the group of a module, and none for a module no research gates', () => {
+    expect(groupOfModule(MODULE.generator)?.id).toBe('power');
+    expect(groupOfModule(MODULE.terminal)).toBeUndefined();
+    expect(groupOfModule(MODULE.turret)).toBeUndefined();
+    expect(groupOfModule(99)).toBeUndefined();
+  });
+
+  it('shuts a module until the points of its group, and then for good', () => {
+    expect(moduleLock(MODULE.generator, 0)).toEqual({ have: 0, need: 10 });
+    expect(moduleLock(MODULE.generator, 9)).toEqual({ have: 9, need: 10 });
+    expect(moduleLock(MODULE.generator, 10)).toBeNull();
+    expect(moduleLock(MODULE.generator, 400)).toBeNull();
+    expect(moduleLock(MODULE.terminal, 0)).toBeNull();
+    expect(moduleLock(MODULE.turret, 0)).toBeNull();
+  });
+});
+
+describe('the whole ladder', () => {
+  it('is the materials and the groups together, in rising order of points', () => {
+    expect(RESEARCH_ROWS.map((row) => row.name)).toEqual([
+      'Power',
+      'Reinforced Composite',
+      'Advanced Alloy',
+      'Energy-Infused',
+    ]);
+    expect(RESEARCH_ROWS.map((row) => row.kind)).toEqual([
+      'modules',
+      'material',
+      'material',
+      'material',
+    ]);
+    const points = RESEARCH_ROWS.map((row) => row.points);
+    expect(points).toEqual([...points].sort((a, b) => a - b));
+  });
+
+  it('says which rows a rise in the points reaches, in the ladder’s order', () => {
+    expect(rowsReached(0, 9)).toEqual([]);
+    expect(rowsReached(0, 10).map((row) => row.name)).toEqual(['Power']);
+    expect(rowsReached(10, 19)).toEqual([]);
+    expect(rowsReached(5, 60).map((row) => row.name)).toEqual([
+      'Power',
+      'Reinforced Composite',
+      'Advanced Alloy',
+    ]);
+    expect(rowsReached(0, RESEARCH.max)).toHaveLength(RESEARCH_ROWS.length);
+    // A fall, or no change, reaches nothing.
+    expect(rowsReached(60, 0)).toEqual([]);
+    expect(rowsReached(30, 30)).toEqual([]);
   });
 });
 
