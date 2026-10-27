@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createShotEffects, type ShotSession } from '../../src/app/shot-effects';
 import { FX_COLOR, type ShotFx } from '../../src/engine/shot-fx';
 import { createEnemyPose, type EnemyPose } from '../../src/shared/enemy-state';
+import { WILD_SPECIES, createWildPose, type WildPose } from '../../src/shared/wildlife-state';
 import { PLAYER } from '../../src/shared/movement';
 import { colorForSlot } from '../../src/shared/player-colors';
 import type { PlayerSample, RemotePose } from '../../src/shared/protocol';
@@ -36,6 +37,7 @@ function fakeFx() {
     muzzle: [] as { at: At; dir: At; color: string }[],
     impact: [] as { at: At; dir: At; color: string; delay: number | undefined }[],
     burst: [] as { at: At; delay: number | undefined }[],
+    puff: [] as { at: At; delay: number | undefined }[],
     update: [] as number[],
     /** How heavy each bolt and each muzzle flash was asked to be drawn, in the order of `bolt` and `muzzle`. */
     boltHeft: [] as (number | undefined)[],
@@ -55,6 +57,7 @@ function fakeFx() {
     impact: (at, dir, color, delay) =>
       calls.impact.push({ at: { ...at }, dir: { ...dir }, color, delay }),
     burst: (at, delay) => calls.burst.push({ at: { ...at }, delay }),
+    puff: (at, delay) => calls.puff.push({ at: { ...at }, delay }),
     blast: () => undefined,
     strip: () => undefined,
     update: (dt) => calls.update.push(dt),
@@ -88,6 +91,10 @@ function crawler(id: number, x: number, z: number): EnemyPose {
   return { ...createEnemyPose(), id, x, y: FLOOR, z };
 }
 
+function stag(id: number, x: number, z: number): WildPose {
+  return { ...createWildPose(), id, kind: WILD_SPECIES.stag, x, y: FLOOR, z };
+}
+
 function remote(id: number, slot: number, x: number, z: number): RemotePose {
   return { id, slot, name: `P${id}`, x, y: FLOOR, z, yaw: 0, pitch: 0, speed: 0, onGround: true };
 }
@@ -95,6 +102,7 @@ function remote(id: number, slot: number, x: number, z: number): RemotePose {
 function setup(
   options: {
     enemies?: EnemyPose[];
+    wildlife?: WildPose[];
     remotes?: RemotePose[];
     ground?: RayWorld | null;
     aimTurret?: (x: number, y: number, z: number, tx: number, ty: number, tz: number) => void;
@@ -112,6 +120,7 @@ function setup(
     ],
     sampleRemotes: () => options.remotes ?? [],
     sampleEnemies: () => options.enemies ?? [],
+    sampleWildlife: () => options.wildlife ?? [],
   };
   const effects = createShotEffects({
     fx,
@@ -214,6 +223,44 @@ describe('the player’s own shot, drawn at the click', () => {
     expect(calls.burst).toHaveLength(0);
   });
 
+  it('stops at a creature it would hit, as that creature is drawn, in the cream of a knock', () => {
+    const { effects, calls } = setup({ wildlife: [stag(5, 0, -10)] });
+    effects.predict(EYE, towardMachine(10));
+    const bolt = calls.bolt[0] as (typeof calls.bolt)[number];
+    // The front of the stag's box: ten blocks out, less half its width.
+    expect(bolt.to.z).toBeCloseTo(-9.5, 4);
+    expect(calls.impact).toHaveLength(1);
+    expect(calls.impact[0]?.color).toBe(FX_COLOR.wild);
+    expect(effects.debug().shots[0]?.flags).toBe(SHOT_FLAG.wild);
+    expect(calls.impact[0]?.delay).toBeCloseTo(flightOf(bolt), 6);
+    // Nothing falls until the host says so.
+    expect(calls.burst).toHaveLength(0);
+    expect(calls.puff).toHaveLength(0);
+  });
+
+  it('is taken by whichever of a creature and a machine is nearer, and by neither past a wall or the range', () => {
+    const near = setup({ wildlife: [stag(5, 0, -6)], enemies: [crawler(7, 0, -10)] });
+    near.effects.predict(EYE, towardMachine(10));
+    expect(near.effects.debug().shots[0]?.flags).toBe(SHOT_FLAG.wild);
+    const far = setup({ wildlife: [stag(5, 0, -13.5)], enemies: [crawler(7, 0, -10)] });
+    far.effects.predict(EYE, towardMachine(10));
+    expect(far.effects.debug().shots[0]?.flags).toBe(SHOT_FLAG.enemy);
+    expect(far.calls.impact[0]?.color).toBe(FX_COLOR.hit);
+    // A creature behind a wall the bolt struck first is not hit.
+    const wall: RayWorld = {
+      blocks: { getBlock: (_x, y, z) => (z === -5 && y >= FLOOR && y < FLOOR + 3 ? 1 : 0) },
+      ground: { distance: (_x, y) => y - FLOOR },
+    };
+    const behind = setup({ wildlife: [stag(5, 0, -10)], ground: wall });
+    behind.effects.predict(EYE, towardMachine(10));
+    expect(behind.effects.debug().shots[0]?.flags).toBe(SHOT_FLAG.world);
+    expect(behind.calls.impact[0]?.color).not.toBe(FX_COLOR.wild);
+    // And one beyond the range is out of reach.
+    const out = setup({ wildlife: [stag(5, 0, -BLASTER.range - 5)] });
+    out.effects.predict(EYE, AHEAD);
+    expect(out.effects.debug().shots[0]?.flags).toBe(0);
+  });
+
   it('is drawn from the player’s own pose, so the gun is where the suit holds it', () => {
     const { effects, calls, me } = setup();
     me.x = 6;
@@ -254,6 +301,16 @@ describe('what the host adds to the player’s own shot', () => {
     expect(calls.bolt).toHaveLength(0);
     expect(calls.burst.map((burst) => burst.at)).toEqual([{ x: 1, y: 11, z: -9 }]);
     expect(effects.debug().shots.map((shot) => shot.predicted)).toEqual([false, false]);
+  });
+
+  it('is a puff of dust and not a burst of fire when it is a creature that falls', () => {
+    const { effects, calls } = setup();
+    effects.hear({ by: 1, x: 1, y: 11, z: -9, flags: SHOT_FLAG.wild, enemy: 5 });
+    expect(calls.puff).toHaveLength(0);
+    effects.hear({ by: 1, x: 1, y: 11, z: -9, flags: SHOT_FLAG.wild | SHOT_FLAG.kill, enemy: 5 });
+    expect(calls.bolt).toHaveLength(0);
+    expect(calls.burst).toHaveLength(0);
+    expect(calls.puff.map((puff) => puff.at)).toEqual([{ x: 1, y: 11, z: -9 }]);
   });
 
   it('waits for the bolt that is still on its way before it falls apart', () => {
@@ -340,6 +397,19 @@ describe('other players’ shots, drawn when the host reports them', () => {
     effects.hear({ by: 2, x: 4, y: 11, z: -12, flags: SHOT_FLAG.enemy | SHOT_FLAG.kill, enemy: 9 });
     expect(calls.impact).toHaveLength(2);
     expect(calls.burst.map((burst) => burst.at)).toEqual([{ x: 4, y: 11, z: -12 }]);
+  });
+
+  it('throw a puff of cream off a creature they hit and let it fall in a cloud of dust', () => {
+    const { effects, calls } = setup({ remotes: [SEEN] });
+    effects.hear({ by: 2, x: 4, y: 11, z: -12, flags: SHOT_FLAG.wild, enemy: 9 });
+    expect(calls.impact).toHaveLength(1);
+    expect(calls.impact[0]?.color).toBe(FX_COLOR.wild);
+    expect(calls.puff).toHaveLength(0);
+    effects.hear({ by: 2, x: 4, y: 11, z: -12, flags: SHOT_FLAG.wild | SHOT_FLAG.kill, enemy: 9 });
+    expect(calls.impact).toHaveLength(2);
+    expect(calls.burst).toHaveLength(0);
+    const flight = flightOf(calls.bolt[1] as (typeof calls.bolt)[number]);
+    expect(calls.puff).toEqual([{ at: { x: 4, y: 11, z: -12 }, delay: expect.closeTo(flight, 6) }]);
   });
 
   it('throw sparks in the shooter’s color off a block or the ground', () => {

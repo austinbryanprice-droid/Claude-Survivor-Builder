@@ -4,6 +4,7 @@ import { createEnemyRenderer } from '../engine/enemy-render';
 import type { MaterialRegistry } from '../engine/materials';
 import { createRemotePlayers } from '../engine/remote-players';
 import { createShotFx } from '../engine/shot-fx';
+import { createWildlifeRenderer } from '../engine/wildlife-render';
 import { HostSession } from '../net/host-session';
 import { Lobby, type LobbyGame, type LobbyState } from '../net/lobby';
 import { PeerTransport } from '../net/peer-transport';
@@ -13,6 +14,7 @@ import type { NetStats, Rejection, SessionPhase, SessionRole } from '../net/sess
 import { digestBlocks, type BlockDigest } from '../shared/block-digest';
 import type { CellState } from '../shared/block-world';
 import type { EnemyPose } from '../shared/enemy-state';
+import type { WildPose } from '../shared/wildlife-state';
 import { lookDirection, type Vec3 } from '../shared/look';
 import { PLAYER } from '../shared/movement';
 import {
@@ -29,6 +31,7 @@ import { createVitalsReading, type VitalsReading } from '../shared/vitals-state'
 import { DEBRIS } from '../systems/economy/balance';
 import { upgradeStep } from '../systems/economy/build-rules';
 import { hitboxOf } from '../systems/survival/balance';
+import { wildHitboxOf } from '../systems/wildlife/balance';
 import { createRoomPanel } from '../ui/room-panel';
 import { browserStore } from './browser-storage';
 import { PlayerSync, type LocalPlayer } from './player-sync';
@@ -61,6 +64,10 @@ export interface MultiplayerOptions {
   /** The scene node the other players' avatars are added to, and the materials they are lit with. */
   scene: Object3D;
   registry: MaterialRegistry;
+  /** The height of the lake's surface: a creature under it is drawn through the water. */
+  waterLevel: number;
+  /** True while something else (a film, the title screen) has the camera to itself: the creatures are not drawn. */
+  wildlifeHidden(): boolean;
   /** The mouse capture: the panel shows its card while the mouse is free. */
   input: {
     readonly locked: boolean;
@@ -85,6 +92,28 @@ export interface MultiplayerDebug {
   remotes(): { id: number; name: string; slot: number; x: number; y: number; z: number }[];
   /** The machines on screen right now, with Health as a fraction of the full bar. */
   enemies(): { id: number; kind: number; x: number; y: number; z: number; health: number }[];
+  /** The creatures on screen right now (`kind` is the species), with Health as a fraction of the full bar and the `WILD_FLAG` bits the host reports. */
+  wildlife(): {
+    id: number;
+    kind: number;
+    x: number;
+    y: number;
+    z: number;
+    health: number;
+    flags: number;
+  }[];
+  /**
+   * Puts one creature of a species (a `WILD_SPECIES`) at a spot, as the debug page does, and returns its
+   * id, or null where there is no room for it there. Only a host (or single-player) can.
+   */
+  spawnCreature(species: number, x: number, z: number): number | null;
+  /** Takes every creature off the field. Only a host (or single-player) can. */
+  clearWildlife(): void;
+  /**
+   * Fires the pulse blaster at the middle of the creature nearest the player, as this screen has it, and
+   * returns that creature's id. Returns null, and fires nothing, while there is no creature to aim at.
+   */
+  fireAtCreature(): number | null;
   /** The latest shots of the pulse blaster drawn on this screen, anyone's, newest last, and the light playing now. */
   shots(): { shots: ShotLogEntry[]; live: { bolts: number; sparks: number } };
   /**
@@ -233,6 +262,11 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
   options.scene.add(remotes.object);
   const enemies = createEnemyRenderer({ registry: options.registry });
   options.scene.add(enemies.object);
+  const wildlife = createWildlifeRenderer({
+    registry: options.registry,
+    waterLevel: options.waterLevel,
+  });
+  options.scene.add(wildlife.object);
   const debris = createDebrisRenderer({ registry: options.registry });
   options.scene.add(debris.object);
   const shotFx = createShotFx();
@@ -335,6 +369,41 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     }),
     remotes: () => remotes.list(),
     enemies: () => enemies.list(),
+    wildlife: () => wildlife.list(),
+    spawnCreature: (species, x, z) => {
+      const session = hub.current;
+      if (!(session instanceof HostSession)) return null;
+      const id = session.survivalSim?.wildlife?.spawnAt(species, x, z) ?? 0;
+      return id > 0 ? id : null;
+    },
+    clearWildlife: () => {
+      const session = hub.current;
+      if (session instanceof HostSession) session.survivalSim?.wildlife?.clear();
+    },
+    fireAtCreature: () => {
+      if (hub.phase !== 'open') return null;
+      const me = here();
+      const origin = { x: me.x, y: me.y + PLAYER.eyeHeight, z: me.z };
+      let nearest: WildPose | null = null;
+      let least = Infinity;
+      for (const creature of hub.sampleWildlife()) {
+        const away = Math.hypot(creature.x - origin.x, creature.z - origin.z);
+        if (away < least) {
+          least = away;
+          nearest = creature;
+        }
+      }
+      if (!nearest) return null;
+      const middle = nearest.y + (wildHitboxOf(nearest.kind)?.height ?? 1) / 2;
+      const dx = nearest.x - origin.x;
+      const dy = middle - origin.y;
+      const dz = nearest.z - origin.z;
+      const length = Math.hypot(dx, dy, dz) || 1;
+      const dir = { x: dx / length, y: dy / length, z: dz / length };
+      shots.predict(origin, dir);
+      hub.fire(origin, dir);
+      return nearest.id;
+    },
     shots: () => shots.debug(),
     fire: () => {
       if (hub.phase !== 'open') return;
@@ -488,6 +557,8 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       sync.update(dt);
       remotes.update(dt, hub.sampleRemotes());
       enemies.update(dt, hub.sampleEnemies());
+      wildlife.object.visible = !options.wildlifeHidden();
+      wildlife.update(dt, hub.sampleWildlife());
       debris.setAimed(options.aimedDebris());
       debris.update(dt, hub.economy.debris, hub.run);
       shots.update(dt);
@@ -508,6 +579,7 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       options.scene.remove(remotes.object);
       remotes.dispose();
       enemies.dispose();
+      wildlife.dispose();
       debris.dispose();
       shotFx.dispose();
       lobby.dispose();

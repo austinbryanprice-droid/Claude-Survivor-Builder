@@ -76,6 +76,8 @@ export const FX_COLOR = {
   strip: '#ffc46b',
   /** A turret's bolt: the amber of a module at work, so the crew's guns read apart from the players'. */
   turret: '#ffa83a',
+  /** What a bolt knocks off a creature: a puff of warm cream, nothing like the amber sparks off steel. */
+  wild: '#ffe2b4',
 } as const;
 
 /** Ranges are [least, most]; each spark picks its own. Sizes are in blocks, speeds in blocks a second, lives in seconds. */
@@ -132,6 +134,16 @@ const SPRAY = {
     life: [0.5, 1.1],
     size: [0.06, 0.14],
   },
+  /** A creature that falls: a soft cloud that rises and drifts apart, slower and lighter than a machine's fire. */
+  puff: {
+    push: 0,
+    spread: 1,
+    lift: 0.9,
+    count: 22,
+    speed: [1.2, 4.5],
+    life: [0.5, 1],
+    size: [0.04, 0.09],
+  },
   /** Scrap flung off a heap that is being torn apart: up and out, falling back heavy. */
   strip: {
     push: 0,
@@ -154,6 +166,7 @@ const FLASH = {
   blastCore: { life: 0.2, size: 1.9 },
   strip: { life: 0.2, size: 1.1 },
   stripCore: { life: 0.1, size: 0.6 },
+  puff: { life: 0.2, size: 1.2 },
 } as const;
 
 const BOLT_VERTEX = /* glsl */ `
@@ -308,6 +321,8 @@ export interface ShotFx {
   impact(at: Vec3, dir: Vec3, color: string, delay?: number): void;
   /** A machine falling apart at `at`, `delay` seconds from now. */
   burst(at: Vec3, delay?: number): void;
+  /** A creature falling at `at`, `delay` seconds from now: a soft cream flash and a cloud of dust that rises and drifts apart. */
+  puff(at: Vec3, delay?: number): void;
   /** A breacher going off at `at`: a flash as wide as the blast, a white core in it and a fan of fire thrown every way. */
   blast(at: Vec3): void;
   /** A heap of wreckage stripped at `at` (the middle of the heap): a gold flash and scrap flung up and out. */
@@ -431,7 +446,9 @@ export function createShotFx({ seed = 0x5107 }: ShotFxOptions = {}): ShotFx {
   sparks.name = 'shot-sparks';
   for (const mesh of [bolts, sparks]) {
     mesh.frustumCulled = false;
-    mesh.renderOrder = 4;
+    // After the lake's surface (10) and the creatures that swim under it (11), so that a bolt over the
+    // water, or into a fish, is not painted over by them.
+    mesh.renderOrder = 12;
   }
   const object = new Group();
   object.name = 'shot-fx';
@@ -575,6 +592,13 @@ export function createShotFx({ seed = 0x5107 }: ShotFxOptions = {}): ShotFx {
       spark(at, still, FLASH.burst.life, FLASH.burst.size, true, orange, later);
       spark(at, still, FLASH.burstCore.life, FLASH.burstCore.size, true, white, later);
       spray(at, still, SPRAY.burst, [orange, amber, orange], later);
+    },
+
+    puff(at, delay) {
+      const cream = rgb(FX_COLOR.wild);
+      const later = wait(delay);
+      spark(at, still, FLASH.puff.life, FLASH.puff.size, true, cream, later);
+      spray(at, still, SPRAY.puff, [cream, white, cream], later);
     },
 
     blast(at) {

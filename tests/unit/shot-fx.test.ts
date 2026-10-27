@@ -384,6 +384,59 @@ describe('the spray of a heap stripped', () => {
   });
 });
 
+describe('the puff of a creature falling', () => {
+  it('is one flash and twenty-two slow sparks in cream, nothing like a machine’s fire', () => {
+    const { fx, spark } = setup();
+    fx.puff({ x: 3, y: 4, z: 5 });
+    expect(fx.live()).toEqual({ bolts: 0, sparks: 23 });
+    expect(spark('iLife')[3]).toBe(1);
+    expect(spark('iLife')[7]).toBe(0);
+    expect(Array.from(spark('iOrigin').slice(0, 3))).toEqual([3, 4, 5]);
+    const cream = Array.from(spark('iColor').slice(0, 3));
+    expect(cream[0]).toBeGreaterThan(cream[1] as number);
+    expect(cream[1]).toBeGreaterThan(cream[2] as number);
+    // Pale: a good share of blue is left, where the burst's orange has almost none.
+    expect(cream[2]).toBeGreaterThan((cream[0] as number) * 0.4);
+    expect(FX_COLOR.wild).not.toBe(FX_COLOR.burst);
+    // Slower than the burst's fastest sparks, and drifting up more than down.
+    const velocity = spark('iVelocity');
+    let fastest = 0;
+    let rising = 0;
+    for (let i = 1; i < 23; i++) {
+      fastest = Math.max(
+        fastest,
+        Math.hypot(
+          velocity[i * 3] as number,
+          velocity[i * 3 + 1] as number,
+          velocity[i * 3 + 2] as number,
+        ),
+      );
+      if ((velocity[i * 3 + 1] as number) > 0) rising++;
+    }
+    expect(fastest).toBeLessThanOrEqual(4.5 + 1e-3);
+    expect(rising).toBeGreaterThan(11);
+  });
+
+  it('waits for the bolt to land, like the burst, and is over inside a second and a fifth', () => {
+    const { fx, spark, sparkCount } = setup();
+    fx.puff({ x: 0, y: 0, z: 0 }, 0.2);
+    expect(spark('iLife')[0]).toBeCloseTo(0.2, 5);
+    fx.update(0.2 + 1.25);
+    expect(fx.live().sparks).toBe(0);
+    fx.update(0.016);
+    expect(sparkCount()).toBe(0);
+  });
+});
+
+describe('where the light is drawn', () => {
+  it('comes after the lake’s surface and the creatures swimming under it, so a bolt over the water shows', () => {
+    const { bolts, sparks } = setup();
+    // The lake is drawn at order 10 and the water creatures at 11.
+    expect(bolts.renderOrder).toBeGreaterThan(11);
+    expect(sparks.renderOrder).toBeGreaterThan(11);
+  });
+});
+
 describe('the clock of the blaster’s light', () => {
   it('starts over after a long quiet, so that it never grows large enough to blur', () => {
     const { fx, bolt, spark } = setup();
