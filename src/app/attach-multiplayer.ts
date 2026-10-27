@@ -9,6 +9,7 @@ import type { NavWorld } from '../systems/survival/nav';
 import { SurvivalSim } from '../systems/survival/sim';
 import type { ModuleSource } from '../systems/survival/turrets';
 import type { Outpost } from '../world/outpost';
+import { WATER_LEVEL } from '../world/terrain/field';
 import { bedSpawn } from './bed-spawn';
 import { createMultiplayer, type Multiplayer } from './multiplayer';
 import { seatSpawn } from './seat-spawn';
@@ -44,6 +45,8 @@ export interface AttachOptions {
   night: number | null;
   /** The nights send their waves. False (the `?waves=0` switch) keeps them empty. */
   waves: boolean;
+  /** The valley has its creatures. False (the `?wildlife=off` switch, or a scripted browser) keeps it empty. */
+  wildlife: boolean;
   /** Open the pool with this much of every material (the `?stock=` switch), or null for the table's opening stock. */
   stock: number | null;
   /** Open the run with this many research points (the `?research=` switch), or null to earn them by surviving nights. */
@@ -73,6 +76,7 @@ export function attachMultiplayer({
   buildId,
   night,
   waves,
+  wildlife,
   stock,
   research,
   skyFollowsClock,
@@ -122,6 +126,7 @@ export function attachMultiplayer({
           ray: rayWorld(),
           seed: game.world.seed,
           waves,
+          wildlife,
           stock,
           research,
           standing: (module) => moduleStands(voxels(), module),
@@ -136,6 +141,9 @@ export function attachMultiplayer({
     scene: game.stage.world,
     registry: game.stage.registry,
     input: game.input,
+    waterLevel: WATER_LEVEL,
+    // A film or the title screen has the camera to itself: the creatures wait out of sight.
+    wildlifeHidden: () => game.cinematic !== null,
   });
   const stopUpdates = game.onBeforeRender((_camera, dt) => multiplayer.update(dt));
 

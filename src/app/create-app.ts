@@ -6,7 +6,7 @@ import { introWanted } from '../shared/intro';
 import { readNetFlags } from '../shared/net-flags';
 import { createReading } from '../shared/survival-state';
 import { titleWanted } from '../shared/title';
-import { readViewFlags } from '../shared/view-flags';
+import { readViewFlags, wildlifeWanted } from '../shared/view-flags';
 import { valleyNavigation } from '../systems/survival/valley-nav';
 import { createHud, type Hud } from '../ui/hud';
 import { loadSettings } from '../ui/settings-store';
@@ -221,6 +221,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           buildId,
           night: view.night,
           waves: view.waves,
+          wildlife: wildlifeWanted(view.wildlife, navigator.webdriver === true),
           stock: view.stock,
           research: view.research,
           // A fixed moment (`?time=`, a named `?shot=`) or the demo clock (`?clock`) keeps the sky to itself.

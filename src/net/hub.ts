@@ -7,6 +7,7 @@ import type {
   HarvestEvent,
 } from '../shared/economy';
 import type { EnemyPose } from '../shared/enemy-state';
+import type { WildPose } from '../shared/wildlife-state';
 import type { Vec3 } from '../shared/look';
 import type {
   BlockCommand,
@@ -203,6 +204,9 @@ export class SessionHub implements GameSession {
   }
   sampleEnemies(): readonly EnemyPose[] {
     return this.session.sampleEnemies();
+  }
+  sampleWildlife(): readonly WildPose[] {
+    return this.session.sampleWildlife();
   }
   close(): void {
     this.session.close();

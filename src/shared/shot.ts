@@ -15,12 +15,14 @@ export const SHOT_FLAG = {
   enemy: 1,
   /** ...and the blow felled it. */
   kill: 2,
-  /** A block, the ground or the Core stopped it. Without this or `enemy` it flew its whole range. */
+  /** A block, the ground or the Core stopped it. Without this or `enemy` or `wild` it flew its whole range. */
   world: 4,
+  /** It struck a creature of the valley's wildlife, which is named beside it (and not a machine: `enemy` is not set). */
+  wild: 8,
 } as const;
 
 /** Every flag the wire knows; the rest of the bits are dropped. */
-export const SHOT_FLAGS_MASK = SHOT_FLAG.enemy | SHOT_FLAG.kill | SHOT_FLAG.world;
+export const SHOT_FLAGS_MASK = SHOT_FLAG.enemy | SHOT_FLAG.kill | SHOT_FLAG.world | SHOT_FLAG.wild;
 
 /** What the host says about one shot, to everyone in the room. */
 export interface ShotEvent {
@@ -32,7 +34,7 @@ export interface ShotEvent {
   readonly z: number;
   /** `SHOT_FLAG` bits. */
   readonly flags: number;
-  /** The machine it struck, or 0. */
+  /** The machine it struck, or with `SHOT_FLAG.wild` the creature, or 0. */
   readonly enemy: number;
   /** The turret that fired it, as the cell it stands in. Absent for a player's shot. */
   readonly turret?: readonly [x: number, y: number, z: number];

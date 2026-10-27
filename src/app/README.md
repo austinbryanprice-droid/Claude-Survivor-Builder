@@ -58,6 +58,7 @@ Click the page to take the mouse; Esc gives it back.
 | `introAt=<seconds>`            | Hold the intro film at this second, with no mouse needed: for pictures and tests                                                                   |
 | `title=on\|off`                | `on` shows the title screen on any page, `off` never does (otherwise it shows on a plain page, not under automation)                               |
 | `sound=off`                    | Keep the page silent: no audio context is ever made. (The volume is the player's own setting, in the pause card)                                   |
+| `wildlife=on\|off`             | `on` fills the valley with its creatures on any page, `off` never does (otherwise a person's game has them and a scripted browser's does not)      |
 | `seed=<n>`                     | Build another valley                                                                                                                               |
 | `demo=outpost\|swatch\|hall`   | Raise a demo structure before the first frame (`demo` alone: the outpost)                                                                          |
 | `terrain=heightfield`          | Mesh the terrain as a smoothed heightfield instead of surface nets                                                                                 |

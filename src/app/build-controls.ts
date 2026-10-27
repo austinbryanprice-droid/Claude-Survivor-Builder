@@ -282,7 +282,9 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
         stopRefusals = next.onRejected((rejection) => controller.noteRejection(rejection.reason));
         // The host's word on the player's own shots is what the hit marker shows.
         stopHits = next.onShot((shot) => {
-          if (shot.by !== next.localId || (shot.flags & SHOT_FLAG.enemy) === 0) return;
+          if (shot.by !== next.localId || (shot.flags & (SHOT_FLAG.enemy | SHOT_FLAG.wild)) === 0) {
+            return;
+          }
           controller.noteHit((shot.flags & SHOT_FLAG.kill) !== 0);
         });
       }
