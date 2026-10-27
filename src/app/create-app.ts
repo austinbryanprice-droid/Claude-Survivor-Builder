@@ -165,6 +165,11 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           import('./render-valley-sound').then(({ renderValleySound }) =>
             renderValleySound(options),
           ),
+        // And for what people do in it: a script of effects and a listener, heard over the valley.
+        renderEffects: (options) =>
+          import('./render-effect-sound').then(({ renderEffectSound }) =>
+            renderEffectSound(options),
+          ),
       },
     };
   }
@@ -261,6 +266,8 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
               game,
               session: hub,
               core: () => valley?.voxels.outpost ?? null,
+              power: () => valley?.power ?? null,
+              hands: building,
             });
             if (flags.debug && window.__ashbound) window.__ashbound.sound = gameSound.debug;
           })

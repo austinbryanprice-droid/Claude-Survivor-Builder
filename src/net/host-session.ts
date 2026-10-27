@@ -1,4 +1,4 @@
-import type { BlockWorld } from '../shared/block-world';
+import type { BlockWorld, CellState } from '../shared/block-world';
 import { ClockSync } from '../shared/clock-sync';
 import type { EconomyView } from '../shared/economy';
 import { createEnemyState, type EnemyPose, type EnemyState } from '../shared/enemy-state';
@@ -276,7 +276,7 @@ export class HostSession implements GameSession {
   private phaseValue: SessionPhase = 'open';
   private closedInfo: CloseInfo | null = null;
 
-  private readonly events = new Emitter<WorldEvent>();
+  private readonly events = new Emitter<WorldEvent, [previous: CellState]>();
   private readonly rejections = new Emitter<Rejection>();
   private readonly shots = new Emitter<ShotEvent>();
   private readonly playerChanges = new Emitter<void>();
@@ -393,7 +393,7 @@ export class HostSession implements GameSession {
     this.localActive = active;
   }
 
-  onEvent(listener: (event: WorldEvent) => void): Unsubscribe {
+  onEvent(listener: (event: WorldEvent, previous: CellState) => void): Unsubscribe {
     return this.events.on(listener);
   }
   onRejected(listener: (rejection: Rejection) => void): Unsubscribe {
@@ -967,13 +967,15 @@ export class HostSession implements GameSession {
    * player asked for it or the machines chewed through a block. False when the world refused.
    */
   private applyEdit(x: number, y: number, z: number, state: number, by: PlayerId): boolean {
-    if (!this.binding.current().setBlock(x, y, z, state)) return false;
+    const world = this.binding.current();
+    const previous = world.getBlock(x, y, z);
+    if (!world.setBlock(x, y, z, state)) return false;
     this.sim?.blockChanged(x, y, z);
     const event: BlockSetEvent = { type: 'set', x, y, z, state, by };
     this.eventSeq++;
     const frame = encodeFrame({ t: 'ev', s: this.eventSeq, e: event });
     for (const other of this.members.values()) if (other.link) this.sendTo(other, frame);
-    this.events.emit(event);
+    this.events.emit(event, previous);
     return true;
   }
 

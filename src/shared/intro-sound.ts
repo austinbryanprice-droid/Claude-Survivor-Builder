@@ -75,6 +75,10 @@ export interface Cue {
   readonly pan?: number;
   /** How much of it goes to the reverb, from 0 to 1; each voice has its own habit. */
   readonly send?: number;
+  /** How dull it is, from 0 (as it was made) to 1 (as a far sound is, with the highs gone). The film has none. */
+  readonly muffle?: number;
+  /** More of it to the reverb, added to the voice's habit or to `send`, from 0 to 1: the echo of a sound that comes from far off. The film has none. */
+  readonly room?: number;
   /** Fixes the little differences between two plays of the same voice (which part of the noise, how far a partial is detuned). */
   readonly seed: number;
 }

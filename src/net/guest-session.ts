@@ -1,3 +1,4 @@
+import type { CellState } from '../shared/block-world';
 import { ClockSync } from '../shared/clock-sync';
 import type { EconomyView } from '../shared/economy';
 import type { EnemyPose } from '../shared/enemy-state';
@@ -140,7 +141,7 @@ export class GuestSession implements GameSession {
   private stopStep: (() => void) | null = null;
   private stopDial: (() => void) | null = null;
 
-  private readonly events = new Emitter<WorldEvent>();
+  private readonly events = new Emitter<WorldEvent, [previous: CellState]>();
   private readonly rejections = new Emitter<Rejection>();
   private readonly shots = new Emitter<ShotEvent>();
   private readonly playerChanges = new Emitter<void>();
@@ -244,7 +245,7 @@ export class GuestSession implements GameSession {
     );
   }
 
-  onEvent(listener: (event: WorldEvent) => void): Unsubscribe {
+  onEvent(listener: (event: WorldEvent, previous: CellState) => void): Unsubscribe {
     return this.events.on(listener);
   }
   onRejected(listener: (rejection: Rejection) => void): Unsubscribe {
@@ -685,8 +686,10 @@ export class GuestSession implements GameSession {
   private applyEvent(seq: number, event: WorldEvent): void {
     if (seq <= this.lastEventSeq) return;
     this.lastEventSeq = seq;
-    this.binding.current().setBlock(event.x, event.y, event.z, event.state);
-    this.events.emit(event);
+    const world = this.binding.current();
+    const previous = world.getBlock(event.x, event.y, event.z);
+    world.setBlock(event.x, event.y, event.z, event.state);
+    this.events.emit(event, previous);
   }
 
   private onState(bytes: Uint8Array): void {

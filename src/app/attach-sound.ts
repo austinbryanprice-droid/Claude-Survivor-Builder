@@ -1,15 +1,27 @@
 import { createLiveSound, type LiveSound, type LiveSoundEvent } from '../engine/audio/live';
 import type { Game } from '../engine/game';
-import type { GameSession } from '../net/session';
+import type { GameSession, Unsubscribe } from '../net/session';
+import {
+  effectForEdit,
+  effectForHarvest,
+  effectForRefusal,
+  effectsForPower,
+} from '../shared/effect-sound';
 import { QUIET_SCENE, SceneTracker, cuesForEvent, type SoundScene } from '../shared/game-sound';
+import { PLAYER } from '../shared/movement';
 import { createReading, type SurvivalEvent } from '../shared/survival-state';
+import type { BuildControls } from './build-controls';
+import type { PowerWatcher } from './power-watcher';
 
 /**
  * The sound of the valley while it is played: the wind, the Core's hum and the low note of the
  * night under everything, a sparse music over them, and a stinger ahead of each wave. It follows
  * the run the way the sky does, by reading the clock, the machines and the Core once a frame and by
  * listening for what the host announces (nightfall, a wave coming, the dawn), so a guest hears
- * what the host's player hears.
+ * what the host's player hears. What people do in it is heard from where the player stands: every
+ * block set down or broken, every piece raised, every module that comes on or goes dark, every
+ * heap stripped (anyone's, as the host announces them) and every click of the player's own that
+ * is turned away.
  *
  * It loads on its own once the game is up. Browsers keep a page silent until it has been clicked,
  * so the first click or key press on the page unlocks the audio, whatever it was for. The intro
@@ -27,10 +39,14 @@ const GESTURES = ['pointerdown', 'mousedown', 'keydown', 'touchend'] as const;
 
 export interface SoundAttachOptions {
   readonly game: Game;
-  /** The run as this peer sees it: the clock, what the host announces and where the machines are. */
-  readonly session: Pick<GameSession, 'survival' | 'sampleEnemies'>;
+  /** The run as this peer sees it: the clock, what the host announces, where the machines are, the changes made to the world and the heaps stripped. */
+  readonly session: Pick<GameSession, 'survival' | 'sampleEnemies' | 'onEvent' | 'economy'>;
   /** Where the Core stands in the valley being played, or null where there is none. */
   readonly core: () => { readonly x: number; readonly z: number } | null;
+  /** The valley's power, which says which modules come on and go dark; null before the first valley. A getter: a joining player's valley replaces the first one. */
+  readonly power: () => Pick<PowerWatcher, 'onFlips'> | null;
+  /** The player's hands, which say when a click is turned away. */
+  readonly hands: Pick<BuildControls, 'onRefused'>;
 }
 
 /** What the `?debug` page and the tests can see of the sound. */
@@ -48,11 +64,13 @@ export interface GameSound {
   dispose(): void;
 }
 
-export function attachSound({ game, session, core }: SoundAttachOptions): GameSound {
+export function attachSound({ game, session, core, power, hands }: SoundAttachOptions): GameSound {
   const { audio } = game;
   const reading = createReading();
   const tracker = new SceneTracker();
   const events: LiveSoundEvent[] = [];
+  /** Where the player's head is and which way they face: what everything people do is placed against. */
+  const ears: { x: number; y: number; z: number; yaw: number } = { x: 0, y: 0, z: 0, yaw: 0 };
   let live: LiveSound | null = null;
   let scene: SoundScene = QUIET_SCENE;
   let disposed = false;
@@ -108,6 +126,16 @@ export function attachSound({ game, session, core }: SoundAttachOptions): GameSo
     }
   };
 
+  /** Tells the sound where the player's head is, as of now. */
+  const hear = (sound: LiveSound): void => {
+    const { player, look } = game;
+    ears.x = player.x;
+    ears.y = player.y + PLAYER.eyeHeight;
+    ears.z = player.z;
+    ears.yaw = look.yaw;
+    sound.listen(ears);
+  };
+
   /** Fades the sound out and lets go of it: the next one is built fresh. */
   const hush = (seconds: number): void => {
     const going = live;
@@ -119,17 +147,37 @@ export function attachSound({ game, session, core }: SoundAttachOptions): GameSo
     }
   };
 
+  // The valley's power follows the valley: a joining player's replaces the first one, and its modules are its own.
+  let watching: Pick<PowerWatcher, 'onFlips'> | null = null;
+  let stopFlips: Unsubscribe | null = null;
+  const followPower = (): void => {
+    const next = power();
+    if (next === watching) return;
+    stopFlips?.();
+    watching = next;
+    stopFlips =
+      next?.onFlips((flips) => {
+        if (!live || game.cinematic) return;
+        for (const effect of effectsForPower(flips, ears)) live.effect(effect);
+      }) ?? null;
+  };
+
   const stopFrames = game.onBeforeRender((_camera, dt) => {
+    followPower();
     // Built as soon as there is an audio context to build it in, behind the film when one is playing:
     // its room and its noise take about a tenth of a second to make, which is better spent in the dark
     // of the title's fade than on the frame that hands the run over. It makes no sound until it is
     // updated, and a frame of its own goes by before that.
     if (!live) {
-      if (!refused) live = open();
+      if (!refused) {
+        live = open();
+        if (live) hear(live);
+      }
       return;
     }
     // The film has its own score, and the valley comes up when it is over.
     if (game.cinematic) return;
+    hear(live);
     const clock = session.survival.read(reading);
     scene = tracker.update(dt, {
       phase: clock.phase,
@@ -157,6 +205,26 @@ export function attachSound({ game, session, core }: SoundAttachOptions): GameSo
     live.playAll(cuesForEvent(event, game.world.seed));
   });
 
+  /** What people do in the valley, anyone's, as the host's world applies it: placed where it happened. */
+  const stopEdits = session.onEvent((event, previous) => {
+    if (!live || game.cinematic) return;
+    const effect = effectForEdit(event, previous);
+    if (effect) live.effect(effect);
+  });
+
+  /** A heap stripped, anyone's, is heard from the heap. */
+  const stopStrips = session.economy.debris.onHarvest((event) => {
+    if (!live || game.cinematic) return;
+    const node = session.economy.debris.nodes[event.node];
+    if (node) live.effect(effectForHarvest(event, { x: node.x, y: node.y + 0.5, z: node.z }));
+  });
+
+  /** The player's own click that was turned away is answered in their head. */
+  const stopRefusals = hands.onRefused(() => {
+    if (!live || game.cinematic) return;
+    live.effect(effectForRefusal());
+  });
+
   return {
     debug: {
       get live() {
@@ -173,6 +241,10 @@ export function attachSound({ game, session, core }: SoundAttachOptions): GameSo
       stopFrames();
       stopFilm();
       stopEvents();
+      stopEdits();
+      stopStrips();
+      stopRefusals();
+      stopFlips?.();
       stopListening();
       hush(0.2);
     },
