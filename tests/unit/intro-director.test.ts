@@ -362,6 +362,52 @@ describe('the intro film and its sound', () => {
     expect(port.finish).not.toHaveBeenCalled();
   });
 
+  it('plays on to its end without a sound that fails, says so once, and still hands the game over', () => {
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const broken = () => {
+      throw new Error('the audio thread is gone');
+    };
+    const port = { update: vi.fn(broken), fadeOut: vi.fn(broken), finish: vi.fn(broken) };
+    const { playback, step, ends } = setup(INTRO_SECONDS - 0.3, false, port);
+    playback.play();
+    expect(step(0.05)).toBe(true);
+    expect(step(0.05)).toBe(true);
+    // It is not asked to follow the clock again once it has failed.
+    expect(port.update).toHaveBeenCalledTimes(1);
+    while (step(0.05)) {
+      // Plays to the end.
+    }
+    expect(() => playback.end()).not.toThrow();
+    // What it was playing is still asked to ring out, and the game is handed over all the same.
+    expect(port.finish).toHaveBeenCalledTimes(1);
+    expect(ends).toEqual(['finished']);
+    expect(complaint).toHaveBeenCalledTimes(1);
+    complaint.mockRestore();
+  });
+
+  it('still fades the picture to black, and ends, when the sound cannot be faded', () => {
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const port = {
+      update: vi.fn(),
+      fadeOut: vi.fn(() => {
+        throw new Error('the audio thread is gone');
+      }),
+      finish: vi.fn(),
+    };
+    const { playback, step, ends } = setup(12, false, port);
+    playback.play();
+    step(0.1);
+    expect(() => playback.skip()).not.toThrow();
+    let frames = 0;
+    while (step(0.05)) frames++;
+    // The picture took its 0.45 seconds to go black, as it does with a sound that fades.
+    expect(frames).toBeGreaterThan(5);
+    expect(() => playback.end()).not.toThrow();
+    expect(ends).toEqual(['skipped']);
+    expect(complaint).toHaveBeenCalledTimes(1);
+    complaint.mockRestore();
+  });
+
   it('plays on without a word to say about sound when it has none', () => {
     const { playback, step } = setup(null, false, null);
     for (let i = 0; i < 20; i++) expect(step(0.05)).toBe(true);

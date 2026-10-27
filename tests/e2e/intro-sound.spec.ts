@@ -370,4 +370,34 @@ test.describe('the intro film’s sound', () => {
     expect(now.stats?.state).toBe('playing');
     expect(problems).toEqual([]);
   });
+
+  test('plays the film in silence when the browser cannot make its sound, and the run still begins', async ({
+    page,
+  }) => {
+    // A browser whose audio cannot make the room the sound is set up with.
+    await page.addInitScript(() => {
+      AudioContext.prototype.createConvolver = function () {
+        throw new DOMException('Refused for the test', 'NotSupportedError');
+      };
+    });
+    const problems = await open(page, '?debug&intro=on&quality=low');
+    await waitForTheFilm(page);
+    await page.getByRole('button', { name: 'Play' }).click();
+    await expect(page.locator('#hud')).toHaveAttribute('data-intro', 'on', {
+      timeout: STATE_TIMEOUT,
+    });
+    await filmPast(page, 1);
+    // The audio is up for the game, and the film has no sound to follow.
+    expect(await heard(page)).toEqual({ context: 'running', volume: 1, stats: null });
+
+    // A key skips the film, and the run is there with the mouse in hand.
+    await page.keyboard.press('Space');
+    await expect(page.locator('#hud')).toHaveAttribute('data-intro', 'off', {
+      timeout: STATE_TIMEOUT,
+    });
+    await expect(page.locator('#hud')).toHaveAttribute('data-pointer', 'locked');
+    // The only complaint is the sound's own, once.
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('could not make its sound');
+  });
 });

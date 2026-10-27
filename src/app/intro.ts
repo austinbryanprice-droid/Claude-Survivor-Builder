@@ -125,7 +125,13 @@ export function createIntroController({
     audio.unlock();
     const { context, input: output } = audio;
     if (!context || !output || audio.volume <= 0) return null;
-    return createIntroSound(context, { output, live: true });
+    try {
+      return createIntroSound(context, { output, live: true });
+    } catch (error) {
+      // The sound is a courtesy: a browser that cannot make it plays the film in silence.
+      console.error('The intro film could not make its sound; the film goes on without it.', error);
+      return null;
+    }
   };
 
   const begin = (heldAt: number | null): IntroPlayback | null => {

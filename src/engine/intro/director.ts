@@ -118,6 +118,7 @@ export function createIntro(options: IntroOptions): IntroPlayback {
   let skipFade = 0;
   let ended: IntroEnd | null = null;
   let wreckShown = false;
+  let soundFailed = false;
 
   site.showWreck(false);
   stage.setSkyOverride(() => {
@@ -130,6 +131,18 @@ export function createIntro(options: IntroOptions): IntroPlayback {
     if (shown === wreckShown && shown) return;
     wreckShown = shown;
     site.showWreck(shown);
+  };
+
+  /** The sound is a courtesy: if it fails that is told once and the film goes on without it, and neither the picture nor the player's way into the game ever waits on it. */
+  const tellSound = (tell: (sound: IntroSoundPort) => void): void => {
+    if (!options.sound) return;
+    try {
+      tell(options.sound);
+    } catch (error) {
+      if (!soundFailed)
+        console.error("The intro film's sound failed; the film goes on without it.", error);
+      soundFailed = true;
+    }
   };
 
   const subjectPoint: Point3 = subject;
@@ -145,7 +158,7 @@ export function createIntro(options: IntroOptions): IntroPlayback {
       if (skipping) return;
       skipping = true;
       // The sound fades with the picture.
-      options.sound?.fadeOut(SKIP_FADE);
+      tellSound((sound) => sound.fadeOut(SKIP_FADE));
     },
     seek(seconds) {
       time = Math.min(INTRO_SECONDS, Math.max(0, seconds));
@@ -159,7 +172,7 @@ export function createIntro(options: IntroOptions): IntroPlayback {
       const step = held ? 0 : Math.min(dt, MAX_STEP);
       time = Math.min(INTRO_SECONDS, time + step);
       if (skipping) skipFade = Math.min(1, skipFade + dt / SKIP_FADE);
-      if (!held && !skipping) options.sound?.update(time);
+      if (!held && !skipping && !soundFailed) tellSound((sound) => sound.update(time));
 
       // What the crash made is not there until the wreck has come to rest in its crater.
       showWreck(time >= STOP_AT + 0.35);
@@ -206,8 +219,8 @@ export function createIntro(options: IntroOptions): IntroPlayback {
       site.showWreck(true);
       const how = ended ?? 'cut';
       // A film that ran out lets its last chord ring into the game, one that something cut fades at once, and a skipped one began to fade when it was skipped.
-      if (how === 'finished') options.sound?.finish();
-      else if (how === 'cut') options.sound?.fadeOut(CUT_FADE);
+      if (how === 'finished') tellSound((sound) => sound.finish());
+      else if (how === 'cut') tellSound((sound) => sound.fadeOut(CUT_FADE));
       options.onEnd(how);
     },
   };
