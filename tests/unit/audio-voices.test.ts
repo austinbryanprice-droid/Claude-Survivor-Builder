@@ -141,6 +141,69 @@ describe('the film’s voices', () => {
     expect(clamped.pan.value).toBe(1);
   });
 
+  it('dulls a muffled cue with a lowpass that closes as the muffling grows, and leaves a clear one alone', () => {
+    /** What the first stage of a voice (its level) is joined to. */
+    const after = (muffle: number | undefined) => {
+      const { ctx, dry, env } = setup();
+      const before = ctx.nodes.length;
+      VOICES.step(env, 0, { ...bare('step'), muffle });
+      return { first: ctx.nodes[before] as FakeGain, dry };
+    };
+    for (const clear of [undefined, 0]) {
+      const { first, dry } = after(clear);
+      expect(first.outputs[0]).toBe(dry);
+    }
+    const cutoffs = [0.2, 0.5, 0.9, 1].map((muffle) => {
+      const { first } = after(muffle);
+      const dull = first.outputs[0] as FakeFilter;
+      expect(dull).toBeInstanceOf(FakeFilter);
+      expect(dull.type).toBe('lowpass');
+      return dull.frequency.value;
+    });
+    for (const [i, hz] of cutoffs.entries()) {
+      expect(hz).toBeLessThan(16000);
+      expect(hz).toBeGreaterThanOrEqual(600 - 1e-6);
+      if (i > 0) expect(hz).toBeLessThan(cutoffs[i - 1] as number);
+    }
+    expect(cutoffs.at(-1)).toBeCloseTo(600, 6);
+    // Out of range is held to the range, not passed to the filter as it came.
+    expect((after(40).first.outputs[0] as FakeFilter).frequency.value).toBeCloseTo(600, 6);
+    const { first: below, dry: belowDry } = after(-3);
+    expect(below.outputs[0]).toBe(belowDry);
+  });
+
+  it('dulls first and places after, and the share sent to the room is of the sound as it is heard', () => {
+    const { ctx, dry, wet, env } = setup();
+    const before = ctx.nodes.length;
+    VOICES.step(env, 0, { ...bare('step'), muffle: 0.6, pan: 0.5, send: 0.25 });
+    const [first] = ctx.nodes.slice(before) as [FakeGain];
+    const dull = first.outputs[0] as FakeFilter;
+    expect(dull).toBeInstanceOf(FakeFilter);
+    const panner = dull.outputs[0] as FakeNode;
+    expect(panner.kind).toBe('panner');
+    expect(panner.outputs).toContain(dry);
+    const send = panner.outputs.find((out) => out !== dry) as FakeGain;
+    expect(send.gain.value).toBeCloseTo(0.25, 9);
+    expect(send.outputs).toEqual([wet]);
+  });
+
+  it('adds what a cue asks of the room to what the voice sends there, up to everything', () => {
+    const sentBy = (cue: Partial<Cue>): number | null => {
+      const { ctx, wet, env } = setup();
+      VOICES.ping(env, 0, { ...bare('ping'), ...cue });
+      const send = ctx.nodes.find(
+        (node): node is FakeGain => node instanceof FakeGain && node.outputs.includes(wet),
+      );
+      return send ? send.gain.value : null;
+    };
+    expect(sentBy({})).toBeCloseTo(0.8, 9);
+    expect(sentBy({ room: 0.1 })).toBeCloseTo(0.9, 9);
+    expect(sentBy({ room: 0.5 })).toBe(1);
+    expect(sentBy({ send: 0.1, room: 0.2 })).toBeCloseTo(0.3, 9);
+    expect(sentBy({ send: 0 })).toBeNull();
+    expect(sentBy({ send: 0, room: 0.3 })).toBeCloseTo(0.3, 9);
+  });
+
   it('plays every cue of the film without breaking a rule of Web Audio, and never writes before the cue or leaves a sound running', () => {
     const { ctx, dry, env } = setup();
     for (const cue of INTRO_CUES) {

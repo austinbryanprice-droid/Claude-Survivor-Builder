@@ -1,4 +1,4 @@
-import type { BlockWorld } from '../shared/block-world';
+import type { BlockWorld, CellState } from '../shared/block-world';
 import type { EconomyView } from '../shared/economy';
 import type { EnemyPose } from '../shared/enemy-state';
 import type { Vec3 } from '../shared/look';
@@ -138,7 +138,12 @@ export interface GameSession {
    */
   setLocalActive(active: boolean): void;
 
-  onEvent(listener: (event: WorldEvent) => void): Unsubscribe;
+  /**
+   * A cell changed. `previous` is what the cell held until this event, which the event itself does
+   * not say (it never travels: each peer knows it from its own copy of the world), so that a
+   * listener can tell a block placed from one raised or broken.
+   */
+  onEvent(listener: (event: WorldEvent, previous: CellState) => void): Unsubscribe;
   onRejected(listener: (rejection: Rejection) => void): Unsubscribe;
   /** The host decided a shot of the pulse blaster: anyone's, the local player's included. */
   onShot(listener: (shot: ShotEvent) => void): Unsubscribe;

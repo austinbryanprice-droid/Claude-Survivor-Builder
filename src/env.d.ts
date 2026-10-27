@@ -4,6 +4,7 @@ import type { SoundDebug } from './app/attach-sound';
 import type { BuildControlsDebug } from './app/build-controls';
 import type { IntroController } from './app/intro';
 import type { MultiplayerDebug } from './app/multiplayer';
+import type { EffectRenderOptions } from './app/render-effect-sound';
 import type { ValleyRenderOptions } from './app/render-valley-sound';
 import type { TitleController } from './app/title';
 import type { AudioHub } from './engine/audio/hub';
@@ -29,6 +30,7 @@ declare global {
         hub: AudioHub;
         render(options?: RenderOptions): Promise<RenderedSound>;
         renderValley(options?: ValleyRenderOptions): Promise<RenderedSound>;
+        renderEffects(options: EffectRenderOptions): Promise<RenderedSound>;
       };
     };
   }
