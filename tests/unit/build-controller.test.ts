@@ -1137,6 +1137,7 @@ describe('the module slot', () => {
       MODULE.generator,
       MODULE.node,
       MODULE.storage,
+      MODULE.bed,
     ]);
     for (let slot = 0; slot < HOTBAR_SLOTS; slot++) {
       controller.selectSlot(slot);
@@ -1244,7 +1245,7 @@ describe('the module slot', () => {
     expect(r.controller.hudState().crosshair).toBe('place');
   });
 
-  it('chooses the Basic Turret, the Generator, the Power Node and Storage with the shape key, each at its first level, and goes round to the Terminal again', () => {
+  it('chooses the Basic Turret, the Generator, the Power Node, Storage and the Bed with the shape key, each at its first level, and goes round to the Terminal again', () => {
     const { controller } = rig();
     controller.selectSlot(MODULE_SLOT);
     expect(controller.module).toBe(MODULE.terminal);
@@ -1266,6 +1267,9 @@ describe('the module slot', () => {
     controller.cycleShape();
     expect(controller.module).toBe(MODULE.storage);
     expect(controller.piece).toBe(packState(moduleShape(MODULE.storage, 0), 1));
+    controller.cycleShape();
+    expect(controller.module).toBe(MODULE.bed);
+    expect(controller.piece).toBe(packState(moduleShape(MODULE.bed, 0), 1));
     controller.cycleShape();
     expect(controller.module).toBe(MODULE.terminal);
   });

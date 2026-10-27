@@ -131,7 +131,7 @@ export const RESEARCH = {
    */
   groups: [
     { id: 'power', name: 'Power', points: 10, modules: [MODULE.generator, MODULE.node] },
-    { id: 'camp', name: 'Camp', points: 40, modules: [MODULE.storage] },
+    { id: 'camp', name: 'Camp', points: 40, modules: [MODULE.storage, MODULE.bed] },
   ],
   /** The most points the `?research=` switch or the debug page can set. */
   max: 9999,

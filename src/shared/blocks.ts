@@ -72,6 +72,7 @@ export const MODULE = {
   generator: 3,
   node: 4,
   storage: 5,
+  bed: 6,
 } as const;
 
 /**
@@ -127,12 +128,12 @@ export interface MaterialDef {
 
 /**
  * The modules, in the order of their ids. The Research Terminal is the first (Phase 5d), the Basic
- * Turret the second (5f), the Generator the third (5g1), the Power Node the fourth (5g2) and Storage
- * the fifth (5h1); the bed and the light follow them (5h). The costs of building one are Scrap only
- * (about 40, 25, 40, 12 and 30), because the notes price them in Composite, which the Terminal itself
- * unlocks (docs/decisions.md); the Turret's two steps up are paid in the better materials (5f2). What
- * opens the Generator and the Node, and Storage, is a group of research points, not a material
- * (`RESEARCH.groups`).
+ * Turret the second (5f), the Generator the third (5g1), the Power Node the fourth (5g2), Storage the
+ * fifth (5h1) and the Bed the sixth (5h2); the light follows them (5h). The costs of building one are
+ * Scrap only (about 40, 25, 40, 12, 30 and 20), because the notes price them in Composite, which the
+ * Terminal itself unlocks (docs/decisions.md); the Turret's two steps up are paid in the better materials
+ * (5f2). What opens the Generator and the Node, and Storage and the Bed, is a group of research points,
+ * not a material (`RESEARCH.groups`).
  */
 export const MODULES: readonly ModuleDef[] = [
   {
@@ -179,6 +180,16 @@ export const MODULES: readonly ModuleDef[] = [
     // It raises the pool's ceiling for good (`POOL.perStorage`), so it costs about what the other base modules do.
     cost: { material: MATERIAL.scrap, amount: 30 },
     body: [0.07, 0, 0.1, 0.93, 0.72, 0.9],
+    facesPlayer: true,
+  },
+  {
+    id: MODULE.bed,
+    name: 'Bed',
+    raises: [],
+    // A cot is the cheapest comfort: a crew puts one where it fights, so it is not much to lose.
+    cost: { material: MATERIAL.scrap, amount: 20 },
+    // Lying along z with its long side toward +x, and low enough for a body to step up onto.
+    body: [0.14, 0, 0.03, 0.86, 0.46, 0.97],
     facesPlayer: true,
   },
 ];

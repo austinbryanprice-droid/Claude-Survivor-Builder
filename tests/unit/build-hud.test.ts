@@ -180,6 +180,24 @@ describe('the module slot', () => {
     expect(new Set(icons).size).toBe(icons.length);
   });
 
+  it('gives the Bed an icon of its own, the same whichever way it faces, and says what it costs', () => {
+    expect(moduleSlot(MODULE.bed)).toEqual({ icon: 'bed', blueprint: true });
+    for (let facing = 0; facing < 4; facing++) {
+      expect(blockIcon(packState(moduleShape(MODULE.bed, facing), 1))).toBe('bed');
+    }
+    expect(ICON_IDS).toContain('bed');
+    expect(costText(packState(moduleShape(MODULE.bed, 0), 1))).toBe('20 Scrap');
+    const icons = [
+      MODULE.terminal,
+      MODULE.turret,
+      MODULE.generator,
+      MODULE.node,
+      MODULE.storage,
+      MODULE.bed,
+    ].map((module) => moduleSlot(module).icon);
+    expect(new Set(icons).size).toBe(icons.length);
+  });
+
   it('has no icon for a module the HUD has no picture of, or a level the module does not have', () => {
     expect(moduleSlot(99).icon).toBeNull();
     expect(blockIcon(packState(moduleShape(MODULE.terminal, 0), 9))).toBeNull();

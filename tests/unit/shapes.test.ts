@@ -54,7 +54,7 @@ describe('the shape table', () => {
   it('names a slab, a wedge and a block, in every orientation', () => {
     expect(SHAPES.map((s) => s.id)).toEqual([
       1, 8, 9, 16, 17, 18, 19, 20, 21, 22, 23, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44,
-      45, 46, 47, 48, 49, 50, 51,
+      45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55,
     ]);
     expect(new Set(SHAPES.map((s) => s.name))).toEqual(
       new Set([
@@ -66,6 +66,7 @@ describe('the shape table', () => {
         'Generator',
         'Power Node',
         'Storage',
+        'Bed',
       ]),
     );
     expect(pieceName(packState(slabShape(false), MATERIAL.alloy))).toBe('Advanced Alloy Slab');
@@ -86,7 +87,7 @@ describe('the shape table', () => {
       if (shape.kind === 'module') continue;
       expect(isKnownState(packState(shape.id, MATERIAL.energy))).toBe(true);
     }
-    for (const id of [2, 7, 10, 15, 24, 31, 52, 255]) {
+    for (const id of [2, 7, 10, 15, 24, 31, 56, 255]) {
       expect(isKnownState(packState(id, MATERIAL.scrap))).toBe(false);
     }
   });
