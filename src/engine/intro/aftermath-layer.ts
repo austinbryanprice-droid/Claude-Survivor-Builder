@@ -1,5 +1,12 @@
 import { Group } from 'three';
-import { STOP_AT, sceneTime, smoothstep01 } from '../../shared/intro';
+import {
+  BURN_UNTIL,
+  CORE_PULSES,
+  REVEAL_AT,
+  coreGlowAt,
+  sceneTime,
+  smoothstep01,
+} from '../../shared/intro';
 import { createRng } from '../../shared/hash';
 import { between, mixColor } from './fx-util';
 import { createGlow } from './glow';
@@ -12,19 +19,7 @@ import { createParticleField } from './particles';
  * it with a flash and then a slow cyan breath. Everything is a function of the film's clock.
  */
 
-/** When the hull has opened and the Core stands where it lay: the same moment the director shows the Core. */
-export const REVEAL_AT = STOP_AT + 0.35;
-
 const TWO_PI = Math.PI * 2;
-/** The film's seconds at which the Core sends a ring of light across the crater. */
-const PULSES = [
-  REVEAL_AT + 0.2,
-  sceneTime('crater', 3.4),
-  sceneTime('crater', 6.9),
-  sceneTime('eyes', 3.6),
-];
-/** The fires and embers burn on until the sun is up. */
-const BURN_UNTIL = sceneTime('dawn', 3.5);
 /** How far the Core's glow reaches, in meters; the camera of the eyes scene stands a few steps from the Core, so it is held tighter there. */
 const BREATH_REACH = 6;
 const BREATH_REACH_NEAR = 2.8;
@@ -40,7 +35,7 @@ export function createAftermathLayer({ registry, frame }: IntroContext): IntroLa
   const embers = createParticleField(registry, 'ember', 520);
   const smoke = createParticleField(registry, 'smoke', 300);
   const fires = createParticleField(registry, 'fire', 700);
-  const rings = createParticleField(registry, 'fire', PULSES.length * 90);
+  const rings = createParticleField(registry, 'fire', CORE_PULSES.length * 90);
   const breath = createGlow(registry, { core: '#d6f8ff', halo: '#27c8e6', rays: 0.35, share: 0 });
   group.add(smoke.object, fires.object, embers.object, rings.object, breath.mesh);
 
@@ -139,7 +134,7 @@ export function createAftermathLayer({ registry, frame }: IntroContext): IntroLa
   }
 
   // The rings of light the Core sends across the ground, one for each pulse of its crystal.
-  for (const at of PULSES) {
+  for (const at of CORE_PULSES) {
     for (let i = 0; i < 90; i++) {
       const aim = (i / 90) * TWO_PI + random() * 0.05;
       const x = heart.x + Math.cos(aim) * 1.8;
@@ -173,14 +168,7 @@ export function createAftermathLayer({ registry, frame }: IntroContext): IntroLa
       for (const field of [embers, smoke, fires, rings]) field.setTime(time);
 
       // The Core's glow: a flash as it is uncovered, then a slow breath that the morning dims.
-      let power = 0;
-      if (time >= REVEAL_AT - 0.04) {
-        const since = time - REVEAL_AT;
-        const flash = Math.max(0, 1 - since / 1.2) ** 2 * 1.1;
-        const steady = 0.3 + 0.1 * Math.sin(since * 2.6);
-        const day = 1 - smoothstep01((time - sceneTime('dawn', 1.5)) / 3);
-        power = (flash + steady) * day;
-      }
+      const power = coreGlowAt(time);
       const near =
         smoothstep01((time - sceneTime('eyes', 0)) / 0.4) *
         (1 - smoothstep01((time - sceneTime('eyes', 6.6)) / 0.4));

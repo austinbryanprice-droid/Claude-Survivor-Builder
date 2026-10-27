@@ -1,6 +1,6 @@
 import { Group } from 'three';
 import { createEnemyPose, type EnemyPose } from '../../shared/enemy-state';
-import { sceneTime } from '../../shared/intro';
+import { CRAWLER_RISES } from '../../shared/intro';
 import { placeInFrame, type Point3 } from '../../shared/intro-camera';
 import { createEnemyRenderer } from '../enemy-render';
 import { createGlow, type Glow } from './glow';
@@ -16,19 +16,21 @@ import type { IntroContext, IntroLayer } from './layer';
 interface Waking {
   /** Where it rises, forward and to the right of the crater's middle, in meters. */
   readonly from: readonly [number, number];
-  /** The film's second it breaks the ground. */
+  /** The film's second it breaks the ground (the script's `CRAWLER_RISES`, which the sound follows too). */
   readonly rises: number;
   /** Meters a second it walks once it is up. */
   readonly speed: number;
 }
 
-const WAKING: readonly Waking[] = [
-  { from: [8.5, -4.5], rises: sceneTime('eyes', 0.9), speed: 0.9 },
-  { from: [11.5, -1], rises: sceneTime('eyes', 1.7), speed: 1.05 },
-  { from: [7, 0], rises: sceneTime('eyes', 2.4), speed: 0.85 },
-  { from: [12.5, -6.5], rises: sceneTime('eyes', 3.1), speed: 1.1 },
-  { from: [9.5, 2.5], rises: sceneTime('eyes', 3.8), speed: 0.95 },
-];
+const WAKING: readonly Waking[] = (
+  [
+    { from: [8.5, -4.5], speed: 0.9 },
+    { from: [11.5, -1], speed: 1.05 },
+    { from: [7, 0], speed: 0.85 },
+    { from: [12.5, -6.5], speed: 1.1 },
+    { from: [9.5, 2.5], speed: 0.95 },
+  ] as const
+).map((machine, i) => ({ ...machine, rises: CRAWLER_RISES[i] as number }));
 
 /** The seconds a machine takes to climb out of the ground, which the renderer sets. */
 const RISE_SECONDS = 0.6;

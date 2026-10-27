@@ -601,7 +601,7 @@ The film is ten fields of particles (7,180 instanced quads between them, one dra
 ### Known gaps in the film
 
 - **The words are placeholders.** The spec gives no story, so the station's name ("Vesper"), the three captions and the title card's line are mine: `STATION_NAME`, `CAPTIONS` and `INTRO_TITLE` in `src/shared/intro.ts`, one constant and two tables to change.
-- **No sound.** The film is silent: no impact, no rising hum under the eyes, no stinger on the title. Sound is Phase 6c's synthesizer.
+- **Its sound has its own gaps.** The film has music and sound effects ([the film's sound](#the-films-sound)), none of which has been heard by a person yet.
 - **The fall begins in the sky.** There is no station: no hull above breaking up, no space. An opening in orbit needs a model of the station and is left for a later pull request if it is wanted.
 - **The wreck is a drum.** Its shape and plating are a profile and a shader, and it is seen at its closest, from about ten meters, at the skid. It would not bear a close look, and the film never gives it one.
 - **The camera is on rails.** Every scene is one track, so nothing is aimed at by what is on the screen: if a valley's trees or rocks stand in a shot (the clearing's trees at the touchdown, the pines in the first scene) they are simply there. The camera clears the ground by 45 centimeters and nothing else.
@@ -655,12 +655,77 @@ Ten elements over the canvas (the screen, its darkening, the card, the name, the
 
 ### Known gaps in the title
 
-- **No sound.** The title and the film are silent until the next pull request, which adds the music and the sound effects and starts them from the click on Play (a page can only make sound after a click).
+- **No sound of its own.** The title is silent: a page can only make sound after a click, so the film's sound ([the film's sound](#the-films-sound)) starts with the click on Play and the fade to black.
 - **The words are placeholders.** They are the film's: `INTRO_TITLE` in `src/shared/intro.ts`, read by `TITLE` in `src/shared/title.ts`.
 - **Only Play.** No Continue and New game (Phase 6b's saved runs will want them), no settings, no list of controls and no "Play together": a host who wants a room presses Play and then Esc, which brings up the pause card with the room card on it. The card is hidden on the title to keep the page to the name and Play, as asked; a quiet "Play together" under Play is a few lines.
 - **The camera is on a route, not a named shot.** It keeps 6 meters above the ground and clears nothing else, so a tree can stand in the lens (half way, a crown fills the lower right and reads as foreground). Another seed's valley may put a hill or a thicker wood at one of the two ends; the views were chosen on the default seed.
 - **Seen only in software-rendered pictures.** The sun's glare, the glass of Play and its glow are judged there; how the blur and the breathing glow look on a real display, and whether Play is large enough at the player's distance from the screen, are for the first look.
 - **No gamepad.** The game has none yet, and the title does not either.
+
+## The film's sound
+
+The intro film has music and sound effects, and the click on Play that starts it starts them. Austin asked for it on 2026-10-27 with the home page ("make sure the trailer has music and sound effects"). The soundtrack runs under the film's 43.5 seconds and rings on for 3.6 more into the first moments of play. Every sound in it is made in code with Web Audio (oscillators, filtered noise and a generated reverb), so there is no audio file to license or ship and `CREDITS.md` does not change. The choices, and the rules for when it starts, are in [decisions](decisions.md#the-films-sound-2026-10-27). **None of it has been heard**: the sandbox the game is built in has no sound device, so what follows is measured from the soundtrack drawn to samples by the page's own code, and how it sounds as music is for Austin's first listen.
+
+### What the film sounds like
+
+The music is in D: a low D minor while the night lasts and D major from the dawn. A sound that goes with the picture (the touchdown, the stop, each ring of the Core's light, each machine's rise, the title card, the eyelids) takes its time from the picture's script, so the two keep step when either is retimed.
+
+- **The fall (0 to 8 s).** The wind comes up from nothing and under it a low D, felt more than heard, swells over the first four seconds. The hull groans three times, sinking in pitch, and sheds plates with high ticks and two clangs. A dark D chord swells from 3.2 s; from 3 s the air screams past in a band of noise that climbs from a rumble to a hiss; a thin A and then a B-flat float above. A low heartbeat starts at 5.8 s and quickens over five beats, and a riser sweeps up toward the touchdown. For the last fifth of a second the whole mix falls away by 26 decibels: a held breath.
+- **The skid (8 to 14.5 s).** At 8.0 s the great hit: a sub-bass drop from 92 Hz to 33 that the ear feels, a thump, a crash of noise that darkens over three seconds and a crack, with three clangs of metal and a burst of crackle. The wreck grinds through the valley, metal dragged over rock fluttering fourteen times a second and slowing to three with it, with thuds and clangs and ticks scattered over the hull's tearing. At the stop (12.4 s) there is one last great clang, a thud, a groan sinking from 82 Hz to 54 and steam venting twice. The Core is uncovered at 12.75 s: its hum comes up, a D chord of pure tones whose third is the one that moves, and with each of its four rings of light a low swell and a glass ping.
+- **The crater (14.5 to 22.5 s).** The quietest scene. A held chord of five low notes, seven bell notes (A, F, D, E, F, A, G) with a long room around them, breaths of steam, the tick of cooling metal now and then, the fires crackling and something stirring far off at 21 s. The drone and the hum are the only weight.
+- **The eyes (22.5 to 29.5 s).** A B-flat chord, then G minor, and a pulse under them from 24.1 s that comes faster each time and turns from a heartbeat into drums. Each of the five machines has the ground give way under it, a plate scraping, a servo winding up and a blip as its eye lights, and then walks toward the Core with footfalls that get nearer and louder; the machines are panned apart. A riser climbs to the cut and, at the cut, the drone drops out.
+- **The dawn (29.5 to 38 s).** G and then A as the title card comes, with drums, and at 31.9 s, as the card arrives, the key turns to D major on a boom, a drum and a bell flourish (D, F sharp, A, D), over D, A and B minor chords at 2.2 seconds each. The Core's hum glides its third from F to F sharp and goes out with the night. Bells in eighth notes begin and grow over a bar, and the fires thin out.
+- **The wake (38 to 43.5 s).** The picture is shut and so is the sound: the whole mix is heard through a lowpass at 450 Hz, a wall, while the survivor's own heartbeat and two breaths come through it, and the wall opens with the eyelids, two slow openings with a blink between. G, then a D chord of nine notes (D, A, D, A, D, F sharp, A, D, E) that swells over the last bar as the bells thin out, and the wind comes up.
+- **The tail (43.5 to 47.1 s).** The picture has handed over the run. The chord rings out into play with the wind still blowing, and the last 0.4 seconds are faded. A player who watches the film again while it rings (from the pause card, within a few seconds of the end) cuts it off over a quarter of a second, so that two scores never play at once.
+
+### How it is made
+
+- **A score as data.** `src/shared/intro-sound.ts` is a list of about four hundred **cues** (a sound, a second, a level, and a pitch, a length or a pan where the sound has them) and five **beds** (long sounds with their loudness and tone drawn as curves). Where the score scatters sounds (the fires, the thuds, the ticks) it draws them from a seeded generator, so every play is the same film. It touches nothing of the browser.
+- **Twenty voices.** Each is a short recipe of oscillators, shaped noise and filters that is started at a moment and left to run out: `boom`, `thud`, `clang` (five partials that are not whole multiples, which is what makes metal sound like metal), `groan` (a saw sliding down through a narrow band with a wobble), `steam`, `tick`, `crackle`, `ping`, `whoom`, `servo`, `blip`, `rumble`, `step`, `pluck` (a bell: a sine, a sour high partner and an octave), `pad` (two detuned saws and a sine through a lowpass that opens as the note swells), `timp`, `heart`, `riser`, `breath`, and `duck`, which dips the whole mix. `src/engine/audio/voices.ts`.
+- **Five beds.** The air `roar` of the fall, the `grind` of the skid, the `wind`, the `drone` and the Core's `hum`. A bed is built when it first falls due and steered along its curves in steps of 0.05 s (`engine/audio/beds.ts`, `INTRO_BEDS`). The hum follows the same `coreGlowAt` the picture's glow does.
+- **One mixing board.** A fader in decibels for each kind of sound (`FADERS`) and one for each bed, so the numbers in the score are about the music and the picture, and the balance between the kinds is set in one place.
+- **Noise and a room made, not loaded.** White, pink and brown noise come from a seeded generator (four seconds each, looped without a seam), and the reverb is a convolver whose impulse response is generated: 3.2 seconds of noise that falls 60 decibels and darkens as it ages, with its own noise in each ear, and a pre-delay of 18 ms so that a hit stays clear of its room.
+- **The way out.** Everything goes into a bus, then the lowpass of the eyelids, then a limiter (a compressor set to catch only the loudest moments: threshold -14 dB, ratio 6, attack 3 ms) and the master volume the player set, then the speakers. The volume comes after the limiter, so turning it down never changes the mix.
+- **Placed by the film's clock.** The director tells the sound where the film is every frame, and what starts in the next fifth of a second is handed to the audio thread for exactly its moment. A stalled picture holds the sound back with it.
+
+### The mix, measured
+
+Drawn by the page's own `audio.render()` (`?debug`) in step with a clock, the way a film plays, at full volume and 44.1 kHz, and measured with ffmpeg's loudness meter and a few lines of numpy.
+
+| Scene      | Film seconds | Level (RMS, dBFS) | Loudest (peak, dBFS) | What carries it                                                                                                                           |
+| ---------- | ------------ | ----------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| The fall   | 0 to 8       | -24               | -6                   | wind, a low drone, the roar of the air, hull groans, a pulse that quickens and a riser; the mix falls away for the last fifth of a second |
+| The skid   | 8 to 14.5    | -17               | -2                   | the touchdown boom, the grinding wreck with its clangs and thuds, the stop, then the Core's hum with a ping for each ring                 |
+| The crater | 14.5 to 22.5 | -26               | -9                   | a held chord, seven bells with a long room around them, steam and the tick of cooling metal                                               |
+| The eyes   | 22.5 to 29.5 | -24               | -6                   | a pulse that turns into drums, the machines' footsteps, a riser to the cut                                                                |
+| The dawn   | 29.5 to 38   | -24               | -5                   | the title's boom and drum, bells in eighth notes, chords in D major                                                                       |
+| The wake   | 38 to 43.5   | -23               | -8                   | chords through the lowpass of the closed eyes, the survivor's heartbeat and breaths, then the open chord                                  |
+| The tail   | 43.5 to 47.1 | -35               | -17                  | the last chord and the wind ringing out into play                                                                                         |
+
+- **Whole film.** The loudest sample is -1.7 dBFS and the true peak -1.7 dBTP, so the mix has about 2 dB of room at full volume; the loudest 50 milliseconds are at 8.01 s, the touchdown. Integrated loudness is -20.8 LUFS with a loudness range of 11.2 LU.
+- **The held breath.** Just before the touchdown the mix falls away: -18 dB RMS in the 0.3 s before the dip, -44 dB in the dip (from 7.86 s, when its 0.07 s ramp is down: 26 dB lower) and -11 dB in the first 0.1 s of the boom, 34 dB up in a fifth of a second.
+- **Closed eyes.** The mix's high-frequency content (the sample-to-sample change over the level; higher is brighter) is 0.13 in the dawn with the eyes open, 0.04 just after the cut, behind the lids, and 0.14 once they are open again.
+- **Both ends are silent.** The first quarter second is digital silence (-140 dB) and the last 0.05 s -88 dB, so the sound starts and stops without a click.
+- **Stereo.** The two ears have a correlation of 0.62 (the machines are panned apart, the reverb has its own noise in each ear); every sample is a number, and the offset from zero is 0.00062.
+
+![The film's sound: frequency across the film, and its level below](intro/sound.jpg)
+
+### What the sound costs
+
+On the page's first load the sound adds 2.5 kB of JavaScript (1.4 kB gzipped): the hub, the volume setting and the unlock. The synthesizer and the score come with the film's chunk, 21.4 kB (7.8 kB gzipped), and the renderer that draws them to a file (0.65 kB) loads only on a `?debug` page. No audio file is fetched, and no audio context is made until the click on Play.
+
+Played in real time in the sandbox's headless Chromium (44.1 kHz, a four-core machine with no sound device, the page idle): setting the sound up, which makes the noise banks and the reverb's impulse response, takes 140 ms on the main thread, once, as the film begins; telling it where the film is, once a frame at 60 a second, takes 0.07 ms on average (0.7 ms at the 99th percentile and 3.3 ms at the worst of 2,653 calls, 0.2 seconds in all), which is where cues and beds are handed to the audio thread. The browser as a whole used 0.24 of a core while the film's sound played, against 0.02 with an empty audio context running, so the synthesis costs about a fifth of one core (the offline render that draws the soundtrack to samples takes 10.8 seconds for its 47.1, about the same). This browser does not report the audio thread's own load, so the figure is the whole browser's, with the page idle: the picture, which the film draws on top of that, is not in it.
+
+The noise banks (three four-second buffers) and the reverb (3.2 seconds in each ear) are about 3.3 MB of samples, made when the sound is set up and freed with it; the audio context stays for the game's later sounds. A tab that is hidden puts it to sleep.
+
+### Known gaps in the sound
+
+- **It has not been heard.** The sandbox has no sound device. The mix is measured and the score is checked against the picture's script, but whether the music is good, the touchdown too loud or the crater too quiet is for Austin's first listen, which is why the slider is on the pause card and why a listening copy came with the pull request.
+- **The music is mine.** The spec gives no music direction, so the key, the bell motif, the chords and the drums are my reading of the film. It is a second small score if it should change: `buildIntroCues` and `INTRO_BEDS`.
+- **The title is silent.** A browser allows no sound before a click, so the screen the page opens on has none, and the sound begins with the click on Play and the fade to black.
+- **Only the film has sound.** Building, steps, shots, hits, the machines, the stinger before a wave and the loss are Phase 6c, and can be built from the voices and beds written here.
+- **One volume.** No separate music and effects, no mute key, and everything is heard in stereo from inside the head, not placed in the world.
+- **The synthesis is judged only by its figures.** The voices are checked for what a browser's audio rejects (a stand-in context refuses a negative time, a ramp to zero and the like) and the soundtrack for its loudness, silence and shape, not for how the notes sit with one another.
 
 ## Phase 5a: salvage
 

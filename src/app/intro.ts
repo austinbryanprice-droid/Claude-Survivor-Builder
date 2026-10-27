@@ -5,6 +5,7 @@ import {
   type IntroPlayback,
   type IntroSite,
 } from '../engine/intro/director';
+import { createIntroSound, type IntroSound } from '../engine/intro/sound';
 import { createIntroOverlay } from '../ui/intro-overlay';
 
 /**
@@ -16,6 +17,11 @@ import { createIntroOverlay } from '../ui/intro-overlay';
  *
  * A page that opens on the title screen starts the film from there instead (`play`): the title's
  * Play asks for the mouse itself and the film follows a moment later, once the picture has faded.
+ *
+ * The film has music and sound effects, played through the game's audio output. Browsers keep a page
+ * silent until it has been clicked, so the click that starts the film (the title's Play, or the one
+ * on the pause card) unlocks the audio, and the sound starts with the picture; Esc or any key that
+ * skips the picture fades the sound with it.
  *
  * It touches nothing of the run: no commands, no events, nothing on the wire. A guest never sees
  * it, nor a host with a room open, because the run they are in is already going.
@@ -29,6 +35,8 @@ const CAPTURE_WAIT_MS = 2500;
 const CAPTURE_WAIT_FRAMES = 3;
 /** Seconds the screen takes to clear from black after a skip. */
 const SKIP_CLEAR_SECONDS = 0.6;
+/** Seconds the last chord of a film that ended on its own takes to fade when another film begins while it still rings. */
+const TAIL_FADE = 0.25;
 
 export interface IntroControllerOptions {
   readonly game: Game;
@@ -51,6 +59,8 @@ export interface IntroController {
   hold(seconds: number): IntroPlayback | null;
   /** The film that is playing, or null. */
   readonly playback: IntroPlayback | null;
+  /** The sound of the film that is playing or played last, or null when none has had any (a silent page, a held film). */
+  readonly sound: IntroSound | null;
   dispose(): void;
 }
 
@@ -73,6 +83,7 @@ export function createIntroController({
   const { input } = game;
   const overlay = createIntroOverlay();
   let playback: IntroPlayback | null = null;
+  let sound: IntroSound | null = null;
   /** The film plays on the first request for the mouse of the page, and again whenever it is asked for. A run in play is not offered one, nor is a page whose title screen starts the film. */
   let offered = !manual && !input.captured;
   let requested = false;
@@ -110,12 +121,39 @@ export function createIntroController({
     input.hold(false);
   };
 
+  /** The film's sound, when the page may make any: the click that starts the film unlocks the audio, and a page whose sound is off, or whose volume is at nothing, has none. */
+  const startSound = (): IntroSound | null => {
+    const { audio } = game;
+    audio.unlock();
+    const { context, input: output } = audio;
+    if (!context || !output || audio.volume <= 0) return null;
+    try {
+      return createIntroSound(context, { output, live: true });
+    } catch (error) {
+      // The sound is a courtesy: a browser that cannot make it plays the film in silence.
+      console.error('The intro film could not make its sound; the film goes on without it.', error);
+      return null;
+    }
+  };
+
+  /** A film that ended on its own leaves its last chord ringing into the run for a few seconds: a film begun over it cuts it short, so that two scores never play at once. */
+  const hushTail = (): void => {
+    try {
+      sound?.fadeOut(TAIL_FADE);
+    } catch (error) {
+      console.error("The last intro film's sound could not be faded; the new film goes on.", error);
+    }
+  };
+
   const begin = (heldAt: number | null): IntroPlayback | null => {
     const where = site();
     if (!where || playback || disposed) return null;
     holding = heldAt !== null;
     startedAt = performance.now();
     captured = input.captured;
+    hushTail();
+    // A film held at a moment, for a picture or a test, has no time passing for a sound to follow.
+    sound = holding ? null : startSound();
     const film = createIntro({
       stage: game.stage,
       site: where,
@@ -123,6 +161,7 @@ export function createIntroController({
       onEnd,
       holdAt: heldAt,
       calm: calm(),
+      sound,
     });
     playback = film;
     document.body.classList.add('intro-playing');
@@ -175,6 +214,9 @@ export function createIntroController({
   return {
     get playback() {
       return playback;
+    },
+    get sound() {
+      return sound;
     },
     replay() {
       if (playback) return;

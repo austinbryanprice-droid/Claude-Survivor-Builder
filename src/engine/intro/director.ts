@@ -39,6 +39,16 @@ export interface IntroSite extends CrashSite {
 /** How a film ended: it ran out, the player skipped it, or something else took the camera. */
 export type IntroEnd = 'finished' | 'skipped' | 'cut';
 
+/** What the film asks of its sound (`createIntroSound` in `sound.ts` is the real one). */
+export interface IntroSoundPort {
+  /** Tells it where the film is; called every frame the film plays. */
+  update(filmTime: number): void;
+  /** The film was skipped or cut: fade out over this many seconds. */
+  fadeOut(seconds: number): void;
+  /** The film ran to its end: let what is left ring out. */
+  finish(): void;
+}
+
 export interface IntroOptions {
   readonly stage: Stage;
   readonly site: IntroSite;
@@ -50,6 +60,8 @@ export interface IntroOptions {
   readonly holdAt?: number | null;
   /** A calmer film for a player whose system asks for less motion: the camera does not shake (the overlay takes the flashes down itself). */
   readonly calm?: boolean;
+  /** The film's music and sound effects, or null for a silent film (held films are, and so is a page with its sound off). */
+  readonly sound?: IntroSoundPort | null;
 }
 
 export interface IntroPlayback extends Cinematic {
@@ -71,6 +83,8 @@ const MAX_STEP = 0.1;
 const SKIP_FADE = 0.45;
 /** The last seconds of the film fly the camera to where the player's own view is. */
 const HANDOFF_SECONDS = 1.6;
+/** Seconds the sound takes to fade when something else takes the camera (the mouse was let go of). */
+const CUT_FADE = 0.25;
 
 export function createIntro(options: IntroOptions): IntroPlayback {
   const { stage, site } = options;
@@ -104,6 +118,7 @@ export function createIntro(options: IntroOptions): IntroPlayback {
   let skipFade = 0;
   let ended: IntroEnd | null = null;
   let wreckShown = false;
+  let soundFailed = false;
 
   site.showWreck(false);
   stage.setSkyOverride(() => {
@@ -118,6 +133,18 @@ export function createIntro(options: IntroOptions): IntroPlayback {
     site.showWreck(shown);
   };
 
+  /** The sound is a courtesy: if it fails that is told once and the film goes on without it, and neither the picture nor the player's way into the game ever waits on it. */
+  const tellSound = (tell: (sound: IntroSoundPort) => void): void => {
+    if (!options.sound) return;
+    try {
+      tell(options.sound);
+    } catch (error) {
+      if (!soundFailed)
+        console.error("The intro film's sound failed; the film goes on without it.", error);
+      soundFailed = true;
+    }
+  };
+
   const subjectPoint: Point3 = subject;
 
   const intro: IntroPlayback = {
@@ -128,7 +155,10 @@ export function createIntro(options: IntroOptions): IntroPlayback {
       return held;
     },
     skip() {
+      if (skipping) return;
       skipping = true;
+      // The sound fades with the picture.
+      tellSound((sound) => sound.fadeOut(SKIP_FADE));
     },
     seek(seconds) {
       time = Math.min(INTRO_SECONDS, Math.max(0, seconds));
@@ -142,6 +172,7 @@ export function createIntro(options: IntroOptions): IntroPlayback {
       const step = held ? 0 : Math.min(dt, MAX_STEP);
       time = Math.min(INTRO_SECONDS, time + step);
       if (skipping) skipFade = Math.min(1, skipFade + dt / SKIP_FADE);
+      if (!held && !skipping && !soundFailed) tellSound((sound) => sound.update(time));
 
       // What the crash made is not there until the wreck has come to rest in its crater.
       showWreck(time >= STOP_AT + 0.35);
@@ -186,7 +217,11 @@ export function createIntro(options: IntroOptions): IntroPlayback {
       group.removeFromParent();
       for (const layer of layers) layer.dispose();
       site.showWreck(true);
-      options.onEnd(ended ?? 'cut');
+      const how = ended ?? 'cut';
+      // A film that ran out lets its last chord ring into the game, one that something cut fades at once, and a skipped one began to fade when it was skipped.
+      if (how === 'finished') tellSound((sound) => sound.finish());
+      else if (how === 'cut') tellSound((sound) => sound.fadeOut(CUT_FADE));
+      options.onEnd(how);
     },
   };
 

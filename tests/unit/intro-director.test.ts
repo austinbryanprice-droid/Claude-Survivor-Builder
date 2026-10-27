@@ -1,6 +1,11 @@
 import { Group } from 'three';
-import { describe, expect, it } from 'vitest';
-import { createIntro, type IntroEnd, type IntroSite } from '../../src/engine/intro/director';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  createIntro,
+  type IntroEnd,
+  type IntroSite,
+  type IntroSoundPort,
+} from '../../src/engine/intro/director';
 import { shakeAt } from '../../src/engine/intro/tracks';
 import type { Stage } from '../../src/engine/stage';
 import type { CameraPose } from '../../src/shared/camera-pose';
@@ -34,7 +39,7 @@ const pose = (overrides: Partial<CameraPose> = {}): CameraPose => ({
 /** Where the player's own camera would be at the start of a run: on the grass, looking at the lake. */
 const PLAYER_VIEW = pose({ x: 12, y: 13.7, z: 7, yaw: -1.6, pitch: -0.05, fov: 70 });
 
-function setup(holdAt: number | null = null, calm = false) {
+function setup(holdAt: number | null = null, calm = false, sound: IntroSoundPort | null = null) {
   const registry = createTestRegistry();
   const world = new Group();
   const skies: (null | (() => SkyState))[] = [];
@@ -59,6 +64,7 @@ function setup(holdAt: number | null = null, calm = false) {
     onEnd: (how) => ends.push(how),
     holdAt,
     calm,
+    sound,
   });
   const materials = Reflect.get(registry, 'materials') as Set<unknown>;
   const out = pose();
@@ -270,5 +276,145 @@ describe('the intro film', () => {
     );
     const frame = createIntroFrame();
     expect(Object.keys(frames[0] ?? {}).sort()).toEqual(Object.keys(frame).sort());
+  });
+});
+
+describe('the intro film and its sound', () => {
+  const portOf = () => ({ update: vi.fn(), fadeOut: vi.fn(), finish: vi.fn() });
+
+  it('tells the sound where the film is on every frame it plays, with the clock that has just moved', () => {
+    const port = portOf();
+    const { playback, step } = setup(null, false, port);
+    step(0.05);
+    step(0.05);
+    step(3);
+    expect(port.update).toHaveBeenCalledTimes(3);
+    expect(port.update.mock.calls.map(([time]) => time as number)).toEqual([
+      expect.closeTo(0.05, 9),
+      expect.closeTo(0.1, 9),
+      // A long frame is no more than the film's own cap of film time.
+      expect.closeTo(0.2, 9),
+    ]);
+    expect(playback.time).toBeCloseTo(0.2, 9);
+  });
+
+  it('has no sound for a film that is held, which has no time passing for one to follow', () => {
+    const port = portOf();
+    const { playback, step } = setup(7, false, port);
+    step(0.1);
+    step(0.1);
+    playback.seek(12);
+    step(0.1);
+    expect(port.update).not.toHaveBeenCalled();
+    // Let go, it plays and the sound follows from where the film is.
+    playback.play();
+    step(0.1);
+    expect(port.update).toHaveBeenCalledTimes(1);
+    expect(port.update.mock.calls[0]?.[0]).toBeCloseTo(12.1, 9);
+  });
+
+  it('fades the sound for as long as the picture fades when the film is skipped, once, and stops following the clock', () => {
+    const port = portOf();
+    const { playback, step, ends } = setup(12, false, port);
+    playback.play();
+    step(0.1);
+    expect(port.update).toHaveBeenCalledTimes(1);
+    playback.skip();
+    playback.skip();
+    expect(port.fadeOut).toHaveBeenCalledTimes(1);
+    expect(port.fadeOut).toHaveBeenCalledWith(0.45);
+    while (step(0.05)) {
+      // The picture fades to black.
+    }
+    expect(port.update).toHaveBeenCalledTimes(1);
+    playback.end();
+    expect(ends).toEqual(['skipped']);
+    // It began to fade when it was skipped, and is not asked again, nor let ring.
+    expect(port.fadeOut).toHaveBeenCalledTimes(1);
+    expect(port.finish).not.toHaveBeenCalled();
+  });
+
+  it('lets the sound ring out into the game when the film runs to its end', () => {
+    const port = portOf();
+    const { playback, step, ends } = setup(INTRO_SECONDS - 0.3, false, port);
+    playback.play();
+    while (step(0.05)) {
+      // Plays to the end.
+    }
+    expect(port.finish).not.toHaveBeenCalled();
+    playback.end();
+    expect(ends).toEqual(['finished']);
+    expect(port.finish).toHaveBeenCalledTimes(1);
+    expect(port.fadeOut).not.toHaveBeenCalled();
+    // The last clock the sound heard is the film's last second.
+    expect(port.update.mock.calls[port.update.mock.calls.length - 1]?.[0]).toBe(INTRO_SECONDS);
+  });
+
+  it('cuts the sound quickly when something else takes the camera', () => {
+    const port = portOf();
+    const { playback, step, ends } = setup(5, false, port);
+    playback.play();
+    step(0.1);
+    playback.end();
+    expect(ends).toEqual(['cut']);
+    expect(port.fadeOut).toHaveBeenCalledTimes(1);
+    expect(port.fadeOut).toHaveBeenCalledWith(0.25);
+    expect(port.finish).not.toHaveBeenCalled();
+  });
+
+  it('plays on to its end without a sound that fails, says so once, and still hands the game over', () => {
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const broken = () => {
+      throw new Error('the audio thread is gone');
+    };
+    const port = { update: vi.fn(broken), fadeOut: vi.fn(broken), finish: vi.fn(broken) };
+    const { playback, step, ends } = setup(INTRO_SECONDS - 0.3, false, port);
+    playback.play();
+    expect(step(0.05)).toBe(true);
+    expect(step(0.05)).toBe(true);
+    // It is not asked to follow the clock again once it has failed.
+    expect(port.update).toHaveBeenCalledTimes(1);
+    while (step(0.05)) {
+      // Plays to the end.
+    }
+    expect(() => playback.end()).not.toThrow();
+    // What it was playing is still asked to ring out, and the game is handed over all the same.
+    expect(port.finish).toHaveBeenCalledTimes(1);
+    expect(ends).toEqual(['finished']);
+    expect(complaint).toHaveBeenCalledTimes(1);
+    complaint.mockRestore();
+  });
+
+  it('still fades the picture to black, and ends, when the sound cannot be faded', () => {
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const port = {
+      update: vi.fn(),
+      fadeOut: vi.fn(() => {
+        throw new Error('the audio thread is gone');
+      }),
+      finish: vi.fn(),
+    };
+    const { playback, step, ends } = setup(12, false, port);
+    playback.play();
+    step(0.1);
+    expect(() => playback.skip()).not.toThrow();
+    let frames = 0;
+    while (step(0.05)) frames++;
+    // The picture took its 0.45 seconds to go black, as it does with a sound that fades.
+    expect(frames).toBeGreaterThan(5);
+    expect(() => playback.end()).not.toThrow();
+    expect(ends).toEqual(['skipped']);
+    expect(complaint).toHaveBeenCalledTimes(1);
+    complaint.mockRestore();
+  });
+
+  it('plays on without a word to say about sound when it has none', () => {
+    const { playback, step } = setup(null, false, null);
+    for (let i = 0; i < 20; i++) expect(step(0.05)).toBe(true);
+    playback.skip();
+    while (step(0.05)) {
+      // Fades out.
+    }
+    expect(() => playback.end()).not.toThrow();
   });
 });
