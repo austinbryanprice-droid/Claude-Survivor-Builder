@@ -451,21 +451,29 @@ test.describe('playing', () => {
     await open(page);
     const sensitivity = page.getByLabel('Mouse sensitivity');
     const fov = page.getByLabel('Field of view');
+    const volume = page.getByLabel('Volume');
+    await expect(volume).toHaveValue('1');
     await sensitivity.fill('2');
     await fov.fill('90');
+    await volume.fill('0.4');
     await page.getByLabel('Invert vertical look').check();
     await page.getByLabel('Graphics').selectOption('low');
     expect(await read<number>(page, 'game.settings.mouseSensitivity')).toBe(2);
     expect(await read<string>(page, 'game.settings.quality')).toBe('low');
+    // The slider turns the game's master volume as it moves.
+    expect(await read<number>(page, 'game.settings.volume')).toBe(0.4);
+    expect(await read<number>(page, 'game.audio.volume')).toBe(0.4);
 
     // No ?quality= this time, so the saved preset is the one that decides.
     await page.goto('./?debug');
     await expect(page.locator('html')).toHaveAttribute('data-ready', 'true');
     await expect(sensitivity).toHaveValue('2');
     await expect(fov).toHaveValue('90');
+    await expect(volume).toHaveValue('0.4');
     await expect(page.getByLabel('Invert vertical look')).toBeChecked();
     await expect(page.getByLabel('Graphics')).toHaveValue('low');
     expect(await read<number>(page, 'game.settings.fov')).toBe(90);
+    expect(await read<number>(page, 'game.audio.volume')).toBe(0.4);
     expect(await read<string>(page, 'game.stage.quality.name')).toBe('low');
   });
 

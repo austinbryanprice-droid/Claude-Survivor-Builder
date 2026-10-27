@@ -110,6 +110,25 @@ export const TITLE_WINDOW = {
 export const TOUCHDOWN_AT = sceneTime('skid', 0);
 /** When the wreck stops in the crater. */
 export const STOP_AT = sceneTime('skid', 4.4);
+/** When the hull has opened and the Core stands where it lay: the same moment the director shows the Core. */
+export const REVEAL_AT = STOP_AT + 0.35;
+/** The film's seconds at which the Core sends a ring of light across the crater. */
+export const CORE_PULSES: readonly number[] = [
+  REVEAL_AT + 0.2,
+  sceneTime('crater', 3.4),
+  sceneTime('crater', 6.9),
+  sceneTime('eyes', 3.6),
+];
+/** The film's seconds at which each machine of the wreck breaks the ground, in the order they rise. */
+export const CRAWLER_RISES: readonly number[] = [
+  sceneTime('eyes', 0.9),
+  sceneTime('eyes', 1.7),
+  sceneTime('eyes', 2.4),
+  sceneTime('eyes', 3.1),
+  sceneTime('eyes', 3.8),
+];
+/** The fires and embers of the wreck burn on until the sun is up. */
+export const BURN_UNTIL = sceneTime('dawn', 3.5);
 
 /** Letterbox bars slide in over this long at the start and out at the end. */
 const BARS_SLIDE = 1.1;
@@ -214,6 +233,30 @@ export function createIntroFrame(): IntroFrame {
   };
 }
 
+/**
+ * How brightly the Core glows at `time`: nothing until it is uncovered, then a flash and a slow
+ * breath that the morning dims. The picture's glow and the sound of its hum both follow this.
+ */
+export function coreGlowAt(time: number): number {
+  if (time < REVEAL_AT - 0.04) return 0;
+  const since = time - REVEAL_AT;
+  const flash = Math.max(0, 1 - since / 1.2) ** 2 * 1.1;
+  const steady = 0.3 + 0.1 * Math.sin(since * 2.6);
+  const day = 1 - smoothstep01((time - sceneTime('dawn', 1.5)) / 3);
+  return (flash + steady) * day;
+}
+
+/** How closed the survivor's eyes are at `time`: shut at the cut to the waking, then two slow openings with a blink between them. */
+export function lidsAt(time: number): number {
+  const wake = time - sceneTime('wake', 0);
+  if (wake < 0) return 0;
+  if (wake < 0.9) return 1;
+  if (wake < 2.3) return 1 - smoothstep01((wake - 0.9) / 1.4) * 0.78;
+  if (wake < 2.75) return 0.22 + smoothstep01((wake - 2.3) / 0.45) * 0.78;
+  if (wake < 3.4) return 1 - smoothstep01((wake - 2.75) / 0.65);
+  return 0;
+}
+
 /** A white flash that rises in an instant at `at` and burns off over `fall` seconds, scaled by `strength`. */
 function burst(time: number, at: number, fall: number, strength: number): number {
   const age = time - at;
@@ -242,17 +285,7 @@ export function introFrameAt(time: number, out: IntroFrame): IntroFrame {
     smoothstep01(time / BARS_SLIDE) *
     (1 - smoothstep01((time - (INTRO_SECONDS - BARS_SLIDE)) / BARS_SLIDE));
 
-  // The survivor wakes: shut at the cut, then two slow openings with a blink between them.
-  const wake = time - sceneTime('wake', 0);
-  let lids = 0;
-  if (wake >= 0) {
-    if (wake < 0.9) lids = 1;
-    else if (wake < 2.3) lids = 1 - smoothstep01((wake - 0.9) / 1.4) * 0.78;
-    else if (wake < 2.75) lids = 0.22 + smoothstep01((wake - 2.3) / 0.45) * 0.78;
-    else if (wake < 3.4) lids = 1 - smoothstep01((wake - 2.75) / 0.65);
-    else lids = 0;
-  }
-  out.lids = lids;
+  out.lids = lidsAt(time);
 
   out.caption = null;
   out.captionAlpha = 0;

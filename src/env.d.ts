@@ -4,7 +4,9 @@ import type { BuildControlsDebug } from './app/build-controls';
 import type { IntroController } from './app/intro';
 import type { MultiplayerDebug } from './app/multiplayer';
 import type { TitleController } from './app/title';
+import type { AudioHub } from './engine/audio/hub';
 import type { Game } from './engine/game';
+import type { RenderedSound, RenderOptions } from './engine/intro/sound-render';
 import type { Stage } from './engine/stage';
 
 declare global {
@@ -20,6 +22,10 @@ declare global {
       mp?: MultiplayerDebug;
       intro?: IntroController;
       title?: TitleController;
+      audio?: {
+        hub: AudioHub;
+        render(options?: RenderOptions): Promise<RenderedSound>;
+      };
     };
   }
 }

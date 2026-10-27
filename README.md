@@ -31,7 +31,7 @@ Click the page to take the mouse. Esc gives it back.
 
 A block goes on the ground or on another block, within six blocks of you, and never inside a player. A slab goes in the half of its cell the surface you aim at points to; a wedge rises away from you, so a row of them is a ramp you can walk up, and R turns it. The cursor sees a little farther than a click reaches and says "Out of reach" in red there. Build Mode only adds the ghost, the caption and the key list; the clicks work with or without it.
 
-Mouse sensitivity, field of view, inverted look, the graphics preset and the time of day are on the pause panel. All but the time of day are remembered in the browser.
+Mouse sensitivity, field of view, volume, inverted look, the graphics preset and the time of day are on the pause panel. All but the time of day are remembered in the browser.
 
 To check the frame rate, open the game with `?bench=1`. It flies the valley once for each graphics preset (30 seconds each, with a two-second warm-up), then shows the average frame rate, the 95th percentile frame time and the graphics adapter for each, with a button that copies the report. `?bench=1&benchSeconds=60` changes the length and `&benchPresets=balanced` picks the presets. [The app README](src/app/README.md) lists every key and URL switch.
 

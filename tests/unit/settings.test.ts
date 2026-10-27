@@ -16,6 +16,7 @@ describe('sanitizeSettings', () => {
         invertY: true,
         quality: 'ultra',
         intro: false,
+        volume: 0.4,
       }),
     ).toEqual({
       mouseSensitivity: 1.5,
@@ -23,7 +24,20 @@ describe('sanitizeSettings', () => {
       invertY: true,
       quality: 'ultra',
       intro: false,
+      volume: 0.4,
     });
+  });
+
+  it('starts at full volume, keeps the slider inside its range and replaces what is not a number', () => {
+    expect(DEFAULT_SETTINGS.volume).toBe(1);
+    expect(sanitizeSettings({}).volume).toBe(1);
+    expect(sanitizeSettings({ volume: 0 }).volume).toBe(0);
+    expect(sanitizeSettings({ volume: 0.55 }).volume).toBe(0.55);
+    expect(sanitizeSettings({ volume: 7 }).volume).toBe(SETTINGS_LIMITS.volume.max);
+    expect(sanitizeSettings({ volume: -2 }).volume).toBe(SETTINGS_LIMITS.volume.min);
+    expect(sanitizeSettings({ volume: Number.NaN }).volume).toBe(DEFAULT_SETTINGS.volume);
+    expect(sanitizeSettings({ volume: 'loud' }).volume).toBe(DEFAULT_SETTINGS.volume);
+    expect(SETTINGS_LIMITS.volume).toEqual({ min: 0, max: 1, step: 0.05 });
   });
 
   it('plays the intro unless the player turned it off', () => {

@@ -17,6 +17,7 @@ import {
 import type { QualityName } from '../shared/quality';
 import type { Settings } from '../shared/settings';
 import type { SweepExtras } from '../shared/sweep-report';
+import { createAudioHub, type AudioHub } from './audio/hub';
 import { createAvatar } from './avatar';
 import { PresetSweep, type SweepTarget } from './bench-sweep';
 import { createCameraRig, type CameraRig, type RigFrame, type ViewPoint } from './camera-rig';
@@ -88,11 +89,15 @@ export interface GameOptions {
   /** Builds the world for a seed. Called once now, and again by `loadWorld`. */
   createWorld(seed: number): GameWorld;
   seed: number;
+  /** False keeps the game silent (`?sound=off`): the audio context is never made. */
+  sound?: boolean;
 }
 
 export interface Game {
   readonly stage: Stage;
   readonly input: Input;
+  /** The way out to the speakers, with the master volume from the settings; the Play buttons unlock it. */
+  readonly audio: AudioHub;
   readonly settings: Settings;
   /** The world being played; replaced by `loadWorld`. */
   readonly world: GameWorld;
@@ -173,6 +178,7 @@ export function createGame({
   buildId,
   createWorld,
   seed,
+  sound = true,
 }: GameOptions): Game {
   const { renderer, camera } = stage;
   const gpu = readGpuName(renderer.getContext());
@@ -191,6 +197,7 @@ export function createGame({
   stage.world.add(avatar.object);
 
   const input = createInput(renderer.domElement);
+  const audio = createAudioHub({ volume: settings.volume, enabled: sound });
   const rig = createCameraRig(camera, collision);
   const player = createPlayerState();
   const look: LookState = { yaw: 0, pitch: 0 };
@@ -436,6 +443,7 @@ export function createGame({
   const game: Game = {
     stage,
     input,
+    audio,
     settings,
     get world() {
       return world;
@@ -509,6 +517,7 @@ export function createGame({
       stopActions();
       sweep.dispose();
       input.dispose();
+      audio.dispose();
       avatar.dispose();
       world.dispose();
       frameListeners.clear();

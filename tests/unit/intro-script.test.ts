@@ -6,19 +6,25 @@ import {
   sunElevationAt,
 } from '../../src/shared/daycycle';
 import {
+  BURN_UNTIL,
   CAPTIONS,
   CAPTION_FADE,
+  CORE_PULSES,
+  CRAWLER_RISES,
   DIPS,
   INTRO_SECONDS,
+  REVEAL_AT,
   SCENES,
   SKIP_HINT_FROM,
   STOP_AT,
   TITLE_WINDOW,
   TOUCHDOWN_AT,
+  coreGlowAt,
   createIntroFrame,
   introFrameAt,
   introPhaseAt,
   introWanted,
+  lidsAt,
   sceneAt,
   sceneTime,
   smootherstep01,
@@ -231,6 +237,64 @@ describe('the overlay of the intro', () => {
     expect(frameAt(SKIP_HINT_FROM + 2).skipHint).toBeGreaterThan(0.9);
     expect(frameAt(INTRO_SECONDS - 6).skipHint).toBeGreaterThan(0.3);
     expect(frameAt(INTRO_SECONDS - 0.2).skipHint).toBe(0);
+  });
+});
+
+describe('what the picture and the sound of the intro share', () => {
+  it('lays the Core’s moments, the machines’ rises and the end of the fires inside the scenes they belong to', () => {
+    expect(REVEAL_AT).toBeCloseTo(STOP_AT + 0.35, 9);
+    expect(CORE_PULSES[0]).toBeGreaterThan(REVEAL_AT);
+    for (let i = 1; i < CORE_PULSES.length; i++) {
+      expect(CORE_PULSES[i]).toBeGreaterThan(CORE_PULSES[i - 1] as number);
+    }
+    for (const pulse of CORE_PULSES) {
+      expect(pulse).toBeGreaterThan(REVEAL_AT);
+      expect(pulse).toBeLessThan(sceneAt(pulse).to);
+      expect(['skid', 'crater', 'eyes']).toContain(sceneAt(pulse).name);
+    }
+    expect(CRAWLER_RISES).toHaveLength(5);
+    for (const [i, rise] of CRAWLER_RISES.entries()) {
+      expect(sceneAt(rise).name).toBe('eyes');
+      if (i > 0) expect(rise).toBeGreaterThan(CRAWLER_RISES[i - 1] as number);
+    }
+    expect(sceneAt(BURN_UNTIL).name).toBe('dawn');
+  });
+
+  it('has the Core dark until it is uncovered, then flashing, breathing, and dimmed away by the morning', () => {
+    expect(coreGlowAt(0)).toBe(0);
+    expect(coreGlowAt(REVEAL_AT - 0.05)).toBe(0);
+    expect(coreGlowAt(REVEAL_AT)).toBeGreaterThan(1);
+    expect(coreGlowAt(REVEAL_AT + 3)).toBeGreaterThan(0.15);
+    expect(coreGlowAt(REVEAL_AT + 3)).toBeLessThan(0.5);
+    expect(coreGlowAt(sceneTime('dawn', 1.5))).toBeGreaterThan(0.2);
+    expect(coreGlowAt(sceneTime('dawn', 4.6))).toBe(0);
+    expect(coreGlowAt(INTRO_SECONDS)).toBe(0);
+    for (let t = 0; t <= INTRO_SECONDS; t += 0.05) {
+      expect(coreGlowAt(t)).toBeGreaterThanOrEqual(0);
+      expect(coreGlowAt(t)).toBeLessThan(1.5);
+    }
+  });
+
+  it('has the survivor’s eyes open until the cut, shut for it, opening twice with a blink between, and open for the hand-over', () => {
+    const wake = (seconds: number): number => lidsAt(sceneTime('wake', seconds));
+    expect(lidsAt(0)).toBe(0);
+    expect(lidsAt(sceneTime('wake', 0) - 0.01)).toBe(0);
+    expect(wake(0)).toBe(1);
+    expect(wake(0.8)).toBe(1);
+    expect(wake(2.3)).toBeCloseTo(0.22, 9);
+    expect(wake(2.75)).toBeCloseTo(1, 9);
+    expect(wake(3.4)).toBe(0);
+    expect(wake(5)).toBe(0);
+    // Opening, then closing for the blink, then opening for good.
+    expect(wake(1.6)).toBeLessThan(wake(1));
+    expect(wake(2.5)).toBeGreaterThan(wake(2.3));
+    expect(wake(3.1)).toBeLessThan(wake(2.75));
+  });
+
+  it('is the very number the overlay draws the survivor’s eyelids with', () => {
+    for (let t = -0.5; t <= INTRO_SECONDS + 0.5; t += 0.037) {
+      expect(introFrameAt(t, createIntroFrame()).lids).toBe(lidsAt(t));
+    }
   });
 });
 

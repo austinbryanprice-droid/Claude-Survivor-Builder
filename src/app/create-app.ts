@@ -66,6 +66,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
     benchPresets: view.benchPresets,
     buildId,
     seed: view.seed,
+    sound: view.sound,
     createWorld: (seed) => {
       valley = createValleyWorld(stage, seed, view.terrain, demo);
       valley.view.core?.follow(() => coreLook?.() ?? null);
@@ -146,7 +147,21 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
     build: building.controller,
     watchIntro: () => void loadIntro().then((controller) => controller?.replay()),
   });
-  if (flags.debug) window.__ashbound = { stage, game, build: building.debug };
+  if (flags.debug) {
+    window.__ashbound = {
+      stage,
+      game,
+      build: building.debug,
+      audio: {
+        hub: game.audio,
+        // Renders the film's whole soundtrack to samples without playing it: the code loads only when asked.
+        render: (options) =>
+          import('../engine/intro/sound-render').then(({ renderIntroSound }) =>
+            renderIntroSound(options),
+          ),
+      },
+    };
+  }
   const title: TitleController | null = showTitle
     ? createTitle({
         game,

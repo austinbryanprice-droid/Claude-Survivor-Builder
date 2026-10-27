@@ -19,6 +19,7 @@ describe('view URL switches', () => {
     expect(v.intro).toBe('auto');
     expect(v.introAt).toBeNull();
     expect(v.title).toBe('auto');
+    expect(v.sound).toBe(true);
     expect(v.freeze).toBe(false);
     expect(v.terrain).toBe('surface-nets');
     expect(v.scale).toBeNull();
@@ -128,6 +129,16 @@ describe('view URL switches', () => {
       expect(readViewFlags(other).title, other).toBe('auto');
     }
     expect(readViewFlags('?title=off&intro=on')).toMatchObject({ title: 'off', intro: 'on' });
+  });
+
+  it('keeps the page silent only when it is told to, whatever else the address says', () => {
+    for (const off of ['?sound=off', '?sound=0', '?sound=false', '?sound=OFF']) {
+      expect(readViewFlags(off).sound, off).toBe(false);
+    }
+    for (const other of ['', '?sound', '?sound=on', '?sound=1', '?sound=loud', '?title=off']) {
+      expect(readViewFlags(other).sound, other).toBe(true);
+    }
+    expect(readViewFlags('?sound=off&intro=on')).toMatchObject({ sound: false, intro: 'on' });
   });
 
   it('holds the film at the second it is asked for, for pictures and tests', () => {
