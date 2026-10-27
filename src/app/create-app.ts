@@ -165,6 +165,11 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           import('./render-valley-sound').then(({ renderValleySound }) =>
             renderValleySound(options),
           ),
+        // And for what people do in it: a script of effects and a listener, heard over the valley.
+        renderEffects: (options) =>
+          import('./render-effect-sound').then(({ renderEffectSound }) =>
+            renderEffectSound(options),
+          ),
       },
     };
   }
