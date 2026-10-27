@@ -275,6 +275,15 @@ From 5h3a a crew can build a Light, a lantern that burns bright with power and l
 - **And so does the light it throws (5h3b).** The lamps of the Lights that burn are the same function over the same list: the `PowerWatcher` hands the stage each powered Light's lens and aim, so the pool of light comes on and goes out on every screen together with the lens. Nothing is sent, and the version stays 20.
 - **Protocol version 20.** A Light is a state a version 19 build does not know: it could neither draw one nor say what it is. A host and a guest on different versions refuse each other and say why.
 
+### The armored crawler and what it leaves (Phase 5i1)
+
+From 5i1 a night can send an armored crawler, and the crew that fells one finds Tier 4 cells in its pool (the numbers and the reasons are in [decisions](decisions.md#phase-5i1-the-armored-crawler-and-the-cells-it-leaves-2026-10-27)). Every rule is the host's: what a hit does to a plated machine, whether a machine is felled and what it leaves are worked out in its simulation, and a guest is told the result.
+
+- **The machine is a kind in the enemy packet.** The packet already named a kind for every machine, and the armored crawler is kind 1 (`ENEMY_KIND.armored`). Nothing about the packet's shape changes: a guest draws what the kind says, with the mesh and the model of that kind, and takes its Health from the same byte as ever. A packet that names a kind past `ENEMY_KIND_COUNT`, now 2, is refused whole, as before.
+- **One new event.** `drop` in `se` is `{ n, m, c }`: the day or night, the material (a `MATERIAL` id, 1 to 4) and the cells of it that went into the pool, 1 to 65,535. It is sent once to every screen, like the others, and a newcomer is not told of the ones before they came. The codec refuses one whose material is not one the pool keeps or whose count is not at least one: a machine felled with no room left in the pool leaves nothing and says nothing.
+- **The pool is the pool's.** The cells reach a guest's count the way every change to the pool does, in the pool frame that follows it (`ec`), whether or not the event reached them, so a guest that missed the word still shows the right count and a latecomer is shown how things stand. They also count with what the crew has gathered for the results (`sv.st`).
+- **Protocol version 21.** `drop` is an event a version 20 build does not know, and kind 1 is a machine it would refuse the packet for. A host and a guest on different versions refuse each other and say why.
+
 ## URL switches
 
 None are needed to play. They exist for tests, for a private server, and for a host on a strict network.
