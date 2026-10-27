@@ -45,9 +45,10 @@ const GENERATOR_STATE = packState(moduleShape(MODULE.generator, 0), 1);
 const NODE_STATE = packState(moduleShape(MODULE.node, 0), 1);
 const STORAGE_STATE = packState(moduleShape(MODULE.storage, 0), 1);
 const BED_STATE = packState(moduleShape(MODULE.bed, 0), 1);
+const LIGHT_STATE = packState(moduleShape(MODULE.light, 0), 1);
 /** The points that open the Power row of the ladder, which opens the Generator and the Power Node. */
 const POWER_AT = RESEARCH.groups[0].points;
-/** The points that open the Camp row, which opens the Storage. */
+/** The points that open the Camp row, which opens the Storage, the Bed and the Light. */
 const CAMP_AT = RESEARCH.groups.find((group) => group.id === 'camp')!.points;
 const SMALL = { width: 480, height: 270 };
 const FRAME_GAP_MS = 1500;
@@ -2154,7 +2155,7 @@ test.describe('multiplayer', () => {
     }
   });
 
-  test("power is worked out on every screen from the world's own edits: a Generator and a Power Node light a turret on the guest's screen as they do on the host's, and breaking the Generator puts both out", async ({
+  test("power is worked out on every screen from the world's own edits: a Generator and a Power Node light a turret and a Light on the guest's screen as they do on the host's, and breaking the Generator puts them out", async ({
     browser,
     baseURL,
   }) => {
@@ -2210,7 +2211,8 @@ test.describe('multiplayer', () => {
       const code = await hostRoom(host);
       await joinRoom(ada, code);
       await expectSeeEachOther(everyone);
-      await host.page.evaluate((n) => window.__ashbound!.mp!.setResearch(n), POWER_AT);
+      // The Camp row opens the Light, and the Power row below it opens the Generator and the Node.
+      await host.page.evaluate((n) => window.__ashbound!.mp!.setResearch(n), CAMP_AT);
 
       // Ada goes out to a ring thirteen blocks from the Core, where the ground round her is open, and
       // the host is told where she stands before she builds.
@@ -2223,25 +2225,30 @@ test.describe('multiplayer', () => {
           state,
         ] as const);
 
-      // A turret on its own has no power on either screen, and its lights are down on both.
+      // A turret and a Light on their own have no power on either screen, and their lights are down on both.
       const turret = await buildNear(TURRET_STATE, 3, 0);
       await expectSameWorld(everyone, 1);
       await expectEverywhere(turret, 'off', false, 'the turret');
-
-      // A Generator seven blocks from it is beyond its reach: the Generator burns, and the turret has none.
-      const generator = await buildNear(GENERATOR_STATE, -4, 0);
+      const light = await buildNear(LIGHT_STATE, 0, -6);
       await expectSameWorld(everyone, 2);
+      await expectEverywhere(light, 'off', false, 'the Light');
+
+      // A Generator seven blocks from the turret and from the Light is beyond its reach of both: the Generator burns, and they have none.
+      const generator = await buildNear(GENERATOR_STATE, -4, 0);
+      await expectSameWorld(everyone, 3);
       await expectEverywhere(generator, 'on', true, 'the Generator');
       await expectEverywhere(turret, 'off', false, 'the turret');
+      await expectEverywhere(light, 'off', false, 'the Light');
 
-      // A Power Node between them takes the power from the Generator and passes it on to the turret.
+      // A Power Node between them takes the power from the Generator and passes it on to the turret and the Light.
       const node = await buildNear(NODE_STATE, 0, -3);
-      await expectSameWorld(everyone, 3);
+      await expectSameWorld(everyone, 4);
       await expectEverywhere(node, 'on', true, 'the Node');
       await expectEverywhere(turret, 'on', true, 'the turret');
+      await expectEverywhere(light, 'on', true, 'the Light');
 
       // The host walks up to the Generator and breaks it: the guest's screen follows the host's, and the
-      // Node and the turret go dark on both.
+      // Node, the turret and the Light go dark on both.
       const hostAt = { x: generator.x + 0.5 + 2, z: generator.z + 0.5 };
       await standAt(host.page, hostAt.x, hostAt.z);
       await expectSeen(ada, 'Host', hostAt);
@@ -2250,9 +2257,10 @@ test.describe('multiplayer', () => {
         generator.y,
         generator.z,
       ] as const);
-      await expectSameWorld(everyone, 2);
+      await expectSameWorld(everyone, 3);
       await expectEverywhere(node, 'off', false, 'the Node');
       await expectEverywhere(turret, 'off', false, 'the turret');
+      await expectEverywhere(light, 'off', false, 'the Light');
       expect(await rejectionsOf(host)).toEqual([]);
       expect(await rejectionsOf(ada)).toEqual([]);
       expectNoProblems(everyone);
