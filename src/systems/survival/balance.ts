@@ -119,6 +119,12 @@ export const TURRET = {
     { range: 20, damage: 5, interval: 0.25, heft: 1 },
     { range: 26, damage: 24, interval: 0.6, heft: 2 },
   ] as readonly TurretLevel[],
+  /**
+   * How many times faster a turret shoots while it has power (Phase 5g2): the wait between its shots is
+   * its level's `interval` divided by this. Power is a boost and never a requirement, so a turret with
+   * none shoots as it did before there was any.
+   */
+  poweredRate: 1.5,
 } as const;
 
 /**
@@ -139,6 +145,15 @@ export const POWER = {
   generator: {
     radius: 6,
     perSecond: 1,
+  },
+  /**
+   * The Power Node (5g2): a relay. A Node that has power, from a Generator or from another Node, carries it
+   * `radius` blocks on, to the turrets and Nodes within that reach of the middle of its cell, who then have
+   * it too. It gives no Energy to a player: only a Generator and the Core do that. A Generator carries
+   * power as far as it charges (its `radius` above), middle of cell to middle of cell.
+   */
+  node: {
+    radius: 8,
   },
 } as const;
 

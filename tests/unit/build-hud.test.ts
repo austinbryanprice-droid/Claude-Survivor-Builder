@@ -29,6 +29,7 @@ import {
   costText,
   interactPrompt,
   moduleSlot,
+  powerTag,
   refusalText,
   upgradePrompt,
   type BuildHudInput,
@@ -40,7 +41,7 @@ import {
   needsResearch,
   notEnough,
 } from '../../src/systems/economy/build-rules';
-import { VITALS } from '../../src/systems/survival/balance';
+import { TURRET, VITALS } from '../../src/systems/survival/balance';
 import { ICON_IDS, ICON_SPRITE } from '../../src/ui/player-hud/icons';
 
 const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
@@ -63,6 +64,8 @@ function hands(overrides: Partial<BuildHudInput> = {}): BuildHudInput {
     terminal: 'none',
     upgrade: 0,
     upgradeRefusal: null,
+    power: 'none',
+    powerModule: 0,
     ...overrides,
   };
 }
@@ -147,6 +150,19 @@ describe('the module slot', () => {
     });
   });
 
+  it('gives the Generator and the Power Node icons of their own, each unlike the rest', () => {
+    const icons = [MODULE.terminal, MODULE.turret, MODULE.generator, MODULE.node].map(
+      (module) => moduleSlot(module).icon,
+    );
+    expect(icons).toEqual(['terminal', 'turret', 'generator', 'node']);
+    expect(new Set(icons).size).toBe(icons.length);
+    for (let facing = 0; facing < 4; facing++) {
+      expect(blockIcon(packState(moduleShape(MODULE.node, facing), 1))).toBe('node');
+    }
+    expect(ICON_IDS).toContain('node');
+    expect(costText(packState(moduleShape(MODULE.node, 0), 1))).toBe('12 Scrap');
+  });
+
   it('has no icon for a module the HUD has no picture of, or a level the module does not have', () => {
     expect(moduleSlot(99).icon).toBeNull();
     expect(blockIcon(packState(moduleShape(MODULE.terminal, 0), 9))).toBeNull();
@@ -159,6 +175,46 @@ describe('the module slot', () => {
     expect(costText(TERMINAL)).toBe('40 Scrap');
     expect(costText(packState(moduleShape(MODULE.terminal, 0), 9))).toBe('');
     expect(costText(packState(moduleShape(MODULE.turret, 1), 1))).toBe('25 Scrap');
+  });
+});
+
+describe('the tag that says whether a turret or a Power Node has power', () => {
+  it('is nothing for a cell that holds neither', () => {
+    expect(powerTag('none', 0)).toBeNull();
+    expect(powerTag('none', MODULE.turret)).toBeNull();
+  });
+
+  it('says a turret with power fires faster, by the number the table gives', () => {
+    expect(powerTag('on', MODULE.turret)).toEqual({
+      state: 'on',
+      label: 'Powered',
+      detail: `Fires ${TURRET.poweredRate}× faster`,
+    });
+    expect(powerTag('on', MODULE.turret)?.detail).toBe('Fires 1.5× faster');
+  });
+
+  it('says a turret without power still works, and what would boost it', () => {
+    const tag = powerTag('off', MODULE.turret);
+    expect(tag).toEqual({
+      state: 'off',
+      label: 'No power',
+      detail: 'A Generator or Node in reach boosts it',
+    });
+    // Nothing in it says the turret is dead or needs power to shoot.
+    expect(`${tag?.label} ${tag?.detail}`).not.toMatch(/dead|broken|offline|needs/i);
+  });
+
+  it('says a Power Node with power passes it on, and one without needs a source in reach', () => {
+    expect(powerTag('on', MODULE.node)).toEqual({
+      state: 'on',
+      label: 'Powered',
+      detail: 'Passes power on',
+    });
+    expect(powerTag('off', MODULE.node)).toEqual({
+      state: 'off',
+      label: 'No power',
+      detail: 'Needs a Generator or Node in reach',
+    });
   });
 });
 

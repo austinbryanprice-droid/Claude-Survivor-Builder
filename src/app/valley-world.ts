@@ -10,6 +10,7 @@ import { bakeTerrain, type Terrain } from '../world/terrain/terrain';
 import { SHOTS, SPAWN_SHOT, createFlyRoute, yawFromBearing } from '../world/terrain/viewpoints';
 import { buildDemo, isDemoName } from '../world/voxels/demo';
 import { createWorld, type VoxelWorld } from '../world/voxels/world';
+import { PowerWatcher } from './power-watcher';
 
 /** The colored mist pockets sit over the lake and the crash site, wherever the seed puts the hills. */
 export const VALLEY_MIST: MistZones = {
@@ -27,6 +28,8 @@ export interface ValleyWorld extends GameWorld {
   /** The blocks players have placed, which is everything that is not the seeded terrain. */
   readonly voxels: VoxelWorld;
   readonly view: ValleyView;
+  /** Which of the modules have power, and the lights that show it. */
+  readonly power: PowerWatcher;
 }
 
 /**
@@ -48,6 +51,8 @@ export function createValleyWorld(
   const view = new ValleyView(stage, terrain, mode, voxels, built ? [built.clearing] : []);
   // A demo is on screen from the first frame; blocks that arrive in play go through the remesh budget.
   if (built) view.structures.meshAll();
+  // After the view, whose modules are drawn by the time the watcher dresses them.
+  const power = new PowerWatcher(voxels, view.modules);
   const { grid } = terrain;
   const groundAt = (x: number, z: number): number => grid.groundAt(x, z);
   // The Core is solid cells to movement; the ground the cursor and the camera measure also knows it, so
@@ -69,6 +74,7 @@ export function createValleyWorld(
     terrain,
     voxels,
     view,
+    power,
     collision: {
       isSolid: (x, y, z) => voxels.isSolid(x, y, z),
       boxesAt: (x, y, z) => voxels.boxesAt(x, y, z),
@@ -88,6 +94,7 @@ export function createValleyWorld(
     },
     groundAt,
     dispose() {
+      power.dispose();
       view.dispose();
     },
   };

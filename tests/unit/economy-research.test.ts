@@ -76,11 +76,11 @@ describe('the research ladder', () => {
 });
 
 describe('the groups of modules the points open', () => {
-  it('has the Power group at 10 points, the first night survived, holding the Generator', () => {
+  it('has the Power group at 10 points, the first night survived, holding the Generator and the Power Node', () => {
     expect(RESEARCH_GROUPS).toHaveLength(1);
     const power = RESEARCH_GROUPS[0]!;
     expect(power).toMatchObject({ id: 'power', name: 'Power', points: 10 });
-    expect(power.modules).toEqual([MODULE.generator]);
+    expect(power.modules).toEqual([MODULE.generator, MODULE.node]);
     // One night is worth at least what it takes, so the first dawn opens it.
     expect(RESEARCH.perNight).toBeGreaterThanOrEqual(power.points);
   });

@@ -51,6 +51,16 @@ export interface HudInteract {
   readonly tone?: 'info' | 'warn';
 }
 
+/** What power the module under the cursor has: a small tag under the crosshair, with a lit dot or a dim one, a word and a line of what it means for the module. */
+export interface HudPowerTag {
+  /** 'on' lights the dot in the Energy blue; 'off' leaves it grey. */
+  readonly state: 'on' | 'off';
+  /** "Powered" or "No power". */
+  readonly label: string;
+  /** What it means for this module: "Fires 1.5× faster". */
+  readonly detail: string;
+}
+
 /**
  * How the crosshair looks: a plain dot, a cyan ring over a surface a click could build on, a red
  * one over a surface it could not, or the sight of the pulse blaster while it is in hand.
@@ -175,6 +185,8 @@ export interface PlayerHudState {
   readonly prompt?: HudPrompt | null;
   /** What the interact key would do for what the cursor is on, under the crosshair; absent or null for nothing. */
   readonly interact?: HudInteract | null;
+  /** Whether the turret or Power Node the cursor is on has power, in a tag under the crosshair (below the interact card when that is up); absent or null for none. */
+  readonly powerTag?: HudPowerTag | null;
   /** The research ladder of the Research Terminal the player has opened, beside the crosshair; absent or null for none. */
   readonly ladder?: HudLadder | null;
   /** Absent means a plain dot. */
@@ -268,6 +280,9 @@ export class PlayerHud {
   private readonly interactKey: HTMLElement;
   private readonly interactLabel: HTMLElement;
   private readonly interactDetail: HTMLElement;
+  private readonly powerTag: HTMLElement;
+  private readonly powerTagLabel: HTMLElement;
+  private readonly powerTagDetail: HTMLElement;
   private readonly ladder: ResearchLadder;
   private readonly crosshair: HTMLElement;
   private readonly hitmark: HTMLElement;
@@ -299,6 +314,7 @@ export class PlayerHud {
   private lastSelected = -1;
   private lastPrompt = '';
   private lastInteract = '';
+  private lastPowerTag = '';
   private lastCrosshair = '';
   private lastHits = -1;
   private hitTurns = 0;
@@ -438,6 +454,13 @@ export class PlayerHud {
     this.interactDetail = el('span', 'ph-interact-detail');
     this.interact.append(this.interactKey, this.interactLabel, this.interactDetail);
 
+    // Whether the turret or Power Node under the crosshair has power: a tag after the card above, so it sits under it when both are up.
+    this.powerTag = el('div', 'ph-power-tag');
+    this.powerTag.hidden = true;
+    this.powerTagLabel = el('strong', 'ph-power-tag-label');
+    this.powerTagDetail = el('span', 'ph-power-tag-detail');
+    this.powerTag.append(el('i', 'ph-power-tag-dot'), this.powerTagLabel, this.powerTagDetail);
+
     // The research ladder a Terminal shows, beside the crosshair.
     this.ladder = new ResearchLadder();
 
@@ -458,6 +481,7 @@ export class PlayerHud {
       this.prompt,
       bar,
       this.interact,
+      this.powerTag,
       this.ladder.root,
       this.crosshair,
     );
@@ -797,6 +821,17 @@ export class PlayerHud {
         this.interactLabel.textContent = interact.label;
         this.interactDetail.textContent = interact.detail;
         this.interact.dataset.tone = interact.tone ?? 'info';
+      }
+    }
+    const tag = state.powerTag ?? null;
+    const tagKey = tag ? `${tag.state}|${tag.label}|${tag.detail}` : '';
+    if (tagKey !== this.lastPowerTag) {
+      this.lastPowerTag = tagKey;
+      this.powerTag.hidden = tag === null;
+      if (tag) {
+        this.powerTagLabel.textContent = tag.label;
+        this.powerTagDetail.textContent = tag.detail;
+        this.powerTag.dataset.state = tag.state;
       }
     }
     this.ladder.update(state.ladder ?? null);

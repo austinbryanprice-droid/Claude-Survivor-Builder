@@ -1294,6 +1294,60 @@
   font-weight: 600;
 }
 
+/* Whether the turret or Power Node under the crosshair has power: a small tag where the card of the interact key sits, or just under that card when both are up. */
+
+.ph-power-tag {
+  position: absolute;
+  top: calc(50% + var(--u) * 34px);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 7px);
+  padding: calc(var(--u) * 3px) calc(var(--u) * 12px) calc(var(--u) * 3px) calc(var(--u) * 9px);
+  border-radius: calc(var(--u) * 7px);
+  background: rgb(20 22 28 / 54%);
+  box-shadow: inset 0 0 0 1px rgb(143 216 255 / 34%);
+  backdrop-filter: blur(6px);
+  transform: translateX(-50%);
+  text-shadow: var(--shadow);
+  white-space: nowrap;
+}
+
+.ph-interact:not([hidden]) ~ .ph-power-tag {
+  top: calc(50% + var(--u) * 66px);
+}
+
+.ph-power-tag-dot {
+  width: calc(var(--u) * 8px);
+  height: calc(var(--u) * 8px);
+  border-radius: 50%;
+  background: #8fd8ff;
+  box-shadow: 0 0 calc(var(--u) * 8px) rgb(110 200 255 / 85%);
+}
+
+.ph-power-tag-label {
+  font-size: calc(var(--u) * 13px);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.ph-power-tag-detail {
+  font-size: calc(var(--u) * 12px);
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+
+/* A module without power: the dot goes grey and the ring round the tag goes white and faint. */
+
+.ph-power-tag[data-state='off'] {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 16%);
+}
+
+.ph-power-tag[data-state='off'] .ph-power-tag-dot {
+  background: #6b727e;
+  box-shadow: none;
+}
+
 /* The research ladder a Research Terminal shows when the interact key opens it: beside the crosshair, so the Terminal stays in view, on the side the key list of Build Mode does not take. */
 
 .ph-ladder {

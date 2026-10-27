@@ -124,9 +124,9 @@ export const RESEARCH = {
   /**
    * What the points open besides a material: a group of modules, by the total points that open it (the
    * notes: a 10-point research row opens the Generator and the Power Node). The first night survived
-   * pays for it. The Generator is in it (5g1) and the Power Node joins it (5g2).
+   * pays for it.
    */
-  groups: [{ id: 'power', name: 'Power', points: 10, modules: [MODULE.generator] }],
+  groups: [{ id: 'power', name: 'Power', points: 10, modules: [MODULE.generator, MODULE.node] }],
   /** The most points the `?research=` switch or the debug page can set. */
   max: 9999,
 } as const;

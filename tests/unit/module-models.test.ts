@@ -543,6 +543,95 @@ describe('the Generator model', () => {
   });
 });
 
+describe('the Power Node model', () => {
+  const kit = buildModuleKit(MODULE.node) as ModuleKit;
+  const model = kit.model;
+
+  it('is a body that stands still, in every look the table defines, in the Core’s paint', () => {
+    expect(kit.head).toBeUndefined();
+    expect(kit.palette).toBe(MODULE_LOOKS);
+    expect(Object.keys(model).sort()).toEqual([...MODULE_LOOK_NAMES].sort());
+    for (const geometry of partsOf(model)) {
+      const position = geometry.getAttribute('position');
+      const normal = geometry.getAttribute('normal');
+      expect(position.count).toBeGreaterThan(0);
+      expect(normal.count).toBe(position.count);
+      for (let i = 0; i < position.count; i++) {
+        expect(Number.isFinite(position.getX(i) + position.getY(i) + position.getZ(i))).toBe(true);
+        expect(Math.hypot(normal.getX(i), normal.getY(i), normal.getZ(i))).toBeCloseTo(1, 3);
+      }
+    }
+  });
+
+  it('fills the body the cursor aims at and stays inside it, with a foundation below the floor', () => {
+    const box = boundsOf(partsOf(model));
+    const [x0, , z0, x1, y1, z1] = MODULES.find((def) => def.id === MODULE.node)!.body;
+    const slack = 0.02;
+    expect(box.min.x).toBeGreaterThanOrEqual(x0 - 0.5 - slack);
+    expect(box.max.x).toBeLessThanOrEqual(x1 - 0.5 + slack);
+    expect(box.min.z).toBeGreaterThanOrEqual(z0 - 0.5 - slack);
+    expect(box.max.z).toBeLessThanOrEqual(z1 - 0.5 + slack);
+    expect(box.min.y).toBeCloseTo(-MODULE_SKIRT, 6);
+    expect(box.max.y).toBeLessThanOrEqual(y1 + slack);
+    const size = box.getSize(new Vector3());
+    expect(size.x).toBeGreaterThan(0.55);
+    expect(size.z).toBeGreaterThan(0.55);
+    expect(box.max.y).toBeGreaterThan(0.9);
+  });
+
+  it('looks toward +x: the console, its screen and its lamps are on the front, the column and its crystal behind', () => {
+    const screen = pointsWhere(model.screen as BufferGeometry, () => true);
+    expect(screen.length).toBeGreaterThan(0);
+    expect(screen.every((p) => p.x > 0.2)).toBe(true);
+    expect(pointsWhere(model.amber as BufferGeometry, (p) => p.x > 0.2).length).toBeGreaterThan(0);
+    // The crystal sits on the column, behind the console, in the cyan.
+    const crystal = pointsWhere(model.lights as BufferGeometry, (p) => p.y > 0.75);
+    expect(crystal.length).toBeGreaterThan(0);
+    expect(crystal.every((p) => p.x < 0.05)).toBe(true);
+    // The needle crowns the column: the highest thing on the Node.
+    const beacon = pointsWhere(model.beacon as BufferGeometry, () => true);
+    expect(beacon.every((p) => p.x < 0)).toBe(true);
+    const tallest = Math.max(
+      ...partsOf(model).flatMap((g) => pointsWhere(g, () => true).map((p) => p.y)),
+    );
+    expect(Math.max(...beacon.map((p) => p.y))).toBeCloseTo(tallest, 6);
+  });
+
+  it('is built the same way every time, so two pictures of it agree', () => {
+    const again = (buildModuleKit(MODULE.node) as ModuleKit).model;
+    for (const look of MODULE_LOOK_NAMES) {
+      const a = (model[look] as BufferGeometry).getAttribute('position').array;
+      const b = (again[look] as BufferGeometry).getAttribute('position').array;
+      expect(Array.from(b), look).toEqual(Array.from(a));
+    }
+  });
+
+  it('is a few thousand triangles at most, in six draw calls', () => {
+    const count = partsOf(model).reduce((sum, geometry) => sum + triangles(geometry), 0);
+    expect(count).toBeGreaterThan(200);
+    expect(count).toBeLessThan(3000);
+    expect(partsOf(model).length).toBe(6);
+  });
+
+  it('is a model of its own, not the Terminal’s, a turret’s or the Generator’s', () => {
+    const positions = (m: ModuleModel) =>
+      MODULE_LOOK_NAMES.map((look) => m[look]?.getAttribute('position').count);
+    for (const other of [MODULE.terminal, MODULE.turret, MODULE.generator]) {
+      const rival = (buildModuleKit(other) as ModuleKit).model;
+      expect(positions(model), `module ${other}`).not.toEqual(positions(rival));
+    }
+  });
+
+  it('is slimmer than the Generator, which it is smaller than in every way but its reach', () => {
+    const own = boundsOf(partsOf(model)).getSize(new Vector3());
+    const drum = boundsOf(partsOf((buildModuleKit(MODULE.generator) as ModuleKit).model)).getSize(
+      new Vector3(),
+    );
+    expect(own.x).toBeLessThanOrEqual(drum.x + 1e-6);
+    expect(own.z).toBeLessThanOrEqual(drum.z + 1e-6);
+  });
+});
+
 describe('the paint of a module’s grade', () => {
   const channels = (hex: string) => {
     const value = parseInt(hex.slice(1), 16);
@@ -654,16 +743,16 @@ describe('the ghost of a module', () => {
     }
   });
 
-  it('keeps a Generator inside its cell whichever way it faces', () => {
-    for (let facing = 0; facing < MODULE_FACINGS; facing++) {
-      const box = boundsOf([
-        moduleGhostGeometry(moduleShape(MODULE.generator, facing)) as BufferGeometry,
-      ]);
-      expect(box.min.x, `facing ${facing}`).toBeGreaterThanOrEqual(0);
-      expect(box.max.x, `facing ${facing}`).toBeLessThanOrEqual(1);
-      expect(box.min.z, `facing ${facing}`).toBeGreaterThanOrEqual(0);
-      expect(box.max.z, `facing ${facing}`).toBeLessThanOrEqual(1);
-      expect(box.max.y, `facing ${facing}`).toBeLessThanOrEqual(1);
+  it('keeps a Generator and a Power Node inside their cell whichever way they face', () => {
+    for (const module of [MODULE.generator, MODULE.node]) {
+      for (let facing = 0; facing < MODULE_FACINGS; facing++) {
+        const box = boundsOf([moduleGhostGeometry(moduleShape(module, facing)) as BufferGeometry]);
+        expect(box.min.x, `module ${module} facing ${facing}`).toBeGreaterThanOrEqual(0);
+        expect(box.max.x, `module ${module} facing ${facing}`).toBeLessThanOrEqual(1);
+        expect(box.min.z, `module ${module} facing ${facing}`).toBeGreaterThanOrEqual(0);
+        expect(box.max.z, `module ${module} facing ${facing}`).toBeLessThanOrEqual(1);
+        expect(box.max.y, `module ${module} facing ${facing}`).toBeLessThanOrEqual(1);
+      }
     }
   });
 

@@ -70,6 +70,7 @@ export const MODULE = {
   terminal: 1,
   turret: 2,
   generator: 3,
+  node: 4,
 } as const;
 
 /**
@@ -125,11 +126,11 @@ export interface MaterialDef {
 
 /**
  * The modules, in the order of their ids. The Research Terminal is the first (Phase 5d), the Basic
- * Turret the second (5f) and the Generator the third (5g); the node, storage, bed and light follow
- * them (5g, 5h). The costs of building one are Scrap only (about 40, 25 and 40), because the notes
- * price them in Composite, which the Terminal itself unlocks (docs/decisions.md); the Turret's two
- * steps up are paid in the better materials (5f2). What opens the Generator is a group of research
- * points, not a material (`RESEARCH.groups`).
+ * Turret the second (5f), the Generator the third (5g1) and the Power Node the fourth (5g2); storage,
+ * the bed and the light follow them (5h). The costs of building one are Scrap only (about 40, 25, 40
+ * and 12), because the notes price them in Composite, which the Terminal itself unlocks
+ * (docs/decisions.md); the Turret's two steps up are paid in the better materials (5f2). What opens the
+ * Generator and the Node is a group of research points, not a material (`RESEARCH.groups`).
  */
 export const MODULES: readonly ModuleDef[] = [
   {
@@ -158,6 +159,15 @@ export const MODULES: readonly ModuleDef[] = [
     raises: [],
     cost: { material: MATERIAL.scrap, amount: 40 },
     body: [0.12, 0, 0.12, 0.88, 0.85, 0.88],
+    facesPlayer: true,
+  },
+  {
+    id: MODULE.node,
+    name: 'Power Node',
+    raises: [],
+    // A relay is cheap, so a crew can carry power across a base with a few of them.
+    cost: { material: MATERIAL.scrap, amount: 12 },
+    body: [0.18, 0, 0.18, 0.82, 0.95, 0.82],
     facesPlayer: true,
   },
 ];

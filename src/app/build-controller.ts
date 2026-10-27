@@ -38,7 +38,7 @@ import {
   type UpgradeStep,
 } from '../systems/economy/build-rules';
 import { BLASTER } from '../systems/survival/balance';
-import { reachOfModule } from '../systems/survival/power';
+import { reachOfModule, receivesPower, type PowerState } from '../systems/survival/power';
 
 /**
  * The player's hands: which hotbar slot is selected, which kind of shape it makes and how that is
@@ -120,6 +120,10 @@ export interface BuildHudState {
   readonly upgrade: CellState;
   /** Why the host would refuse that upgrade (the economy's words), or null when it would go. Meaningful when `upgrade` is not 0. */
   readonly upgradeRefusal: string | null;
+  /** In Build Mode, what the turret or Power Node the cursor is on has of power; 'none' when it is on neither (or Build Mode is off). */
+  readonly power: PowerState;
+  /** The module (`MODULE`) that `power` is the state of; 0 when `power` is 'none'. */
+  readonly powerModule: number;
 }
 
 /** Where the player is looking from, as the camera has it this frame. */
@@ -151,6 +155,12 @@ export interface BuildPorts {
    * new run has a new economy.
    */
   economy(): PlacementEconomy;
+  /**
+   * What the module standing in a cell has of power, as this screen works it out from the world it
+   * has ('none' for a cell that holds no module that takes part). A getter-like function: a joining
+   * player's world is replaced. Absent for a game without power, where nothing is tagged.
+   */
+  power?(x: number, y: number, z: number): PowerState;
 }
 
 export class BuildController {
@@ -227,6 +237,8 @@ export class BuildController {
     terminal: 'none' | 'aimed' | 'open';
     upgrade: CellState;
     upgradeRefusal: string | null;
+    power: PowerState;
+    powerModule: number;
   } = {
     selected: 0,
     buildMode: false,
@@ -244,6 +256,8 @@ export class BuildController {
     terminal: 'none',
     upgrade: 0,
     upgradeRefusal: null,
+    power: 'none',
+    powerModule: 0,
   };
 
   constructor(private readonly ports: BuildPorts) {}
@@ -630,6 +644,16 @@ export class BuildController {
     const shown = offer !== null && (this.buildMode || why === null);
     state.upgrade = shown ? offer.to : 0;
     state.upgradeRefusal = shown ? why : null;
+    // Build Mode tags a turret or a Power Node with whether it has power, even one just out of reach, as the ring is: a base is read from a little way off.
+    const aimed =
+      this.buildMode && !this.down && aim.on === 'block'
+        ? moduleOfShape(stateShape(aim.targetState))
+        : undefined;
+    const tagged = aimed && receivesPower(aimed.id) ? aimed : undefined;
+    state.power = tagged
+      ? (this.ports.power?.(aim.target.x, aim.target.y, aim.target.z) ?? 'none')
+      : 'none';
+    state.powerModule = tagged && state.power !== 'none' ? tagged.id : 0;
     if (this.armed) state.crosshair = 'blaster';
     else if (!aim.hasPlace) state.crosshair = 'none';
     else if (!aim.placeRefusal) state.crosshair = 'place';
