@@ -607,7 +607,7 @@ The film is ten fields of particles (7,180 instanced quads between them, one dra
 - **The camera is on rails.** Every scene is one track, so nothing is aimed at by what is on the screen: if a valley's trees or rocks stand in a shot (the clearing's trees at the touchdown, the pines in the first scene) they are simply there. The camera clears the ground by 45 centimeters and nothing else.
 - **Frame rate is unmeasured.** The pictures are software-rendered, which gives no frame rate. The film's cost in draws and triangles is above; how it runs on a real GPU, and how long its first second takes while the shaders compile, are for the first look on a real machine.
 - **Seen only in software-rendered pictures.** The flashes, the bloom on the fireball and the Core, the glow of the eyes and the title's glow, which the bloom and the tone mapper shape, are judged there.
-- **Two white flashes.** At the touchdown (0.85 of the screen, over half a second) and at the stop (0.3 over nine tenths of a second), and nothing flickers faster than that. The film is not offered to a player whose system asks for reduced motion.
+- **Two white flashes.** At the touchdown (0.85 of the screen, over half a second) and at the stop (0.3 over nine tenths of a second), and nothing flickers faster than that. A player whose system asks for reduced motion gets the film with the flashes at a third of their strength and the camera held steady.
 - **English only, and one length.** The captions are not translated, and the film is 43 seconds for every new game; the skip is always there.
 
 ## Phase 5a: salvage

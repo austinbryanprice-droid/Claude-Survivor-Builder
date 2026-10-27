@@ -12,6 +12,8 @@ export interface IntroAttachOptions {
   readonly valley: () => ValleyWorld | null;
   /** Whether a fresh run should open with the film, asked when the mouse is first requested. */
   readonly wanted: () => boolean;
+  /** Whether the player's system asks for less motion, which makes the film calmer. */
+  readonly calm: () => boolean;
 }
 
 /** Seconds between looks for the heaps of debris, which come with the multiplayer code and so can turn up after the film has begun. */
@@ -22,7 +24,7 @@ const HEAPS_LOOK_EVERY = 0.25;
  * plays it pays nothing for it. This is the one place that knows both the film and the valley: it
  * tells the film where the crash site is and how to put the wreck on and take it off.
  */
-export function attachIntro({ game, valley, wanted }: IntroAttachOptions): IntroController {
+export function attachIntro({ game, valley, wanted, calm }: IntroAttachOptions): IntroController {
   let heaps: Object3D | null = null;
   let lookedAt = Number.NEGATIVE_INFINITY;
   const findHeaps = (): Object3D | null => {
@@ -55,5 +57,5 @@ export function attachIntro({ game, valley, wanted }: IntroAttachOptions): Intro
       },
     };
   };
-  return createIntroController({ game, site, wanted });
+  return createIntroController({ game, site, wanted, calm });
 }

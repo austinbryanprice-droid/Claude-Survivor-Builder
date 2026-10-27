@@ -35,8 +35,10 @@ jobs:
   # itself). Side by side they take the time of the longer one, which kept the run well inside its
   # limit as the game grew; in one job they were at ten and a half of fifteen minutes. The Chromium
   # project then grew to thirteen and a half minutes on a good runner, and the same tests took one
-  # and a half times as long on a slow one, so it runs as two halves. Playwright cuts them by test,
-  # in file order, and the halves come out within a minute of each other.
+  # and a half times as long on a slow one, so it ran as two halves. The intro film's tests added
+  # six minutes more, and one half was cancelled at the limit on a slow runner (the other took
+  # eighteen and a half of twenty without them), so it runs as three thirds. Playwright cuts them
+  # by test, in file order, and the thirds come out within a couple of minutes of each other.
   browser:
     name: browser (${{ matrix.name }})
     runs-on: ubuntu-24.04
@@ -45,8 +47,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: chromium 1/2, project: chromium, shard: 1/2 }
-          - { name: chromium 2/2, project: chromium, shard: 2/2 }
+          - { name: chromium 1/3, project: chromium, shard: 1/3 }
+          - { name: chromium 2/3, project: chromium, shard: 2/3 }
+          - { name: chromium 3/3, project: chromium, shard: 3/3 }
           - { name: multiplayer, project: multiplayer, shard: 1/1 }
     steps:
       - uses: actions/checkout@v7

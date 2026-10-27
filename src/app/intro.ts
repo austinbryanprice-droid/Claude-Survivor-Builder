@@ -31,6 +31,8 @@ export interface IntroControllerOptions {
   readonly site: () => IntroSite | null;
   /** Whether a fresh run should open with the film: asked when the mouse is first requested. */
   readonly wanted: () => boolean;
+  /** Whether the player's system asks for less motion, which makes the film calmer: asked as each film begins. */
+  readonly calm: () => boolean;
 }
 
 export interface IntroController {
@@ -56,6 +58,7 @@ export function createIntroController({
   game,
   site,
   wanted,
+  calm,
 }: IntroControllerOptions): IntroController {
   const { input } = game;
   const overlay = createIntroOverlay();
@@ -106,6 +109,7 @@ export function createIntroController({
       onFrame: (frame) => overlay.set(frame),
       onEnd,
       holdAt: heldAt,
+      calm: calm(),
     });
     playback = film;
     document.body.classList.add('intro-playing');
