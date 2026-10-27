@@ -21,6 +21,8 @@ export interface PausePanel {
 export interface PausePanelOptions {
   /** Offers the Time of day choice, a preview of the light at each hour for development. */
   readonly skyPreview?: boolean;
+  /** Plays the intro film now (the card offers to, and keeps the choice of playing it on a new game, only when it can). */
+  readonly watchIntro?: () => void;
 }
 
 interface Control {
@@ -53,7 +55,7 @@ const capitalized = (text: string): string => text.charAt(0).toUpperCase() + tex
 export function createPausePanel(
   game: Game,
   buildId: string,
-  { skyPreview = false }: PausePanelOptions = {},
+  { skyPreview = false, watchIntro }: PausePanelOptions = {},
 ): PausePanel {
   const root = el('section', 'pause');
   root.setAttribute('role', 'dialog');
@@ -77,6 +79,15 @@ export function createPausePanel(
     game.input.requestLock();
   });
   card.append(button);
+  if (watchIntro) {
+    const watch = el('button', 'quiet-button watch-intro', 'Watch the intro');
+    watch.type = 'button';
+    watch.addEventListener('click', (event) => {
+      event.stopPropagation();
+      watchIntro();
+    });
+    card.append(watch);
+  }
 
   const hint = el('p', 'hint');
   hint.setAttribute('role', 'status');
@@ -129,6 +140,19 @@ export function createPausePanel(
   });
   invert.append(invertBox, el('span', undefined, 'Invert vertical look'));
   settingsBlock.append(invert);
+
+  if (watchIntro) {
+    const intro = el('label', 'setting toggle');
+    const introBox = el('input');
+    introBox.type = 'checkbox';
+    introBox.checked = game.settings.intro;
+    introBox.addEventListener('change', () => {
+      game.settings.intro = introBox.checked;
+      saveSettings(game.settings);
+    });
+    intro.append(introBox, el('span', undefined, 'Play the intro when a new game starts'));
+    settingsBlock.append(intro);
+  }
 
   const choice = (
     label: string,

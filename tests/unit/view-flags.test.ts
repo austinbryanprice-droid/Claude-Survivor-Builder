@@ -16,6 +16,8 @@ describe('view URL switches', () => {
     expect(v.waves).toBe(true);
     expect(v.stock).toBeNull();
     expect(v.research).toBeNull();
+    expect(v.intro).toBe('auto');
+    expect(v.introAt).toBeNull();
     expect(v.freeze).toBe(false);
     expect(v.terrain).toBe('surface-nets');
     expect(v.scale).toBeNull();
@@ -100,6 +102,29 @@ describe('view URL switches', () => {
     }
     expect(readViewFlags('?research').research).toBeNull();
     expect(readViewFlags('?stock=40&research=100')).toMatchObject({ stock: 40, research: 100 });
+  });
+
+  it('asks for the opening film, or for none, and otherwise leaves it to the settings', () => {
+    for (const on of ['?intro', '?intro=', '?intro=on', '?intro=1', '?intro=true', '?intro=ON']) {
+      expect(readViewFlags(on).intro, on).toBe('on');
+    }
+    for (const off of ['?intro=off', '?intro=0', '?intro=false', '?intro=OFF']) {
+      expect(readViewFlags(off).intro, off).toBe('off');
+    }
+    for (const other of ['', '?intro=maybe', '?intro=2', '?hud=0']) {
+      expect(readViewFlags(other).intro, other).toBe('auto');
+    }
+  });
+
+  it('holds the film at the second it is asked for, for pictures and tests', () => {
+    expect(readViewFlags('?introAt=12.5').introAt).toBe(12.5);
+    expect(readViewFlags('?introAt=0').introAt).toBe(0);
+    expect(readViewFlags('?introAt=44').introAt).toBe(44);
+    for (const bad of ['-1', 'soon', '', ' ', 'NaN', 'Infinity']) {
+      expect(readViewFlags(`?introAt=${bad}`).introAt, bad).toBeNull();
+    }
+    expect(readViewFlags('?introAt').introAt).toBeNull();
+    expect(readViewFlags('?intro=on&introAt=7')).toMatchObject({ intro: 'on', introAt: 7 });
   });
 
   it('picks the presets the benchmark runs, once each and in the order given', () => {
