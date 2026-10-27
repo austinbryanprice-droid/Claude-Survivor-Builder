@@ -148,6 +148,13 @@ const drawn = (page: Page): Promise<number> => read<number>(page, 'game.world.vi
 const rejections = async (page: Page): Promise<string[]> =>
   (await read<{ reason: string }[]>(page, 'mp.rejections()')).map((r) => r.reason);
 const shotsOf = (page: Page): Promise<Shot[]> => read<Shot[]>(page, 'mp.shots().shots');
+/**
+ * How many turret shots this screen has heard of that felled a machine. This is what tells a machine
+ * has fallen: the screen's list of machines is empty before it has seen the machine at all, which on
+ * a slow frame is after the turret's first shot.
+ */
+const turretKills = async (page: Page): Promise<number> =>
+  (await shotsOf(page)).filter((shot) => shot.turret && shot.flags & SHOT_FLAG.kill).length;
 const machines = (page: Page): Promise<Machine[]> => read<Machine[]>(page, 'mp.enemies()');
 const setPool = (page: Page, material: number, amount: number): Promise<void> =>
   page.evaluate(([m, count]) => window.__ashbound!.mp!.setPool(m!, count!), [
@@ -392,6 +399,7 @@ test.describe('the Basic Turret', () => {
     });
 
     await test.step('it keeps firing at its own pace until the machine falls, and the kill is reported', async () => {
+      await poll(() => turretKills(page)).toBe(1);
       await poll(async () => (await machines(page)).length).toBe(0);
       const shots = (await shotsOf(page)).filter((shot) => shot.turret);
       expect(shots.length).toBeGreaterThanOrEqual(
@@ -627,10 +635,11 @@ test.describe('raising the Basic Turret', () => {
 
     await test.step('it fires the bolt of the Heavy Turret, which the first level could not fell the machine with so soon', async () => {
       expect(await sendCrawlerNear(page, cell)).not.toBeNull();
-      // The machine is on screen a frame after the host sends it: wait for the first shot at it, then for it to fall.
+      // The machine is on screen a frame after the host sends it: wait for the first shot at it, then for the kill.
       await poll(
         async () => (await shotsOf(page)).filter((shot) => shot.turret).length,
       ).toBeGreaterThan(0);
+      await poll(() => turretKills(page)).toBe(1);
       await poll(async () => (await machines(page)).length).toBe(0);
       const shots = (await shotsOf(page)).filter((shot) => shot.turret);
       const heavy = TURRET.levels[2]!;
