@@ -9,6 +9,7 @@ import {
 } from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { LAMP_LIGHT } from '../../engine/lamps';
 import {
   MATERIAL,
   MODULE,
@@ -61,7 +62,13 @@ export const MODULE_LOOKS: Readonly<Record<ModuleLook, ModuleLookSpec>> = {
   lights: { color: '#0e2f36', gloss: 0.5, metalness: 0.1, glow: '#3ad1e0', glowIntensity: 1.4 },
   screen: { color: '#0e2f36', gloss: 0.9, metalness: 0.1, glow: '#2aa9b8', glowIntensity: 0.75 },
   beacon: { color: '#7a4a12', gloss: 0.3, metalness: 0.2, glow: '#f2a43a', glowIntensity: 2.2 },
-  lamp: { color: '#6a5530', gloss: 0.3, metalness: 0.1, glow: '#ffc778', glowIntensity: 2.0 },
+  lamp: {
+    color: '#6a5530',
+    gloss: 0.3,
+    metalness: 0.1,
+    glow: LAMP_LIGHT.color,
+    glowIntensity: 2.0,
+  },
 };
 
 /** The looks a model is made of, in the order they are drawn. */
@@ -649,9 +656,11 @@ function bed(): Parts {
 }
 
 /** How far the lamp's head leans toward the ground in front of it, in radians (about fourteen degrees). */
-const LAMP_TILT = 0.25;
+export const LAMP_TILT = 0.25;
 /** Where the head sits on the mast: the height above the cell's floor of the point it leans about. */
-const LAMP_HEIGHT = 0.8;
+export const LAMP_HEIGHT = 0.8;
+/** How far in front of the point the head leans about the face of the lens is, before the lean. */
+export const LAMP_LENS = 0.2415;
 
 /**
  * Light: a floodlight on a mast, on a small steel pad. A slender mast rises from a collar to a head that
@@ -668,7 +677,7 @@ function light(): Parts {
     post(0.1, 0.045, 0, -0.085, 0, 8),
   ];
   const frame = [box(0.02, 0.12, 0.28, 0.23, 0, 0, 0)];
-  const lens = [box(0.012, 0.09, 0.22, 0.2415, 0, 0, 0)];
+  const lens = [box(0.012, 0.09, 0.22, LAMP_LENS, 0, 0, 0)];
   for (const part of [...housing, ...frame, ...lens]) {
     part.rotateZ(-LAMP_TILT);
     part.translate(0, LAMP_HEIGHT, 0);

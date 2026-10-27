@@ -52,7 +52,7 @@ export function createValleyWorld(
   // A demo is on screen from the first frame; blocks that arrive in play go through the remesh budget.
   if (built) view.structures.meshAll();
   // After the view, whose modules are drawn by the time the watcher dresses them.
-  const power = new PowerWatcher(voxels, view.modules);
+  const power = new PowerWatcher(voxels, view.modules, stage.atmosphere.lamps);
   const { grid } = terrain;
   const groundAt = (x: number, z: number): number => grid.groundAt(x, z);
   // The Core is solid cells to movement; the ground the cursor and the camera measure also knows it, so
