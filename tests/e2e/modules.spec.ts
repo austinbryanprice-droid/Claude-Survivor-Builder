@@ -264,6 +264,9 @@ test.describe('the Research Terminal', () => {
       const game = window.__ashbound?.game;
       if (game) game.teleport(x, game.world.groundAt(x, z) + 0.05, z, 0);
     }, SPOT);
+    // The host learns where the player stands when a frame runs. A command that gets there first is turned away as
+    // out of reach, which is what a slow runner showed.
+    await frames(page, 2);
     const place = (dx: number, dz: number, state: number, up = 0): Promise<Cell> =>
       page.evaluate(([a, b, s, u]) => window.__ashbound!.mp!.placeNear(a!, b!, s!, u), [
         dx,

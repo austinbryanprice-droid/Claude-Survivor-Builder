@@ -47,6 +47,10 @@ const BOLT_WIDTH = 0.0075;
 const BOLT_NEAREST = 2.5;
 /** A bolt fades in over this many blocks from the gun, so that it does not begin as a smear in front of the player. */
 const BOLT_FADE_IN = [0.3, 4] as const;
+/** The heaviest a bolt is drawn, as a multiple of a player's: a heavy gun's, a little thicker than twice. */
+const MAX_HEFT = 2.5;
+/** How heavy a gun's `heft` is drawn: 1 for a player's, more for a heavier gun, never past `MAX_HEFT`, and 1 for a number that makes no sense. */
+const weightOf = (heft: number): number => (heft > 1 ? Math.min(heft, MAX_HEFT) : 1);
 /** A bolt stays on screen at least this long, however near its mark: the shortest shots would last two frames. */
 const BOLT_MIN_LIFE = 0.1;
 
@@ -283,11 +287,11 @@ export interface ShotFx {
   /**
    * A bolt from `from` to `to`, in the color of whoever fired it. It flies from the one to the other
    * and fades. Returns the seconds its head takes to arrive, which is the `delay` for what it does there
-   * (0 for a bolt that goes nowhere).
+   * (0 for a bolt that goes nowhere). A `heft` above 1 (a heavy gun's) draws it wider and brighter.
    */
-  bolt(from: Vec3, to: Vec3, color: string): number;
-  /** The flash at a muzzle at `at`, with a few sparks thrown along `dir`, the way the bolt leaves. */
-  muzzle(at: Vec3, dir: Vec3, color: string): void;
+  bolt(from: Vec3, to: Vec3, color: string, heft?: number): number;
+  /** The flash at a muzzle at `at`, with a few sparks thrown along `dir`, the way the bolt leaves; a `heft` above 1 swells the flash. */
+  muzzle(at: Vec3, dir: Vec3, color: string, heft?: number): void;
   /** A bolt landing at `at`, flying along `dir`: a flash and sparks thrown back the way it came, `delay` seconds from now. */
   impact(at: Vec3, dir: Vec3, color: string, delay?: number): void;
   /** A machine falling apart at `at`, `delay` seconds from now. */
@@ -515,7 +519,7 @@ export function createShotFx({ seed = 0x5107 }: ShotFxOptions = {}): ShotFx {
   return {
     object,
 
-    bolt(from, to, color) {
+    bolt(from, to, color, heft = 1) {
       const length = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z);
       if (!Number.isFinite(length) || length <= 0.01) return 0;
       const travel = length + BOLT_TRAIL;
@@ -525,8 +529,11 @@ export function createShotFx({ seed = 0x5107 }: ShotFxOptions = {}): ShotFx {
       boltsWritten = Math.min(BOLT_CAPACITY, boltsWritten + 1);
       boltFrom.set([from.x, from.y, from.z], i * 3);
       boltTo.set([to.x, to.y, to.z], i * 3);
-      boltInfo.set([time, travel / life, BOLT_TRAIL, BOLT_WIDTH], i * 4);
-      boltColor.set(rgb(color), i * 3);
+      const weight = weightOf(heft);
+      boltInfo.set([time, travel / life, BOLT_TRAIL, BOLT_WIDTH * weight], i * 4);
+      // A heavier bolt is brighter as well as wider: its color is turned up, which the additive light shows.
+      const [r, g, b] = rgb(color);
+      boltColor.set([r * weight ** 0.5, g * weight ** 0.5, b * weight ** 0.5], i * 3);
       boltEnd[i] = time + life;
       boltsUntil = Math.max(boltsUntil, time + life);
       boltsChanged = true;
@@ -534,9 +541,9 @@ export function createShotFx({ seed = 0x5107 }: ShotFxOptions = {}): ShotFx {
       return (length * life) / travel;
     },
 
-    muzzle(at, dir, color) {
+    muzzle(at, dir, color, heft = 1) {
       const c = rgb(color);
-      spark(at, still, FLASH.muzzle.life, FLASH.muzzle.size, true, c, 0);
+      spark(at, still, FLASH.muzzle.life, FLASH.muzzle.size * weightOf(heft) ** 0.5, true, c, 0);
       spray(at, [dir.x, dir.y, dir.z], SPRAY.muzzle, [c], 0);
     },
 

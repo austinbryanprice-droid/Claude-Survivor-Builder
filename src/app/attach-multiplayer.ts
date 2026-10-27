@@ -35,6 +35,8 @@ export interface AttachOptions {
   forEachModule: ModuleSource;
   /** Turns the head of the turret standing in a cell toward a point (where its shot ended), on this screen. */
   aimTurret(x: number, y: number, z: number, tx: number, ty: number, tz: number): void;
+  /** The level of the turret standing in a cell on this screen: a heavier gun draws a heavier bolt. */
+  levelOfTurret(x: number, y: number, z: number): number;
   flags: NetFlags;
   buildId: string;
   /** Begin the run at the start of this night (the `?night=` switch), or at the first morning when null. */
@@ -65,6 +67,7 @@ export function attachMultiplayer({
   aimedDebris,
   forEachModule,
   aimTurret,
+  levelOfTurret,
   flags,
   buildId,
   night,
@@ -125,6 +128,7 @@ export function attachMultiplayer({
     rayWorld,
     aimedDebris,
     aimTurret,
+    levelOfTurret,
     scene: game.stage.world,
     registry: game.stage.registry,
     input: game.input,

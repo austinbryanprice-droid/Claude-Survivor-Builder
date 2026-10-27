@@ -3,7 +3,10 @@ import {
   MATERIALS,
   isKnownState,
   materialOf,
+  moduleLevelCost,
+  moduleLevels,
   moduleOfShape,
+  stateMaterial,
   stateShape,
   withMaterial,
 } from '../../shared/blocks';
@@ -33,15 +36,17 @@ export interface PieceCost {
 /**
  * What placing `state` costs, or null for a state the tables do not know (the world refuses it
  * anyway). A block costs its material's price, whatever its shape; a module costs what its own
- * table says, in the material that names.
+ * table says for the level it is at, in the material that names. A module above its first level is
+ * not placed but raised, so this is what raising a module to that level costs, and what breaking one
+ * that stands at it gives back.
  */
 export function pieceCost(state: CellState): PieceCost | null {
   const module = moduleOfShape(stateShape(state));
   if (module) {
-    const paid = MATERIALS.find((m) => m.id === module.cost.material);
-    return paid && isKnownState(state)
-      ? { material: paid.id, name: paid.name, amount: module.cost.amount }
-      : null;
+    if (!isKnownState(state)) return null;
+    const price = moduleLevelCost(module, stateMaterial(state));
+    const paid = MATERIALS.find((m) => m.id === price.material);
+    return paid ? { material: paid.id, name: paid.name, amount: price.amount } : null;
   }
   const material = materialOf(state);
   return material ? { material: material.id, name: material.name, amount: material.cost } : null;
@@ -62,12 +67,16 @@ export function needsResearch(name: string): string {
 
 /**
  * Why `state` may not be placed by a crew that has researched up to `tier`, or null when its material
- * is open to them. A module's material byte is its level, not a material, so a module is never locked
- * by a tier; the research that opens the other modules comes with them (5g, 5h).
+ * is open to them. A module's material byte is its level, not a material, so what opens a module is
+ * the material that pays for it: the Terminal and the Basic Turret are paid in Scrap and never locked,
+ * and the steps up the turret's ladder are opened by Composite and Alloy, as a block of them is. The
+ * research that opens the other modules comes with them (5g, 5h).
  */
 export function lockedRefusal(tier: number, state: CellState): string | null {
-  if (moduleOfShape(stateShape(state))) return null;
-  const material = materialOf(state);
+  const price = pieceCost(state);
+  const material = moduleOfShape(stateShape(state))
+    ? MATERIALS.find((m) => m.id === price?.material)
+    : materialOf(state);
   return material && material.tier > tier ? needsResearch(material.name) : null;
 }
 
@@ -192,19 +201,32 @@ export interface UpgradeStep {
 }
 
 /**
- * What upgrading `state` in place makes of it, or null when it cannot be upgraded: nothing stands
- * there, the material is the best there is (Energy-Infused), or it is a module, whose levels come
- * with the modules that have more than one (the turret, 5f). The better piece costs what a new one
- * of the same shape costs.
+ * The piece `state` becomes when it is upgraded one step: a block in the next material up, a module
+ * at its next level (the same shape, so it keeps its facing). Null when there is no better self: the
+ * material is the best there is (Energy-Infused), or the module is at the top of its ladder.
  */
-export function upgradeStep(state: CellState): UpgradeStep | null {
-  if (state === 0 || moduleOfShape(stateShape(state))) return null;
+function betterPiece(state: CellState): CellState | null {
+  const module = moduleOfShape(stateShape(state));
+  if (module) {
+    const level = stateMaterial(state);
+    return level >= 1 && level < moduleLevels(module) ? withMaterial(state, level + 1) : null;
+  }
   const material = materialOf(state);
   const better = material && MATERIALS.find((m) => m.tier === material.tier + 1);
-  if (!better) return null;
-  const to = withMaterial(state, better.id);
-  const cost = pieceCost(to);
-  return cost ? { from: state, to, cost } : null;
+  return better ? withMaterial(state, better.id) : null;
+}
+
+/**
+ * What upgrading `state` in place makes of it, or null when it cannot be upgraded: nothing stands
+ * there, or it is as good as it gets (a block of Energy-Infused, a module at the top of its ladder, a
+ * module with no ladder such as the Terminal). The better piece costs what a new one of the same
+ * shape costs, or for a module what its table says for the level.
+ */
+export function upgradeStep(state: CellState): UpgradeStep | null {
+  if (state === 0) return null;
+  const to = betterPiece(state);
+  const cost = to === null ? null : pieceCost(to);
+  return to !== null && cost ? { from: state, to, cost } : null;
 }
 
 /** Why `state` could not be upgraded whatever the crew holds: nothing is there, or it is as good as it gets. Null when it has a better self. */

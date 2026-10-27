@@ -10,6 +10,7 @@ import type { RayWorld } from '../../src/shared/raycast';
 import { SHOT_FLAG, muzzleOf } from '../../src/shared/shot';
 import { TURRET_GUN, turretMuzzle } from '../../src/shared/turret';
 import { BLASTER } from '../../src/systems/survival/balance';
+import { turretLevel } from '../../src/systems/survival/turrets';
 
 interface At {
   x: number;
@@ -36,14 +37,21 @@ function fakeFx() {
     impact: [] as { at: At; dir: At; color: string; delay: number | undefined }[],
     burst: [] as { at: At; delay: number | undefined }[],
     update: [] as number[],
+    /** How heavy each bolt and each muzzle flash was asked to be drawn, in the order of `bolt` and `muzzle`. */
+    boltHeft: [] as (number | undefined)[],
+    muzzleHeft: [] as (number | undefined)[],
   };
   const fx: ShotFx = {
     object: new Group(),
-    bolt: (from, to, color) => {
+    bolt: (from, to, color, heft) => {
       calls.bolt.push({ from: { ...from }, to: { ...to }, color });
+      calls.boltHeft.push(heft);
       return Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z) / FLIGHT_SPEED;
     },
-    muzzle: (at, dir, color) => calls.muzzle.push({ at: { ...at }, dir: { ...dir }, color }),
+    muzzle: (at, dir, color, heft) => {
+      calls.muzzle.push({ at: { ...at }, dir: { ...dir }, color });
+      calls.muzzleHeft.push(heft);
+    },
     impact: (at, dir, color, delay) =>
       calls.impact.push({ at: { ...at }, dir: { ...dir }, color, delay }),
     burst: (at, delay) => calls.burst.push({ at: { ...at }, delay }),
@@ -89,6 +97,7 @@ function setup(
     remotes?: RemotePose[];
     ground?: RayWorld | null;
     aimTurret?: (x: number, y: number, z: number, tx: number, ty: number, tz: number) => void;
+    levelOfTurret?: (x: number, y: number, z: number) => number;
   } = {},
 ) {
   const { fx, calls } = fakeFx();
@@ -108,6 +117,7 @@ function setup(
     session,
     rayWorld: () => (options.ground === undefined ? FLAT : options.ground),
     ...(options.aimTurret ? { aimTurret: options.aimTurret } : {}),
+    ...(options.levelOfTurret ? { levelOfTurret: options.levelOfTurret } : {}),
     player: {
       read(out) {
         Object.assign(out, me);
@@ -445,5 +455,38 @@ describe('a turret’s shot, drawn when the host reports it', () => {
     });
     effects.hear({ by: 2, x: 4, y: 11.62, z: -25, flags: 0, enemy: 0 });
     expect(turned).toEqual([]);
+  });
+
+  it('draws the bolt as heavy as the gun of the turret’s level, which this screen reads from the cell', () => {
+    const OTHER = [CELL[0] + 2, FLOOR, CELL[2]] as const;
+    const asked: number[][] = [];
+    const { effects, calls } = setup({
+      levelOfTurret: (...cell) => {
+        asked.push(cell);
+        return cell[0] === CELL[0] ? 3 : 1;
+      },
+    });
+    effects.hear({ by: 0, ...END, flags: 0, enemy: 0, turret: CELL });
+    effects.hear({ by: 0, ...END, flags: 0, enemy: 0, turret: OTHER });
+    expect(asked).toEqual([[...CELL], [...OTHER]]);
+    expect(turretLevel(3).heft).toBeGreaterThan(turretLevel(1).heft);
+    expect(calls.boltHeft).toEqual([turretLevel(3).heft, turretLevel(1).heft]);
+    // The flash at the muzzle is as heavy as the bolt that leaves it, and the record of the shot says how heavy.
+    expect(calls.muzzleHeft).toEqual(calls.boltHeft);
+    expect(effects.debug().shots.map((shot) => shot.heft)).toEqual(calls.boltHeft);
+  });
+
+  it('draws a turret it cannot read the level of as the first, and a player’s shot as a player’s', () => {
+    const unread = setup({ levelOfTurret: () => 0 });
+    unread.effects.hear({ by: 0, ...END, flags: 0, enemy: 0, turret: CELL });
+    const unasked = setup();
+    unasked.effects.hear({ by: 0, ...END, flags: 0, enemy: 0, turret: CELL });
+    const player = setup({ remotes: [remote(2, 2, 4, 0)], levelOfTurret: () => 3 });
+    player.effects.hear({ by: 2, x: 4, y: 11.62, z: -25, flags: 0, enemy: 0 });
+    expect(unread.calls.boltHeft).toEqual([turretLevel(1).heft]);
+    expect(unasked.calls.boltHeft).toEqual([turretLevel(1).heft]);
+    expect(player.calls.boltHeft).toEqual([1]);
+    expect(player.calls.muzzleHeft).toEqual([1]);
+    expect(player.effects.debug().shots[0]).not.toHaveProperty('heft');
   });
 });

@@ -6,6 +6,7 @@ import {
   isKnownState,
   moduleOfShape,
   slabShape,
+  stateMaterial,
   stateShape,
 } from '../../shared/blocks';
 import { shapeBoxes, type CellBox } from '../../shared/shapes';
@@ -211,6 +212,9 @@ export class VoxelWorld implements BlockWorld {
 
   checkPlace(x: number, y: number, z: number, state: CellState): PlaceRefusal | null {
     if (!isKnownState(state)) return 'unknown-block';
+    // A module is built at its first level and raised from there (Phase 5f2): one named at a higher
+    // level would be placed at the price of the first.
+    if (isModule(state) && stateMaterial(state) !== 1) return 'unknown-block';
     if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z))
       return 'out-of-bounds';
     if (!inBuildBounds(x, y, z)) return 'out-of-bounds';

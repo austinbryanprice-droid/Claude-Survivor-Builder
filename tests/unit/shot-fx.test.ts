@@ -95,6 +95,32 @@ describe('the bolts of the blaster', () => {
     expect(bolt('iBolt')[4]).toBeCloseTo(1, 6);
   });
 
+  it('are drawn wider and brighter for a heavy gun, and no more than a limit however heavy', () => {
+    const { fx, bolt } = setup();
+    for (const heft of [1, 2, 1000]) fx.bolt(ORIGIN, { x: 0, y: 0, z: -20 }, '#ff0000', heft);
+    const width = (i: number) => bolt('iBolt')[i * 4 + 3] as number;
+    const red = (i: number) => bolt('iColor')[i * 3] as number;
+    expect(width(1)).toBeCloseTo(width(0) * 2, 6);
+    expect(red(1)).toBeCloseTo(red(0) * Math.SQRT2, 6);
+    // Past the limit a bolt is drawn at the limit: a little thicker than twice, and no thicker.
+    expect(width(2)).toBeGreaterThan(width(1));
+    expect(width(2)).toBeLessThan(width(0) * 3);
+    expect(red(2)).toBeGreaterThan(red(1));
+    // The shape of the bolt is the same, only its weight changes: where it flies and how fast.
+    expect(bolt('iBolt')[1]).toBe(bolt('iBolt')[5]);
+    expect(Array.from(bolt('iTo').slice(0, 3))).toEqual(Array.from(bolt('iTo').slice(3, 6)));
+  });
+
+  it('are drawn as a player’s when the heft is lighter than one or is not a number', () => {
+    const { fx, bolt } = setup();
+    const hefts = [undefined, 1, 0.2, 0, -4, Number.NaN];
+    for (const heft of hefts) fx.bolt(ORIGIN, { x: 0, y: 0, z: -20 }, '#ff0000', heft);
+    hefts.forEach((heft, i) => {
+      expect(bolt('iBolt')[i * 4 + 3], `heft ${heft}`).toBe(bolt('iBolt')[3]);
+      expect(bolt('iColor')[i * 3], `heft ${heft}`).toBe(1);
+    });
+  });
+
   it('are kept in a ring: when there is no more room, the oldest make way', () => {
     const { fx, boltCount } = setup();
     for (let i = 0; i < 100; i++) fx.bolt(ORIGIN, { x: 0, y: 0, z: -(i + 2) }, CYAN);
@@ -166,6 +192,19 @@ describe('the sparks of the blaster', () => {
     expect(Array.from(spark('iVelocity').slice(0, 3))).toEqual([0, 0, 0]);
     expect(spark('iOrigin')[3]).toBe(0);
     expect(spark('iOrigin')[7]).toBe(1);
+  });
+
+  it('swell the flash at the muzzle of a heavy gun, and no further than a limit', () => {
+    const { fx, spark } = setup();
+    for (const heft of [1, 2, 1000, Number.NaN]) fx.muzzle(ORIGIN, AWAY, CYAN, heft);
+    // The flash is the first of the five sparks a muzzle writes, and its size the third of its life.
+    const size = (muzzle: number) => spark('iLife')[muzzle * 5 * 4 + 2] as number;
+    expect(size(1) / size(0)).toBeCloseTo(Math.SQRT2, 6);
+    expect(size(2)).toBeGreaterThan(size(1));
+    expect(size(2) / size(0)).toBeLessThan(2);
+    expect(size(3)).toBe(size(0));
+    // The sparks thrown along the bolt are the same for any gun.
+    expect(fx.live().sparks).toBe(20);
   });
 
   it('are thrown the way the bolt goes from the muzzle, and back the way it came from a mark', () => {

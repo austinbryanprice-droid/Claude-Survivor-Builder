@@ -39,7 +39,7 @@ const CONTROLS: Control[] = [
   {
     keys: ['E'],
     label:
-      'Strip the heap of debris you are looking at, read the ladder of a Research Terminal, or upgrade the block to the next material',
+      'Strip the heap of debris you are looking at, read the ladder of a Research Terminal, or upgrade a block to the next material and a turret to its next level',
   },
   { keys: ['B'], label: 'Build Mode' },
   { keys: ['P', 'F3'], label: 'Graphics preset, frame times' },

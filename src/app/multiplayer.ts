@@ -56,6 +56,8 @@ export interface MultiplayerOptions {
   aimedDebris(): number;
   /** Turns the head of the turret standing in a cell toward a point (where its shot ended), on this screen. */
   aimTurret(x: number, y: number, z: number, tx: number, ty: number, tz: number): void;
+  /** The level of the turret standing in a cell on this screen (its cell's material byte): a heavier gun draws a heavier bolt. */
+  levelOfTurret(x: number, y: number, z: number): number;
   /** The scene node the other players' avatars are added to, and the materials they are lit with. */
   scene: Object3D;
   registry: MaterialRegistry;
@@ -235,6 +237,7 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     rayWorld: options.rayWorld,
     player: options.player,
     aimTurret: options.aimTurret,
+    levelOfTurret: options.levelOfTurret,
   });
   const stopShots = hub.onShot((shot) => shots.hear(shot));
   // A strip, anyone's, throws scrap off the heap it was taken from.

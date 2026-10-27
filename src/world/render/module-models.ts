@@ -8,7 +8,15 @@ import {
 } from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { MODULE, moduleFacing, moduleOfShape } from '../../shared/blocks';
+import {
+  MATERIAL,
+  MODULE,
+  moduleDef,
+  moduleFacing,
+  moduleLevelCost,
+  moduleLevels,
+  moduleOfShape,
+} from '../../shared/blocks';
 import { TURRET_GUN } from '../../shared/turret';
 
 /**
@@ -55,6 +63,47 @@ export const MODULE_LOOKS: Readonly<Record<ModuleLook, ModuleLookSpec>> = {
 /** The looks a model is made of, in the order they are drawn. */
 export const MODULE_LOOK_NAMES = Object.keys(MODULE_LOOKS) as readonly ModuleLook[];
 
+/** How each look of a model is drawn: the paint of a module at a level. */
+export type ModulePalette = Readonly<Record<ModuleLook, ModuleLookSpec>>;
+
+/**
+ * What a better grade repaints (docs/art-direction.md, the tiers). A module at a level that is paid for
+ * in Reinforced Composite wears the dress of a block of it, grey-green panels with cyan strips, and one
+ * paid for in Advanced Alloy brushed dark steel inlaid with amber and a pale lamp, as the heaps and the
+ * blocks of those materials do. The looks a grade does not name stay as they are.
+ */
+const GRADE_PAINT: Readonly<Record<number, Partial<ModulePalette>>> = {
+  [MATERIAL.composite]: {
+    plate: { color: '#41605a', gloss: 0.5, metalness: 0.5 },
+    trim: { color: '#86a69a', gloss: 0.55, metalness: 0.45 },
+    lights: { color: '#0e3a40', gloss: 0.5, metalness: 0.1, glow: '#3ad1e0', glowIntensity: 1.9 },
+  },
+  [MATERIAL.alloy]: {
+    plate: { color: '#4b5763', gloss: 0.6, metalness: 0.7 },
+    trim: { color: '#9aa8b6', gloss: 0.65, metalness: 0.65 },
+    amber: { color: '#c98a28', gloss: 0.4, metalness: 0.35, glow: '#f2a43a', glowIntensity: 1.3 },
+    lights: { color: '#3a3224', gloss: 0.5, metalness: 0.1, glow: '#ffe6b0', glowIntensity: 1.5 },
+  },
+};
+
+const palettes = new Map<number, ModulePalette>();
+
+/**
+ * The paint of a module at a level paid for in `material` (a `MATERIAL` id): the Core's palette for
+ * Scrap, and for a grade with no dress of its own, and the grade's dress over it otherwise. The same
+ * object comes back each time, so a renderer can keep one set of materials for each.
+ */
+export function modulePalette(material: number): ModulePalette {
+  const dress = GRADE_PAINT[material];
+  if (!dress) return MODULE_LOOKS;
+  let palette = palettes.get(material);
+  if (!palette) {
+    palette = { ...MODULE_LOOKS, ...dress };
+    palettes.set(material, palette);
+  }
+  return palette;
+}
+
 /** The merged geometry of a model for each look it uses, in model space. */
 export type ModuleModel = Readonly<Partial<Record<ModuleLook, BufferGeometry>>>;
 
@@ -72,6 +121,8 @@ export interface ModuleHead {
 export interface ModuleKit {
   readonly model: ModuleModel;
   readonly head?: ModuleHead;
+  /** The paint its looks are drawn in, which is the grade of the material that pays for its level. */
+  readonly palette: ModulePalette;
 }
 
 /**
@@ -251,58 +302,161 @@ function terminal(): Parts {
 }
 
 /**
- * The Basic Turret: a gun on a short column on a steel pad. The pad and the column stand still, with a
- * cyan strip down the front of the column so that the way the turret faces reads; the head (a housing
- * with a sleeve and a barrel, an amber ring at its tip and a cyan eye above it) turns about
- * `TURRET_GUN.pivot` to point where it shoots, and the tip of the barrel is `TURRET_GUN.reach` from the
- * pivot, which is where a bolt leaves (`turretMuzzle`). The head's swing stays above the column and
- * inside the cell.
+ * A round drum lying across the model along z, `width` wide and `radius` thick, centered at (x, y, z): a
+ * magazine on the side of a gun.
  */
-function turret(): Build {
-  const { pivot, reach } = TURRET_GUN;
+function drum(width: number, radius: number, x: number, y: number, z: number): BufferGeometry {
+  const geometry = new CylinderGeometry(radius, radius, width, 14);
+  geometry.rotateX(Math.PI / 2);
+  geometry.translate(x, y, z);
+  return geometry;
+}
+
+/**
+ * The pad and the column a turret stands on, the same at every level so that the three read as one
+ * family: a steel pad with a cyan strip down the front of the column, so that the way the turret faces
+ * reads, and the post the head sits on. The Auto Turret has a crate of ammunition behind its column,
+ * which its magazine is fed from, and the Heavy Turret blast shields along the sides of its pad.
+ */
+function turretBody(level: number): Parts {
   const corners = [-1, 1].flatMap((sx) => [-1, 1].map((sz) => [sx, sz] as const));
+  const plate = [
+    // The foundation under the pad: it meets the ground where the module floats over it.
+    box(0.5, 0.78, 0.5, 0, -0.59, 0, 0),
+    box(0.72, 0.36, 0.72, 0, -0.12, 0),
+    box(0.62, 0.12, 0.62, 0, 0.12, 0),
+    box(0.26, 0.17, 0.26, 0, 0.265, 0, 0.25),
+    post(0.15, 0.07, 0, 0.435, 0),
+  ];
+  const trim = [
+    box(0.66, 0.03, 0.66, 0, 0.18, 0, 0.4),
+    box(0.34, 0.03, 0.34, 0, 0.35, 0, 0.4),
+    ...corners.map(([sx, sz]) => box(0.07, 0.04, 0.07, sx * 0.27, 0.2, sz * 0.27, 0)),
+  ];
+  const lights = [box(0.012, 0.1, 0.1, 0.133, 0.265, 0, 0)];
+  // The strip round the pad is the light of the grade: cyan for Scrap and Composite, amber inlay for Alloy.
+  const amber: BufferGeometry[] = [];
+  (level >= 3 ? amber : lights).push(box(0.68, 0.02, 0.68, 0, 0.07, 0, 0));
+  if (level >= 2) {
+    plate.push(box(0.2, 0.13, 0.24, -0.22, 0.245, 0, 0.2));
+    trim.push(box(0.21, 0.02, 0.25, -0.22, 0.315, 0, 0.4));
+    lights.push(box(0.012, 0.04, 0.12, -0.119, 0.245, 0, 0));
+  }
+  if (level >= 3) {
+    for (const side of [-1, 1]) {
+      plate.push(box(0.34, 0.2, 0.05, 0.02, 0.28, side * 0.32, 0.25));
+      trim.push(box(0.36, 0.025, 0.06, 0.02, 0.395, side * 0.32, 0.4));
+      amber.push(box(0.2, 0.025, 0.012, 0.02, 0.26, side * 0.348, 0));
+    }
+  }
+  return { plate, trim, lights, ...(amber.length > 0 ? { amber } : {}) };
+}
+
+/**
+ * The head of the Basic Turret: a housing with a sleeve and a barrel, an amber ring at its tip and a
+ * cyan eye above it. The head turns about `TURRET_GUN.pivot` to point where it shoots, and the tip of
+ * the barrel is `TURRET_GUN.reach` from the pivot, which is where a bolt leaves (`turretMuzzle`). The
+ * head's swing stays above the column and inside the cell.
+ */
+function basicHead(): Parts {
+  const { reach } = TURRET_GUN;
   return {
-    body: {
-      plate: [
-        // The foundation under the pad: it meets the ground where the module floats over it.
-        box(0.5, 0.78, 0.5, 0, -0.59, 0, 0),
-        box(0.72, 0.36, 0.72, 0, -0.12, 0),
-        box(0.62, 0.12, 0.62, 0, 0.12, 0),
-        box(0.26, 0.17, 0.26, 0, 0.265, 0, 0.25),
-        post(0.15, 0.07, 0, 0.435, 0),
-      ],
-      trim: [
-        box(0.66, 0.03, 0.66, 0, 0.18, 0, 0.4),
-        box(0.34, 0.03, 0.34, 0, 0.35, 0, 0.4),
-        ...corners.map(([sx, sz]) => box(0.07, 0.04, 0.07, sx * 0.27, 0.2, sz * 0.27, 0)),
-      ],
-      lights: [box(0.68, 0.02, 0.68, 0, 0.07, 0, 0), box(0.012, 0.1, 0.1, 0.133, 0.265, 0, 0)],
-    },
-    head: {
-      pivot,
-      parts: {
-        plate: [
-          box(0.37, 0.24, 0.34, -0.015, 0, 0, 0.25),
-          tube(0.12, 0.065, 0.19, 0, 0),
-          tube(reach - 0.2, 0.032, (reach + 0.2) / 2, 0, 0, 10),
-        ],
-        trim: [
-          box(0.3, 0.035, 0.26, -0.03, 0.1375, 0, 0.4),
-          box(0.2, 0.1, 0.02, -0.04, 0, 0.18, 0),
-          box(0.2, 0.1, 0.02, -0.04, 0, -0.18, 0),
-        ],
-        amber: [
-          tube(0.04, 0.05, reach - 0.02, 0, 0, 10),
-          box(0.05, 0.02, 0.05, -0.1, 0.165, 0.08, 0),
-        ],
-        lights: [box(0.012, 0.03, 0.22, 0.176, 0.1, 0, 0), box(0.012, 0.06, 0.2, -0.206, 0, 0, 0)],
-      },
-    },
+    plate: [
+      box(0.37, 0.24, 0.34, -0.015, 0, 0, 0.25),
+      tube(0.12, 0.065, 0.19, 0, 0),
+      tube(reach - 0.2, 0.032, (reach + 0.2) / 2, 0, 0, 10),
+    ],
+    trim: [
+      box(0.3, 0.035, 0.26, -0.03, 0.1375, 0, 0.4),
+      box(0.2, 0.1, 0.02, -0.04, 0, 0.18, 0),
+      box(0.2, 0.1, 0.02, -0.04, 0, -0.18, 0),
+    ],
+    amber: [tube(0.04, 0.05, reach - 0.02, 0, 0, 10), box(0.05, 0.02, 0.05, -0.1, 0.165, 0.08, 0)],
+    lights: [box(0.012, 0.03, 0.22, 0.176, 0.1, 0, 0), box(0.012, 0.06, 0.2, -0.206, 0, 0, 0)],
   };
 }
 
+/**
+ * The head of the Auto Turret (Reinforced Composite): a rapid-fire gun. Two barrels lie side by side in
+ * a clamp that shows amber, which the bolt leaves from between, and a drum of ammunition rides on the
+ * side of a housing a little wider than the Basic Turret's, with a stronger cyan eye.
+ */
+function autoHead(): Parts {
+  const { reach } = TURRET_GUN;
+  const barrels = [-1, 1].map((side) =>
+    tube(reach - 0.14, 0.024, (reach + 0.14) / 2, 0, side * 0.06, 10),
+  );
+  const caps = [-1, 1].map((side) => tube(0.03, 0.028, reach - 0.02, 0, side * 0.06, 10));
+  return {
+    plate: [
+      box(0.38, 0.24, 0.36, -0.01, 0, 0, 0.25),
+      box(0.11, 0.13, 0.22, 0.185, 0, 0, 0.3),
+      ...barrels,
+      drum(0.1, 0.075, -0.08, -0.02, -0.255),
+    ],
+    trim: [
+      box(0.3, 0.035, 0.28, -0.025, 0.1375, 0, 0.4),
+      box(0.2, 0.1, 0.02, -0.03, 0, 0.19, 0),
+      box(0.2, 0.1, 0.02, -0.03, 0, -0.19, 0),
+      drum(0.02, 0.085, -0.08, -0.02, -0.31),
+    ],
+    amber: [
+      box(0.05, 0.07, 0.2, reach - 0.06, 0, 0, 0),
+      ...caps,
+      box(0.05, 0.02, 0.05, -0.1, 0.165, 0.08, 0),
+    ],
+    lights: [
+      box(0.012, 0.03, 0.24, 0.186, 0.1, 0, 0),
+      box(0.012, 0.06, 0.2, -0.196, 0, 0, 0),
+      box(0.03, 0.012, 0.012, -0.08, -0.02, -0.34, 0),
+    ],
+  };
+}
+
+/**
+ * The head of the Heavy Turret (Advanced Alloy): a cannon. A big housing with armored cheeks carries one
+ * thick barrel in a recoil sleeve and ends in a muzzle brake that glows amber, with a pale eye on a sensor
+ * block above. It is taller than the other heads and so sits a little higher on its pivot, which keeps its
+ * rear clear of the column when it lifts.
+ */
+function heavyHead(): Parts {
+  const { reach } = TURRET_GUN;
+  return {
+    plate: [
+      box(0.42, 0.3, 0.4, -0.02, 0.03, 0, 0.25),
+      tube(0.14, 0.08, 0.26, 0, 0),
+      tube(reach - 0.24, 0.045, (reach + 0.24) / 2 - 0.02, 0, 0, 12),
+      box(0.14, 0.05, 0.14, -0.08, 0.2, 0, 0.3),
+    ],
+    trim: [
+      box(0.3, 0.035, 0.3, -0.04, 0.1925, 0, 0.4),
+      box(0.28, 0.26, 0.04, -0.05, 0.03, 0.22, 0.2),
+      box(0.28, 0.26, 0.04, -0.05, 0.03, -0.22, 0.2),
+      box(0.1, 0.03, 0.12, 0.28, 0, 0, 0.3),
+    ],
+    amber: [
+      box(0.07, 0.11, 0.11, reach - 0.04, 0, 0, 0.15),
+      box(0.2, 0.02, 0.012, -0.05, 0.04, 0.242, 0),
+      box(0.2, 0.02, 0.012, -0.05, 0.04, -0.242, 0),
+    ],
+    lights: [box(0.012, 0.035, 0.28, 0.191, 0.12, 0, 0), box(0.04, 0.03, 0.08, -0.01, 0.2, 0, 0)],
+  };
+}
+
+/**
+ * The turrets: a gun on a short column on a steel pad. The pad and the column stand still, and the head
+ * turns about `TURRET_GUN.pivot` to point where it shoots. There are three, the Basic Turret and the two
+ * steps up its ladder (the Auto Turret and the Heavy Turret), which share the pad and the column and
+ * differ in the head and in the paint of their grade (`modulePalette`).
+ */
+function turret(level: number): Build {
+  const heads = [basicHead, autoHead, heavyHead];
+  const head = heads[Math.min(Math.max(1, level), heads.length) - 1] as () => Parts;
+  return { body: turretBody(level), head: { pivot: TURRET_GUN.pivot, parts: head() } };
+}
+
 /** The models, by module id. */
-const BUILDERS: Readonly<Record<number, () => Build>> = {
+const BUILDERS: Readonly<Record<number, (level: number) => Build>> = {
   [MODULE.terminal]: () => ({ body: terminal() }),
   [MODULE.turret]: turret,
 };
@@ -318,15 +472,21 @@ function mergeLooks(parts: Parts): ModuleModel {
 }
 
 /**
- * Builds the model of a module (`MODULE`): one merged geometry for each look its body uses, and the same
- * for its head if it has one. Undefined for a module the table has no picture of. The caller owns the
- * geometries and disposes them.
+ * Builds the model of a module (`MODULE`) at a level (1 is as it is built, and a level the module does not
+ * have is the nearest it does): one merged geometry for each look its body uses, and the same for its head
+ * if it has one, and the paint of the grade that pays for the level. Undefined for a module the table has
+ * no picture of. The caller owns the geometries and disposes them.
  */
-export function buildModuleKit(module: number): ModuleKit | undefined {
+export function buildModuleKit(module: number, level = 1): ModuleKit | undefined {
   const build = BUILDERS[module];
-  if (!build) return undefined;
-  const { body, head } = build();
-  const kit: ModuleKit = { model: mergeLooks(body) };
+  const def = moduleDef(module);
+  if (!build || !def) return undefined;
+  const at = Math.min(Math.max(1, Math.round(level)), moduleLevels(def));
+  const { body, head } = build(at);
+  const kit: ModuleKit = {
+    model: mergeLooks(body),
+    palette: modulePalette(moduleLevelCost(def, at).material),
+  };
   return head ? { ...kit, head: { pivot: head.pivot, model: mergeLooks(head.parts) } } : kit;
 }
 

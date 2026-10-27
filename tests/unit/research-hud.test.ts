@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
+import { MATERIAL, MODULE, SHAPE, moduleShape, packState } from '../../src/shared/blocks';
 import { createEconomyReading, type EconomyReading } from '../../src/shared/economy';
 import { RESEARCH_STEPS, tierAt } from '../../src/systems/economy/research';
 import {
@@ -282,6 +282,29 @@ describe('the lock on a piece', () => {
     expect(lockForPiece(SCRAP, reading(0))).toBeNull();
     expect(lockForPiece(0, reading(0))).toBeNull();
     expect(lockForPiece(COMPOSITE, reading(0, 0))).toBeNull();
+  });
+
+  it('follows the material that pays for a turret’s level, not the byte of its cell', () => {
+    const turret = (level: number) => packState(moduleShape(MODULE.turret, 0), level);
+    // The Basic Turret is paid in Scrap, the Auto Turret in Composite and the Heavy Turret in Alloy.
+    expect(lockForPiece(turret(1), reading(0))).toBeNull();
+    expect(lockForPiece(turret(2), reading(12))).toEqual({
+      name: 'Reinforced Composite',
+      have: 12,
+      need: 20,
+      terminal: false,
+    });
+    expect(lockForPiece(turret(3), reading(30))).toEqual({
+      name: 'Advanced Alloy',
+      have: 30,
+      need: 55,
+      terminal: false,
+    });
+    expect(lockForPiece(turret(2), reading(24, 400, 0))).toMatchObject({ terminal: true });
+    expect(lockForPiece(turret(2), reading(20))).toBeNull();
+    expect(lockForPiece(turret(3), reading(0, 0))).toBeNull();
+    // The Terminal is paid in Scrap, so it is never closed.
+    expect(lockForPiece(packState(moduleShape(MODULE.terminal, 0), 1), reading(0))).toBeNull();
   });
 
   it('says the points the crew has and the points that open it', () => {

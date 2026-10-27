@@ -2,7 +2,7 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 import { MATERIAL, MODULE, MODULES, SHAPE, moduleShape, packState } from '../../src/shared/blocks';
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../src/shared/daycycle';
 import { DEBRIS, POOL, RESEARCH } from '../../src/systems/economy/balance';
-import { needsResearch, notEnough } from '../../src/systems/economy/build-rules';
+import { needsResearch, notEnough, pieceCost } from '../../src/systems/economy/build-rules';
 import { NO_PLAYER } from '../../src/shared/protocol';
 import { SHOT_FLAG } from '../../src/shared/shot';
 import { ENEMIES, RESPAWN, TURRET, VITALS } from '../../src/systems/survival/balance';
@@ -1796,6 +1796,219 @@ test.describe('multiplayer', () => {
       await joinRoom(bo, code);
       await expectSameWorld(everyone, 1);
       await expectEverywhere(cell, ALLOY, [MATERIAL.alloy, 4], 2);
+      expect(await rejectionsOf(host)).toEqual([]);
+      expect(await rejectionsOf(bo)).toEqual([]);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
+  test("a turret is raised by the host's rules: a guest's raise changes the turret in every world and the one pool pays for the better level, the host turns away what the points have not opened, a pool that cannot pay and a turret that is not the one she saw, every screen draws the bolt of the level it sees, and a player who joins later is shown the raised turret", async ({
+    browser,
+    baseURL,
+  }) => {
+    // The crew's pool is the host's, and opens with plenty of every material.
+    const host = await openPlayer(browser, baseURL, 'Host', { stock: 200 });
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone: Player[] = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and the picture and the hands only change when one is drawn.
+    const slow = { timeout: 60_000 };
+    const [compositeAt, alloyAt] = RESEARCH.steps.map((step) => step.points) as [number, number];
+    const turretAt = (level: number) => packState(moduleShape(MODULE.turret, 0), level);
+    const autoCost = pieceCost(turretAt(2))!;
+    const heavyCost = pieceCost(turretAt(3))!;
+    type Spot = { x: number; y: number; z: number };
+    const stockOf = async (p: Player, material: number) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.pool())).stock[material - 1] as number;
+    const rejectionsOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.rejections())).map((r) => r.reason);
+    const upgradesOf = async (p: Player) => (await clockOf(p)).upgraded;
+    const cellOf = (p: Player, at: Spot) =>
+      p.page.evaluate(([x, y, z]) => window.__ashbound!.mp!.block(x!, y!, z!), [
+        at.x,
+        at.y,
+        at.z,
+      ] as const);
+    /** The level the module this screen draws in a cell says it is; null where it draws none. */
+    const levelOf = (p: Player, at: Spot) =>
+      p.page.evaluate(
+        ([x, y, z]) =>
+          (
+            window.__ashbound!.game.world as unknown as {
+              view: {
+                modules: {
+                  at(x: number, y: number, z: number): { userData: { level: number } } | undefined;
+                };
+              };
+            }
+          ).view.modules.at(x!, y!, z!)?.userData.level ?? null,
+        [at.x, at.y, at.z] as const,
+      );
+    /** How heavy this screen drew each bolt the turrets fired. */
+    const heftsOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.shots().shots))
+        .filter((shot) => shot.turret)
+        .map((shot) => shot.heft);
+    const machinesOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.enemies());
+    const upgrade = (p: Player, at: Spot, shown?: number) =>
+      p.page.evaluate(([x, y, z, s]) => window.__ashbound!.mp!.upgrade(x!, y!, z!, s), [
+        at.x,
+        at.y,
+        at.z,
+        shown,
+      ] as const);
+    /** Every screen shows this turret in the cell, drawn at this level, this much of a material in the pool, and this many upgrades on the card. */
+    const expectEverywhere = async (
+      at: Spot,
+      level: number,
+      stock: readonly [number, number],
+      upgrades: number,
+    ) => {
+      for (const p of everyone) {
+        await expect
+          .poll(() => cellOf(p, at), { ...slow, message: `${p.name} sees the cell` })
+          .toBe(turretAt(level));
+        await expect
+          .poll(() => levelOf(p, at), { ...slow, message: `${p.name} draws the level` })
+          .toBe(level);
+        await expect
+          .poll(() => stockOf(p, stock[0]), { ...slow, message: `${p.name} sees the pool` })
+          .toBe(stock[1]);
+        await expect
+          .poll(() => upgradesOf(p), { ...slow, message: `${p.name} counts the upgrades` })
+          .toBe(upgrades);
+      }
+    };
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) {
+        await expect.poll(async () => (await clockOf(p)).running, { message: p.name }).toBe(true);
+        await expect
+          .poll(() => stockOf(p, MATERIAL.scrap), { ...slow, message: `${p.name} sees the pool` })
+          .toBe(200);
+      }
+
+      // Ada's Basic Turret is in everyone's world, paid from the one pool, drawn at its first level.
+      const cell = await ada.page.evaluate(
+        ([state]) => window.__ashbound!.mp!.placeNear(4, 0, state!),
+        [turretAt(1)] as const,
+      );
+      await expectSameWorld(everyone, 1);
+      await expectEverywhere(cell, 1, [MATERIAL.scrap, 200 - TURRET_PRICE], 0);
+
+      // The Auto Turret is paid in Reinforced Composite, which the points have not opened: the host
+      // turns Ada away in words, to Ada alone, and nothing changes.
+      await upgrade(ada, cell);
+      await expect
+        .poll(() => rejectionsOf(ada), { ...slow, message: 'the host turns Ada down' })
+        .toEqual([needsResearch(autoCost.name)]);
+      expect(await rejectionsOf(host)).toEqual([]);
+      await expectEverywhere(cell, 1, [MATERIAL.scrap, 200 - TURRET_PRICE], 0);
+
+      // The crew reads Composite, and the same press goes through: the same cell holds the Auto Turret
+      // in every world and on every screen, the better level comes out of the pool, nothing goes back
+      // for the Basic Turret, and every card counts the upgrade.
+      await host.page.evaluate((n) => window.__ashbound!.mp!.setResearch(n), compositeAt);
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await p.page.evaluate(() => window.__ashbound!.mp!.pool())).tier, {
+            ...slow,
+            message: `${p.name} reads the tier`,
+          })
+          .toBe(2);
+      }
+      await upgrade(ada, cell);
+      await expectEverywhere(cell, 2, [autoCost.material, 200 - autoCost.amount], 1);
+      for (const p of everyone)
+        expect(await stockOf(p, MATERIAL.scrap), p.name).toBe(200 - TURRET_PRICE);
+      await expectSameWorld(everyone, 1);
+      expect(await rejectionsOf(ada)).toEqual([needsResearch(autoCost.name)]);
+      expect(await rejectionsOf(host)).toEqual([]);
+
+      // Alloy is past the points: the Heavy Turret is turned away in words, to Ada alone.
+      await upgrade(ada, cell);
+      await expect
+        .poll(() => rejectionsOf(ada), { ...slow, message: 'the host turns Ada down again' })
+        .toEqual([needsResearch(autoCost.name), needsResearch(heavyCost.name)]);
+      await expectEverywhere(cell, 2, [autoCost.material, 200 - autoCost.amount], 1);
+
+      // The points are there and the Alloy is not: the pool is what Ada is turned away for.
+      await host.page.evaluate((n) => window.__ashbound!.mp!.setResearch(n), alloyAt);
+      await host.page.evaluate(
+        ([material, amount]) => window.__ashbound!.mp!.setPool(material!, amount!),
+        [heavyCost.material, heavyCost.amount - 1] as const,
+      );
+      await upgrade(ada, cell);
+      await expect
+        .poll(() => rejectionsOf(ada), { ...slow, message: 'the host turns Ada down a third time' })
+        .toEqual([
+          needsResearch(autoCost.name),
+          needsResearch(heavyCost.name),
+          notEnough(heavyCost.name),
+        ]);
+      await expectEverywhere(cell, 2, [autoCost.material, 200 - autoCost.amount], 1);
+
+      // Her screen believed the turret was still the Basic one and asks for the Auto Turret: it is the
+      // Auto Turret now, and the host will not raise a turret she did not see.
+      await upgrade(ada, cell, turretAt(2));
+      await expect
+        .poll(() => rejectionsOf(ada), {
+          ...slow,
+          message: 'the host turns Ada down a fourth time',
+        })
+        .toEqual([
+          needsResearch(autoCost.name),
+          needsResearch(heavyCost.name),
+          notEnough(heavyCost.name),
+          'that block has changed',
+        ]);
+      await expectEverywhere(cell, 2, [autoCost.material, 200 - autoCost.amount], 1);
+
+      // The host puts the Alloy back, and the same press raises the Heavy Turret on every screen,
+      // Composite as the first raise left it.
+      await host.page.evaluate(
+        ([material, amount]) => window.__ashbound!.mp!.setPool(material!, amount!),
+        [heavyCost.material, heavyCost.amount + 5] as const,
+      );
+      await upgrade(ada, cell);
+      await expectEverywhere(cell, 3, [heavyCost.material, 5], 2);
+      for (const p of everyone) {
+        expect(await stockOf(p, autoCost.material), p.name).toBe(200 - autoCost.amount);
+      }
+
+      // The host sends a crawler within its range. Every screen draws the Heavy Turret's bolts, the
+      // weight of the level it sees the turret at, and the machine falls to the heavier shot.
+      expect(await sendCrawlerNear(host.page, cell)).not.toBeNull();
+      const heavy = TURRET.levels[2]!;
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await heftsOf(p)).length, {
+            ...slow,
+            message: `${p.name} sees the turret fire`,
+          })
+          .toBeGreaterThan(0);
+        await expect
+          .poll(async () => (await machinesOf(p)).length, {
+            ...slow,
+            message: `${p.name} sees it gone`,
+          })
+          .toBe(0);
+        const hefts = await heftsOf(p);
+        expect(hefts, p.name).toEqual(hefts.map(() => heavy.heft));
+        expect(hefts.length, p.name).toBeLessThan(
+          Math.ceil(ENEMIES.crawler.health / TURRET.levels[0]!.damage),
+        );
+      }
+
+      // A player who joins now is shown the Heavy Turret with the rest of the world, drawn at its level.
+      const bo = await openPlayer(browser, baseURL, 'Bo');
+      everyone.push(bo);
+      await joinRoom(bo, code);
+      await expectSameWorld(everyone, 1);
+      await expectEverywhere(cell, 3, [heavyCost.material, 5], 2);
       expect(await rejectionsOf(host)).toEqual([]);
       expect(await rejectionsOf(bo)).toEqual([]);
       expectNoProblems(everyone);

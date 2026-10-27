@@ -1,5 +1,6 @@
 import { DEFAULT_MOMENT, createStage } from '../engine/stage';
 import { createGame, type Game } from '../engine/game';
+import { stateMaterial } from '../shared/blocks';
 import { readFlags } from '../shared/flags';
 import { readNetFlags } from '../shared/net-flags';
 import { createReading } from '../shared/survival-state';
@@ -102,6 +103,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           // The host's turrets are the modules that stand, and a turret's head turns on every screen when it fires.
           forEachModule: (visit) => valley?.voxels.forEachModule(visit),
           aimTurret: (x, y, z, tx, ty, tz) => valley?.view.modules.aim(x, y, z, tx, ty, tz),
+          levelOfTurret: (x, y, z) => stateMaterial(valley?.voxels.getBlock(x, y, z) ?? 0),
           flags: readNetFlags(search, { secure: window.location.protocol === 'https:' }),
           buildId,
           night: view.night,

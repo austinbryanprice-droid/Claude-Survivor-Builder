@@ -16,7 +16,8 @@ import { createTestRegistry } from './helpers/registry';
 import { TEST_SEED, terrain } from './helpers/valley';
 
 const terminal = (facing: number) => packState(moduleShape(MODULE.terminal, facing), 1);
-const turret = (facing: number) => packState(moduleShape(MODULE.turret, facing), 1);
+/** A turret's cell state: its level is the cell's material byte. */
+const turret = (facing: number, level = 1) => packState(moduleShape(MODULE.turret, facing), level);
 
 /** A world with the cell where the tests build, and a renderer drawing it. */
 function build() {
@@ -133,15 +134,18 @@ describe('the modules as they are drawn', () => {
   });
 });
 
+const headOf = (group: Group): Group => group.getObjectByName('head') as Group;
+
+/** The meshes of a turret: its body and its head. */
+const partsOf = (group: Group): Mesh[] => [...meshesOf(group), ...meshesOf(headOf(group))];
+
+/** Where the tip of the barrel is in the world, with the head turned as it is. */
+function tip(renderer: ModuleRenderer, group: Group): Vector3 {
+  renderer.object.updateWorldMatrix(true, true);
+  return headOf(group).localToWorld(new Vector3(TURRET_GUN.reach, 0, 0));
+}
+
 describe('the head of a turret', () => {
-  const headOf = (group: Group): Group => group.getObjectByName('head') as Group;
-
-  /** Where the tip of the barrel is in the world, with the head turned as it is. */
-  function tip(renderer: ModuleRenderer, group: Group): Vector3 {
-    renderer.object.updateWorldMatrix(true, true);
-    return headOf(group).localToWorld(new Vector3(TURRET_GUN.reach, 0, 0));
-  }
-
   it('hangs in the turret’s group at the pivot, on a mesh for each look it has', () => {
     const { renderer, world, cell } = build();
     world.setBlock(cell.x, cell.y, cell.z, turret(0));
@@ -288,7 +292,141 @@ describe('the head of a turret', () => {
   });
 });
 
+describe('a turret raised to a better grade', () => {
+  it('is drawn again at each level it is raised to, with that level’s model, in place of the old one', () => {
+    const { renderer, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, turret(1));
+    const drawn = [renderer.at(cell.x, cell.y, cell.z) as Group];
+    for (const level of [2, 3]) {
+      const before = drawn[drawn.length - 1] as Group;
+      world.setBlock(cell.x, cell.y, cell.z, turret(1, level));
+      const group = renderer.at(cell.x, cell.y, cell.z) as Group;
+      expect(group).not.toBe(before);
+      expect(before.parent).toBeNull();
+      expect(group.userData).toEqual({ module: MODULE.turret, level });
+      expect(renderer.count).toBe(1);
+      expect(renderer.object.children).toEqual([group]);
+      // It faces the way it did, and its head is at rest again.
+      expect(group.rotation.y).toBe(before.rotation.y);
+      expect(headOf(group).rotation.toArray().slice(0, 3)).toEqual([0, 0, 0]);
+      drawn.push(group);
+    }
+    // Each level is a gun of its own: no mesh of the three shares its geometry with another.
+    const geometries = drawn.flatMap((group) => partsOf(group).map((mesh) => mesh.geometry));
+    expect(new Set(geometries).size).toBe(geometries.length);
+  });
+
+  it('shares a model and a set of materials between the turrets of a level, and not between levels', () => {
+    const { renderer, world, cell } = build();
+    // Two turrets at each level, side by side, and a Terminal to the west of them.
+    [1, 1, 2, 2, 3, 3].forEach((level, i) =>
+      world.setBlock(cell.x + 2 * i, cell.y, cell.z, turret(0, level)),
+    );
+    world.setBlock(cell.x - 2, cell.y, cell.z, terminal(0));
+    const at = (i: number) => partsOf(renderer.at(cell.x + 2 * i, cell.y, cell.z) as Group);
+    for (const [a, b] of [
+      [0, 1],
+      [2, 3],
+      [4, 5],
+    ] as const) {
+      const first = at(a);
+      const second = at(b);
+      expect(first).toHaveLength(second.length);
+      first.forEach((mesh, i) => {
+        expect(mesh.geometry).toBe(second[i]?.geometry);
+        expect(mesh.material).toBe(second[i]?.material);
+      });
+    }
+    const levels = [at(0), at(2), at(4)];
+    const shared = (a: number, b: number, of: 'geometry' | 'material') => {
+      const these = new Set((levels[a] as Mesh[]).map((mesh) => mesh[of]));
+      return (levels[b] as Mesh[]).some((mesh) => these.has(mesh[of]));
+    };
+    for (const [a, b] of [
+      [0, 1],
+      [0, 2],
+      [1, 2],
+    ] as const) {
+      expect(shared(a, b, 'geometry'), `levels ${a + 1} and ${b + 1}`).toBe(false);
+      expect(shared(a, b, 'material'), `levels ${a + 1} and ${b + 1}`).toBe(false);
+    }
+    // The Basic Turret is painted as the Terminal is, in the Core's palette; the better grades are not.
+    const plate = (parts: Mesh[]) => (parts[0] as Mesh).material;
+    const terminalPlate = (meshesOf(renderer.at(cell.x - 2, cell.y, cell.z) as Group)[0] as Mesh)
+      .material;
+    expect(plate(levels[0] as Mesh[])).toBe(terminalPlate);
+    expect(plate(levels[1] as Mesh[])).not.toBe(terminalPlate);
+    expect(plate(levels[2] as Mesh[])).not.toBe(terminalPlate);
+  });
+
+  it('has the same meshes at each level but one: the Heavy Turret’s body shows amber, which the others’ do not', () => {
+    const { renderer, world, cell } = build();
+    const counts = [1, 2, 3].map((level) => {
+      world.setBlock(cell.x, cell.y, cell.z, turret(0, level));
+      const group = renderer.at(cell.x, cell.y, cell.z) as Group;
+      return [meshesOf(group).length, meshesOf(headOf(group)).length];
+    });
+    expect(counts).toEqual([
+      [3, 4],
+      [3, 4],
+      [4, 4],
+    ]);
+  });
+
+  it.each([2, 3])(
+    'points the barrel of level %i where the shared gun geometry says a bolt leaves, from any facing',
+    (level) => {
+      const { renderer, world, cell } = build();
+      const muzzle = { x: 0, y: 0, z: 0 };
+      for (let facing = 0; facing < MODULE_FACINGS; facing++) {
+        world.setBlock(cell.x, cell.y, cell.z, 0);
+        world.setBlock(cell.x, cell.y, cell.z, turret(facing, level));
+        const group = renderer.at(cell.x, cell.y, cell.z) as Group;
+        for (const [tx, ty, tz] of [
+          [14, 2, 0],
+          [-6, 4, 9],
+          [8, 12, -30],
+        ] as const) {
+          expect(renderer.aim(cell.x, cell.y, cell.z, tx, cell.y + ty, tz)).toBe(true);
+          turretMuzzle(cell.x, cell.y, cell.z, tx, cell.y + ty, tz, muzzle);
+          const at = tip(renderer, group);
+          expect(at.x, `facing ${facing} at ${tx},${ty},${tz}`).toBeCloseTo(muzzle.x, 6);
+          expect(at.y, `facing ${facing} at ${tx},${ty},${tz}`).toBeCloseTo(muzzle.y, 6);
+          expect(at.z, `facing ${facing} at ${tx},${ty},${tz}`).toBeCloseTo(muzzle.z, 6);
+        }
+      }
+    },
+  );
+
+  it('is put away with the rest: every level’s geometry is freed, and so is every paint', () => {
+    const { renderer, registry, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, turret(0, 1));
+    world.setBlock(cell.x + 2, cell.y, cell.z, turret(0, 2));
+    world.setBlock(cell.x + 4, cell.y, cell.z, turret(0, 3));
+    const geometries = [0, 2, 4].flatMap((dx) =>
+      partsOf(renderer.at(cell.x + dx, cell.y, cell.z) as Group).map((mesh) => mesh.geometry),
+    );
+    const freed = geometries.map((geometry) => vi.spyOn(geometry, 'dispose'));
+    const release = vi.spyOn(registry, 'release');
+    renderer.dispose();
+    expect(geometries).toHaveLength(7 + 7 + 8);
+    for (const spy of freed) expect(spy).toHaveBeenCalledTimes(1);
+    // The Core's paint, made when the renderer was, and one for each grade drawn since.
+    expect(release).toHaveBeenCalledTimes(3 * MODULE_LOOK_NAMES.length);
+  });
+});
+
 describe('the lights of a module', () => {
+  it('start a paint made late where the others are, so that a raised turret does not flash its base glow', () => {
+    const { renderer, world, cell } = build();
+    renderer.update(1.2);
+    world.setBlock(cell.x, cell.y, cell.z, turret(0, 3));
+    const parts = partsOf(renderer.at(cell.x, cell.y, cell.z) as Group);
+    const made = parts.map((mesh) => glowOf(mesh).toArray());
+    renderer.update(1.2);
+    expect(parts.map((mesh) => glowOf(mesh).toArray())).toEqual(made);
+  });
+
   it('shimmer on the screens and breathe on the strips with the stage’s clock', () => {
     const { renderer, world, cell } = build();
     world.setBlock(cell.x, cell.y, cell.z, terminal(0));

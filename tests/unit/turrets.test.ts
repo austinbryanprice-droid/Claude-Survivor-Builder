@@ -11,6 +11,8 @@ import { SCRAP, flatWorld } from './helpers/nav-world';
 const FLOOR = 10;
 const TURRET_STATE = packState(moduleShape(MODULE.turret, 0), 1);
 const TERMINAL_STATE = packState(moduleShape(MODULE.terminal, 0), 1);
+/** A turret raised to a level: the level is the material byte of its cell. */
+const turretAt = (level: number) => packState(moduleShape(MODULE.turret, 0), level);
 /** Steps in a second of the run. */
 const STEP = 0.05;
 
@@ -91,6 +93,114 @@ describe('the turret table', () => {
     const blaster = BLASTER.damage / BLASTER.interval;
     expect(level.damage / level.interval).toBeGreaterThan(blaster * 0.25);
     expect(level.damage / level.interval).toBeLessThan(blaster * 0.5);
+  });
+});
+
+describe('the levels of a turret', () => {
+  it('has three, each seeing farther and doing more in a second than the one below', () => {
+    expect(TURRET.levels).toHaveLength(3);
+    for (let level = 2; level <= 3; level++) {
+      const below = turretLevel(level - 1);
+      const here = turretLevel(level);
+      expect(here.range, `level ${level}`).toBeGreaterThan(below.range);
+      expect(here.damage / here.interval, `level ${level}`).toBeGreaterThan(
+        below.damage / below.interval,
+      );
+    }
+  });
+
+  it('does 10, 20 and 40 points a second, so the Heavy Turret passes the blaster and the others do not', () => {
+    const rate = (level: number) => turretLevel(level).damage / turretLevel(level).interval;
+    expect(rate(1)).toBeCloseTo(10, 9);
+    expect(rate(2)).toBeCloseTo(20, 9);
+    expect(rate(3)).toBeCloseTo(40, 9);
+    const blaster = BLASTER.damage / BLASTER.interval;
+    expect(rate(2)).toBeLessThan(blaster);
+    expect(rate(3)).toBeGreaterThan(blaster);
+  });
+
+  it('sees 18, 20 and 26 blocks', () => {
+    expect(TURRET.levels.map((level) => level.range)).toEqual([18, 20, 26]);
+  });
+
+  it('shoots as far as its level sees, and not a block farther', () => {
+    for (const level of [1, 2, 3]) {
+      const range = turretLevel(level).range;
+      const reaches = (away: number): number => {
+        const { stand, base, crawler, play, flat } = field();
+        stand(base.x, base.z, turretAt(level));
+        // The pivot is in the middle of the turret's cell, so the machine is `away` blocks from that.
+        crawler(flat.core.x - (base.x + 0.5) + away);
+        return play(2).length;
+      };
+      expect(reaches(range - 1), `level ${level} inside`).toBeGreaterThan(0);
+      expect(reaches(range + 1), `level ${level} outside`).toBe(0);
+    }
+  });
+
+  it('waits the interval of its level between shots', () => {
+    for (const level of [1, 2, 3]) {
+      const { stand, base, crawler, play } = field();
+      stand(base.x, base.z, turretAt(level));
+      crawler(14);
+      const wait = Math.round(turretLevel(level).interval / STEP);
+      expect(play(1), `level ${level}`).toHaveLength(1);
+      expect(play(wait - 1), `level ${level}`).toHaveLength(0);
+      expect(play(1), `level ${level}`).toHaveLength(1);
+    }
+  });
+
+  it('wounds by the damage of its level', () => {
+    for (const level of [1, 2, 3]) {
+      const { stand, base, crawler, play, machines } = field();
+      stand(base.x, base.z, turretAt(level));
+      const target = crawler(14);
+      expect(play(1)).toHaveLength(1);
+      const states = Array.from({ length: 2 }, () => ({
+        id: 0,
+        kind: 0,
+        x: 0,
+        y: 0,
+        z: 0,
+        yaw: 0,
+        health: 255,
+        flags: 0,
+      }));
+      expect(machines.write(states)).toBe(1);
+      const left = ENEMIES.crawler.health - turretLevel(level).damage;
+      expect(states[0]?.id).toBe(target);
+      expect(states[0]?.health).toBe(Math.round((left / ENEMIES.crawler.health) * 255));
+    }
+  });
+
+  it('fells a crawler in two shots at the Heavy Turret, where the Basic one needs six', () => {
+    const shotsToFell = (level: number): number => {
+      const { stand, base, crawler, play } = field();
+      stand(base.x, base.z, turretAt(level));
+      crawler(14);
+      let shots = 0;
+      for (let i = 0; i < 400; i++) {
+        for (const shot of play(1)) {
+          shots++;
+          if (shot.flags & SHOT_FLAG.kill) return shots;
+        }
+      }
+      return -1;
+    };
+    expect(shotsToFell(1)).toBe(Math.ceil(ENEMIES.crawler.health / turretLevel(1).damage));
+    expect(shotsToFell(2)).toBe(Math.ceil(ENEMIES.crawler.health / turretLevel(2).damage));
+    expect(shotsToFell(3)).toBe(2);
+  });
+
+  it('is raised in its cell and shoots by the new level from then on', () => {
+    const { stand, remove, base, crawler, play, flat } = field();
+    const site = stand(base.x, base.z, turretAt(1));
+    // 22 blocks out is past the first level's reach and inside the third's.
+    crawler(flat.core.x - (base.x + 0.5) + 22);
+    expect(play(2)).toHaveLength(0);
+    remove(site);
+    stand(base.x, base.z, turretAt(3));
+    expect(play(1)).toHaveLength(1);
   });
 });
 

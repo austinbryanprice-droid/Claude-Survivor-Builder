@@ -12,6 +12,9 @@ import {
   materialOf,
   materialTier,
   moduleFacing,
+  moduleLevelCost,
+  moduleLevelName,
+  moduleLevels,
   moduleOfShape,
   moduleShape,
   packState,
@@ -20,6 +23,7 @@ import {
   stateMaterial,
   stateShape,
   withMaterial,
+  type ModuleDef,
 } from '../../src/shared/blocks';
 
 describe('cell states', () => {
@@ -33,7 +37,8 @@ describe('cell states', () => {
   it('round-trip every shape and material in the tables', () => {
     for (const shape of SHAPES) {
       // A module's high byte is its level, not a material, so only its own levels are known states.
-      const levels = moduleOfShape(shape.id)?.levels;
+      const module = moduleOfShape(shape.id);
+      const levels = module && moduleLevels(module);
       for (const material of MATERIALS) {
         const state = packState(shape.id, material.id);
         expect(stateShape(state)).toBe(shape.id);
@@ -155,12 +160,55 @@ describe('modules', () => {
     const terminal = moduleShape(MODULE.terminal, 1);
     expect(packState(terminal, 1)).toBe(0x0121);
     expect(isKnownState(packState(terminal, 1))).toBe(true);
-    const levels = MODULES.find((def) => def.id === MODULE.terminal)?.levels ?? 0;
+    const levels = moduleLevels(MODULES.find((def) => def.id === MODULE.terminal) as ModuleDef);
     expect(isKnownState(packState(terminal, levels + 1))).toBe(false);
     expect(isKnownState(packState(terminal, 0))).toBe(false);
     expect(isKnownState(packState(terminal, 200))).toBe(false);
     // The facings after the last module are not shapes.
     expect(isKnownState(packState(SHAPE.module + MODULES.length * MODULE_FACINGS, 1))).toBe(false);
+  });
+
+  it('climb a ladder of named steps, each paid for in a better material than the one before', () => {
+    const turret = MODULES.find((def) => def.id === MODULE.turret) as ModuleDef;
+    expect(moduleLevels(turret)).toBe(3);
+    expect([1, 2, 3].map((level) => moduleLevelName(turret, level))).toEqual([
+      'Basic Turret',
+      'Auto Turret',
+      'Heavy Turret',
+    ]);
+    expect(moduleLevelCost(turret, 1)).toEqual(turret.cost);
+    expect(moduleLevelCost(turret, 2)).toEqual({ material: MATERIAL.composite, amount: 10 });
+    expect(moduleLevelCost(turret, 3)).toEqual({ material: MATERIAL.alloy, amount: 10 });
+    // What opens a step is the research of the material that pays for it, so the tiers must climb.
+    const tiers = [1, 2, 3].map((level) => materialTier(moduleLevelCost(turret, level).material));
+    expect(tiers).toEqual([1, 2, 3]);
+    // A module with nothing above it has one level, and a level past the top is not one it has.
+    const terminal = MODULES.find((def) => def.id === MODULE.terminal) as ModuleDef;
+    expect(moduleLevels(terminal)).toBe(1);
+    for (const def of MODULES) {
+      for (const raise of def.raises) {
+        expect(Number.isInteger(raise.cost.amount), raise.name).toBe(true);
+        expect(raise.cost.amount, raise.name).toBeGreaterThan(0);
+        expect(
+          MATERIALS.some((material) => material.id === raise.cost.material),
+          raise.name,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("are known at every level they have and called by that level's name", () => {
+    for (let facing = 0; facing < MODULE_FACINGS; facing++) {
+      const shape = moduleShape(MODULE.turret, facing);
+      expect([1, 2, 3].map((level) => pieceName(packState(shape, level)))).toEqual([
+        'Basic Turret',
+        'Auto Turret',
+        'Heavy Turret',
+      ]);
+      expect(isKnownState(packState(shape, 3))).toBe(true);
+      expect(isKnownState(packState(shape, 4))).toBe(false);
+      expect(pieceName(packState(shape, 4))).toBe('');
+    }
   });
 
   it('are called by their own name whichever way they face', () => {

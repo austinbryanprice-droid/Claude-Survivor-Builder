@@ -71,12 +71,28 @@ export const MODULE = {
   turret: 2,
 } as const;
 
+/**
+ * One step up a module's ladder (SPEC section 9: basic turret, auto-turret, heavy turret): the module as
+ * it stands at its next level. Raising a standing module to it takes `cost` from the shared pool and
+ * the piece it replaces is used up, as in every upgrade (Phase 5e). What opens it is the research of the
+ * material that pays, as a block of that material is opened, so a step has no row of its own.
+ */
+export interface ModuleRaise {
+  /** What a player calls the module at this level. */
+  readonly name: string;
+  /** What raising a standing module to this level takes from the pool, and what breaking it gives back. */
+  readonly cost: { readonly material: number; readonly amount: number };
+}
+
 export interface ModuleDef {
   readonly id: number;
-  /** What a player calls it. */
+  /** What a player calls it as it is built, at its first level. */
   readonly name: string;
-  /** How many levels it has: its cell's material byte is its level, from 1 up to this. */
-  readonly levels: number;
+  /**
+   * The levels above the first, from the second: its cell's material byte is its level, 1 for the model
+   * as it is built and one more for each step here. Empty for a module that stays as it is built.
+   */
+  readonly raises: readonly ModuleRaise[];
   /** What placing it takes from the shared pool: so many of a material, whatever way it faces. */
   readonly cost: { readonly material: number; readonly amount: number };
   /**
@@ -109,14 +125,15 @@ export interface MaterialDef {
 /**
  * The modules, in the order of their ids. The Research Terminal is the first (Phase 5d) and the Basic
  * Turret the second (5f); the generator, node, storage, bed and light follow them (5g, 5h). The costs
- * are Scrap only (about 40 and 25), because the notes price them in Composite, which the Terminal
- * itself unlocks (docs/decisions.md).
+ * of building one are Scrap only (about 40 and 25), because the notes price them in Composite, which
+ * the Terminal itself unlocks (docs/decisions.md); the Turret's two steps up are paid in the better
+ * materials (5f2).
  */
 export const MODULES: readonly ModuleDef[] = [
   {
     id: MODULE.terminal,
     name: 'Research Terminal',
-    levels: 1,
+    raises: [],
     cost: { material: MATERIAL.scrap, amount: 40 },
     body: [0.1, 0, 0.1, 0.9, 0.9, 0.9],
     facesPlayer: true,
@@ -124,12 +141,34 @@ export const MODULES: readonly ModuleDef[] = [
   {
     id: MODULE.turret,
     name: 'Basic Turret',
-    levels: 1,
+    // First guesses, to be judged by the balance pass (5j): ten of the better material for each step.
+    raises: [
+      { name: 'Auto Turret', cost: { material: MATERIAL.composite, amount: 10 } },
+      { name: 'Heavy Turret', cost: { material: MATERIAL.alloy, amount: 10 } },
+    ],
     cost: { material: MATERIAL.scrap, amount: 25 },
     body: [0.14, 0, 0.14, 0.86, 0.78, 0.86],
     facesPlayer: false,
   },
 ];
+
+/** How many levels a module has: the one it is built at and one for each step up its ladder. */
+export function moduleLevels(module: ModuleDef): number {
+  return 1 + module.raises.length;
+}
+
+/** What a module is called at a level (1 is as it is built), or its first name for a level it does not have. */
+export function moduleLevelName(module: ModuleDef, level: number): string {
+  return module.raises[level - 2]?.name ?? module.name;
+}
+
+/** What building a module at a level takes from the pool: its own price as it is built, the step's price above that. */
+export function moduleLevelCost(
+  module: ModuleDef,
+  level: number,
+): { readonly material: number; readonly amount: number } {
+  return module.raises[level - 2]?.cost ?? module.cost;
+}
 
 /** The shape id of a module standing so its front looks toward `facing` (0 is +x, 1 is +z, 2 is -x, 3 is -z). */
 export function moduleShape(module: number, facing: number): number {
@@ -254,7 +293,7 @@ export function isKnownState(state: CellState): boolean {
   const material = stateMaterial(state);
   if (!SHAPES.some((s) => s.id === shape)) return false;
   const module = moduleOfShape(shape);
-  if (module) return material >= 1 && material <= module.levels;
+  if (module) return material >= 1 && material <= moduleLevels(module);
   return MATERIALS.some((m) => m.id === material);
 }
 
@@ -270,12 +309,12 @@ export function materialTier(id: number): number {
 }
 
 /**
- * What a player calls a placed piece, such as "Scrap Block" or "Research Terminal", or an empty
- * string for a state the tables do not know.
+ * What a player calls a placed piece, such as "Scrap Block", "Research Terminal" or "Auto Turret", or
+ * an empty string for a state the tables do not know.
  */
 export function pieceName(state: CellState): string {
   const module = moduleOfShape(stateShape(state));
-  if (module) return isKnownState(state) ? module.name : '';
+  if (module) return isKnownState(state) ? moduleLevelName(module, stateMaterial(state)) : '';
   const material = materialOf(state);
   const shape = SHAPES.find((s) => s.id === stateShape(state));
   return material && shape ? `${material.name} ${shape.name}` : '';
