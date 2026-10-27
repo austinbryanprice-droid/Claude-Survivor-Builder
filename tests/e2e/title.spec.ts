@@ -44,6 +44,26 @@ const framesPassed = (page: Page, count: number): Promise<void> =>
     count,
   );
 
+/** What `lengthenTheFilmWait` leaves on the page: whether the title has begun waiting for the film's code. */
+type FilmWaitWindow = Window & { filmWaitBegan?: boolean };
+
+/**
+ * Makes the title's wait for the film's code last ten minutes where it lasts five seconds, and notes on
+ * the page when that wait begins. The title gives up on the film at the end of the wait, and a slow
+ * runner can take longer than five seconds between one step of a test and the next, so a test that
+ * holds the code back and then lets go of the mouse would find the title already gliding into the run.
+ * Called before the page opens.
+ */
+const lengthenTheFilmWait = (page: Page): Promise<void> =>
+  page.addInitScript((waitMs) => {
+    const original = window.setTimeout.bind(window);
+    window.setTimeout = ((handler: TimerHandler, ms?: number, ...args: unknown[]) => {
+      if (ms !== waitMs) return original(handler, ms, ...args);
+      (window as FilmWaitWindow).filmWaitBegan = true;
+      return original(handler, 10 * 60_000, ...args);
+    }) as typeof window.setTimeout;
+  }, TITLE.filmWaitSeconds * 1000);
+
 /** Where the title is: waiting for Play, fading out, gliding into the run, or gone. */
 const phase = (page: Page): Promise<string | null> =>
   page.evaluate(() => window.__ashbound?.title?.phase ?? null);
@@ -202,34 +222,66 @@ test.describe('the title screen', () => {
     expect(problems).toEqual([]);
   });
 
+  test('starts on the next Play after the browser refused the mouse the first time', async ({
+    page,
+  }) => {
+    // The browser says no to the first request for the mouse and yes to the ones after it, as it
+    // does when a request comes too soon after the player let go of the mouse.
+    await page.addInitScript(() => {
+      const request = HTMLCanvasElement.prototype.requestPointerLock;
+      let refusals = 1;
+      HTMLCanvasElement.prototype.requestPointerLock = function (options) {
+        if (refusals-- <= 0) return request.call(this, options);
+        document.dispatchEvent(new Event('pointerlockerror'));
+        return Promise.reject(new DOMException('Refused for the test', 'NotAllowedError'));
+      };
+    });
+    const problems = await open(page, '?title=on&intro=off&debug&quality=low');
+    await waitForTheRun(page);
+    await play(page).click();
+    await expect(page.locator('.title-hint')).toContainText('did not hand over the mouse', {
+      timeout: STATE_TIMEOUT,
+    });
+    expect(await phase(page)).toBe('waiting');
+
+    // The hint says to click Play again. The refusal is behind that click: it does not turn the
+    // click back, and the mouse it is given is not left in hand on a title that went back to waiting.
+    await play(page).click();
+    await expect(page.locator('.title')).toBeHidden({ timeout: STATE_TIMEOUT });
+    await expect(page.locator('#hud')).toHaveAttribute('data-intro', 'off');
+    await expect(page.locator('#hud')).toHaveAttribute('data-pointer', 'locked');
+    expect(await phase(page)).toBe('done');
+    expect(await mouse(page)).toEqual({ captured: true, locked: true, held: false });
+    expect(problems).toEqual([]);
+  });
+
   test('comes back when the mouse is let go of before the film starts, and the next Play starts it', async ({
     page,
   }) => {
-    // Hold the film's code back, so that the title waits in black for it and there is a moment to let go.
+    // Hold the film's code back, so that the title waits in black for it and there is a moment to let go,
+    // a moment that lasts as long as the test needs.
     const held: Route[] = [];
     await page.route(/attach-intro-.*\.js/, (route) => {
       held.push(route);
     });
+    await lengthenTheFilmWait(page);
     const problems = await open(page, '?title=on&intro=on&debug&quality=low');
     await waitForTheRun(page);
-    // The screen gives up on a film whose code does not come after five seconds, and a slow runner
-    // draws too few frames for a test to see the mouse arrive and then let go inside that time. So
-    // the mouse is let go of in the page, in the task that finds it taken, and what the screen said
-    // at that moment is left for the test to read.
-    await page.evaluate(() => {
-      const letGo = (): void => {
-        if (!document.pointerLockElement) return;
-        document.removeEventListener('pointerlockchange', letGo);
-        const leaving = document.querySelector('.title')?.getAttribute('data-leaving');
-        document.documentElement.dataset.letGo = `${leaving}/${window.__ashbound?.title?.phase}`;
-        document.exitPointerLock();
-      };
-      document.addEventListener('pointerlockchange', letGo);
-    });
     await play(page).click();
-    await expect(page.locator('html')).toHaveAttribute('data-let-go', 'black/leaving', {
+    // The fade is over, the title waits for the film's code, and the mouse is in hand.
+    await page.waitForFunction(
+      () =>
+        (window as FilmWaitWindow).filmWaitBegan === true &&
+        window.__ashbound?.title?.phase === 'leaving' &&
+        window.__ashbound.game.input.captured,
+      null,
+      { timeout: STATE_TIMEOUT },
+    );
+    await expect(page.locator('.title')).toHaveAttribute('data-leaving', 'black', {
       timeout: STATE_TIMEOUT,
     });
+
+    await page.evaluate(() => document.exitPointerLock());
     await expect(page.locator('.title')).toHaveAttribute('data-leaving', 'no', {
       timeout: STATE_TIMEOUT,
     });
@@ -237,9 +289,12 @@ test.describe('the title screen', () => {
     expect(await phase(page)).toBe('waiting');
     expect((await mouse(page)).held).toBe(false);
 
-    // The film's code arrives, and Play starts the film from the title again.
+    // The film's code arrives. The Play that was let go of has nothing left to start, so the title is
+    // still waiting, and Play starts the film from the title again.
     for (const route of held) await route.continue();
     await page.waitForFunction(() => !!window.__ashbound?.intro, null, { timeout: STATE_TIMEOUT });
+    expect(await phase(page)).toBe('waiting');
+    expect(await page.evaluate(() => window.__ashbound?.intro?.playback === null)).toBe(true);
     await play(page).click();
     await page.waitForFunction(() => (window.__ashbound?.intro?.playback?.time ?? 0) > 1, null, {
       timeout: STATE_TIMEOUT,

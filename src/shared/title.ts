@@ -19,6 +19,8 @@ export const TITLE = {
   leadSeconds: 0.7,
   /** Seconds the camera takes to fly into the player's view when no film follows. */
   glideSeconds: 1.8,
+  /** Seconds the screen waits in black for the film's code, after the fade, before it glides into the run without the film. */
+  filmWaitSeconds: 5,
 } as const;
 
 /**
