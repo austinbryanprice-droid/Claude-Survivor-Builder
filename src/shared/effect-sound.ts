@@ -285,11 +285,12 @@ export interface Effect {
 /**
  * The levels below were not guessed from how loud a voice is called: each effect was drawn to samples
  * on its own and set against the quietest hour of the valley (a morning: the wind and the Core's hum),
- * reading how far it stands over that in each octave band. A knock is 13 to 20 decibels over the
- * morning between 180 and 355 Hz, and every effect has something 6 to 16 decibels over it between
- * 355 Hz and 2.8 kHz as well, so that it is heard on a laptop's speakers, which have nothing to give
- * below 200 Hz. The voices differ a great deal in how much a nominal level says (a crackle at -3 is
- * quieter than a knock at -20), which is why the numbers look uneven.
+ * reading how far it stands over that in each octave band. Every effect stands 12.5 to 21 decibels
+ * over the morning in its strongest octave between 180 Hz and 5.6 kHz, and all but the top grade's
+ * ring of a heap have something 5.7 to 17 decibels over it between 355 Hz and 2.8 kHz as well, so
+ * that it is heard on a laptop's speakers, which have nothing to give below 200 Hz. The voices
+ * differ a great deal in how much a nominal level says (a crackle at -3 is quieter than a knock at
+ * -20), which is why the numbers look uneven.
  */
 
 /** A list of cues written one at a time, each with a seed of its own so that no two noises in it are the same part of the noise. */
