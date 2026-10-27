@@ -41,10 +41,13 @@ jobs:
   # tests moved the edges of the thirds, and the first was already at fifteen of twenty minutes on
   # a good runner, so it runs as four quarters. Playwright cuts them by test, in file order, so
   # what a shard takes follows what is in it; the film's tests and the play spec are the long ones.
+  # The limit is there to stop a job that hangs, not to cut a slow one short: on 2026-10-27 the
+  # multiplayer job took seventeen minutes on a good runner and was cancelled at twenty on a slow
+  # one with no test failed, and the first quarter took seventeen and a half, so it is thirty.
   browser:
     name: browser (${{ matrix.name }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
