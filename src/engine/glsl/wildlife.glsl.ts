@@ -307,8 +307,8 @@ vec3 paint(int li, vec3 base, vec3 N, inout float glow, inout float eyeMask) {
     if (li == 0) {
       // A ray: pale spots over a dark back, a line down the spine and an eye on each side.
       float top = smoothstep(0.1, 0.5, N.y);
-      float dots = spots(vec3(p.x, 0.0, p.z) * 7.0, 0.35, 0.3) * top;
-      base = mix(base, mark, dots * 0.65);
+      float dots = spots(vec3(p.x * 3.6, 0.5, p.z * 3.6), 0.5, 0.34) * top;
+      base = mix(base, mark, dots * 0.85);
       base *= 1.0 - 0.15 * (1.0 - smoothstep(0.0, 0.08, abs(p.x))) * top;
       float eye = (1.0 - smoothstep(0.04, 0.056, length(vec2(abs(p.x) - 0.24, p.z - 0.36)))) * top;
       base = mix(base, uLook[4].rgb, eye);

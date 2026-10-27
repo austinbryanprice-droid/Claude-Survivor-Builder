@@ -97,7 +97,7 @@ export interface SurvivalOptions {
    * True fills the valley with wildlife: herds of creatures that roam the ground, the lake and the sky,
    * startle at the machines and at players, and fight back only against a player who has hurt one
    * (`WildlifeSim`). It needs the same ground the machines walk, so a run without it has none. Off by
-   * default so a test gets a valley with nothing in it; the game turns it on (`?wildlife=0` turns it off).
+   * default so a test gets a valley with nothing in it; the game turns it on (`?wildlife=off` turns it off).
    */
   wildlife?: boolean;
 }

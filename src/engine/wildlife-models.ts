@@ -165,7 +165,7 @@ export function buildStag(): BufferGeometry {
     const shoulder: Point = [s * 0.12, 0.8, 0.36];
     const wrist: Point = [s * 0.115, 0.46, 0.4];
     add(
-      tube([shoulder, [s * 0.118, 0.62, 0.385], wrist], [0.075, 0.062, 0.042], {
+      tube([shoulder, [s * 0.118, 0.62, 0.385], wrist], [0.088, 0.074, 0.052], {
         sides: 7,
         caps: 'end',
       }),
@@ -179,12 +179,12 @@ export function buildStag(): BufferGeometry {
       knee: wrist,
     };
     add(
-      tube([wrist, [s * 0.113, 0.28, 0.39], [s * 0.11, 0.1, 0.37]], [0.04, 0.032, 0.028], {
+      tube([wrist, [s * 0.113, 0.28, 0.39], [s * 0.11, 0.1, 0.37]], [0.05, 0.04, 0.034], {
         caps: 'none',
       }),
       foreLower,
     );
-    add(ellipsoid([0.04, 0.05, 0.055], [s * 0.11, 0.05, 0.385], undefined, [7, 4]), {
+    add(ellipsoid([0.048, 0.05, 0.06], [s * 0.11, 0.05, 0.385], undefined, [7, 4]), {
       ...foreLower,
       look: LOOK.dark,
     });
@@ -192,7 +192,7 @@ export function buildStag(): BufferGeometry {
     const haunch: Point = [s * 0.14, 0.84, -0.42];
     const hock: Point = [s * 0.125, 0.46, -0.5];
     add(
-      tube([haunch, [s * 0.135, 0.66, -0.44], hock], [0.11, 0.085, 0.05], {
+      tube([haunch, [s * 0.135, 0.66, -0.44], hock], [0.115, 0.09, 0.06], {
         sides: 8,
         caps: 'end',
       }),
@@ -206,12 +206,12 @@ export function buildStag(): BufferGeometry {
       knee: hock,
     };
     add(
-      tube([hock, [s * 0.12, 0.28, -0.47], [s * 0.115, 0.1, -0.44]], [0.042, 0.034, 0.028], {
+      tube([hock, [s * 0.12, 0.28, -0.47], [s * 0.115, 0.1, -0.44]], [0.052, 0.042, 0.034], {
         caps: 'none',
       }),
       hindLower,
     );
-    add(ellipsoid([0.04, 0.05, 0.055], [s * 0.115, 0.05, -0.455], undefined, [7, 4]), {
+    add(ellipsoid([0.048, 0.05, 0.06], [s * 0.115, 0.05, -0.455], undefined, [7, 4]), {
       ...hindLower,
       look: LOOK.dark,
     });
