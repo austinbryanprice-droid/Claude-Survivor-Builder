@@ -441,8 +441,14 @@ test.describe('the intro film’s sound', () => {
       timeout: STATE_TIMEOUT,
     });
     await expect(page.locator('#hud')).toHaveAttribute('data-pointer', 'locked');
-    // The only complaint is the sound's own, once.
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('could not make its sound');
+    // The only complaints are the two sounds' own, once each: the film's, and the valley's that
+    // waits behind it.
+    expect(problems).toHaveLength(2);
+    expect(
+      problems.filter((line) => line.includes('The intro film could not make its sound')),
+    ).toHaveLength(1);
+    expect(
+      problems.filter((line) => line.includes('The valley could not make its sound')),
+    ).toHaveLength(1);
   });
 });

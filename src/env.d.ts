@@ -1,8 +1,10 @@
 /// <reference types="vite/client" />
 
+import type { SoundDebug } from './app/attach-sound';
 import type { BuildControlsDebug } from './app/build-controls';
 import type { IntroController } from './app/intro';
 import type { MultiplayerDebug } from './app/multiplayer';
+import type { ValleyRenderOptions } from './app/render-valley-sound';
 import type { TitleController } from './app/title';
 import type { AudioHub } from './engine/audio/hub';
 import type { Game } from './engine/game';
@@ -22,9 +24,11 @@ declare global {
       mp?: MultiplayerDebug;
       intro?: IntroController;
       title?: TitleController;
+      sound?: SoundDebug;
       audio?: {
         hub: AudioHub;
         render(options?: RenderOptions): Promise<RenderedSound>;
+        renderValley(options?: ValleyRenderOptions): Promise<RenderedSound>;
       };
     };
   }

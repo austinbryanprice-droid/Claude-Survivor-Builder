@@ -13,6 +13,7 @@ import { loadSettings } from '../ui/settings-store';
 import type { CoreLook } from '../world/render/core-render';
 import { SHOTS, shotPose } from '../world/terrain/viewpoints';
 import { createBuildControls } from './build-controls';
+import type { GameSound } from './attach-sound';
 import type { IntroController } from './intro';
 import type { Multiplayer } from './multiplayer';
 import { createTitle, type TitleController } from './title';
@@ -159,6 +160,11 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           import('../engine/intro/sound-render').then(({ renderIntroSound }) =>
             renderIntroSound(options),
           ),
+        // The same for a night of the valley: the plan's sound for a scripted player and crew.
+        renderValley: (options) =>
+          import('./render-valley-sound').then(({ renderValleySound }) =>
+            renderValleySound(options),
+          ),
       },
     };
   }
@@ -184,6 +190,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
   // game alone.
   let stopVitals: (() => void) | null = null;
   let stopFire: (() => void) | null = null;
+  let gameSound: GameSound | null = null;
   if (!flags.bench) {
     void import('./attach-multiplayer')
       .then(({ attachMultiplayer }) => {
@@ -247,6 +254,21 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
         stopVitals = followVitals(game, building.controller, vitals);
         // The pool of materials the crew's strips fill is on the block slots of the hotbar.
         hud.setEconomy(hub.economy, () => hub.localId);
+        // The sound of the valley follows the run too. Its code loads on its own, and its audio starts with the first click.
+        void import('./attach-sound')
+          .then(({ attachSound }) => {
+            if (disposed) return;
+            gameSound = attachSound({
+              game,
+              session: hub,
+              core: () => valley?.voxels.outpost ?? null,
+            });
+            if (flags.debug && window.__ashbound) window.__ashbound.sound = gameSound.debug;
+          })
+          .catch((error: unknown) => {
+            // The game still plays; it is only silent.
+            console.error('The sound of the valley could not load.', error);
+          });
         if (flags.debug && window.__ashbound) window.__ashbound.mp = multiplayer.debug;
       })
       .catch((error: unknown) => {
@@ -266,6 +288,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
       building.dispose();
       stopFire?.();
       stopVitals?.();
+      gameSound?.dispose();
       multiplayer?.dispose();
       coreLook = null;
       hud.setSurvival(null);

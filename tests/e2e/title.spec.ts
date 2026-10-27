@@ -185,11 +185,14 @@ test.describe('the title screen', () => {
     await expect(page.locator('body')).not.toHaveClass(/title-showing/);
     expect(await phase(page)).toBe('done');
     expect(await mouse(page)).toEqual({ captured: true, locked: true, held: false });
-    // No film was asked for, so none was even loaded, and with no sound to make the click made no audio context.
+    // No film was asked for, so none was even loaded. The click woke the audio all the same, for the
+    // valley's own sound.
     expect(await page.evaluate(() => window.__ashbound?.intro ?? null)).toBeNull();
-    expect(
-      await page.evaluate(() => window.__ashbound?.audio?.hub.context?.state ?? null),
-    ).toBeNull();
+    await expect
+      .poll(() => page.evaluate(() => window.__ashbound?.audio?.hub.context?.state ?? null), {
+        timeout: STATE_TIMEOUT,
+      })
+      .toBe('running');
     await page.waitForFunction(() => window.__ashbound?.mp?.clock().running === true, null, {
       timeout: STATE_TIMEOUT,
     });
