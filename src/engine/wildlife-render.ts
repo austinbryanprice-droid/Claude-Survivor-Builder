@@ -406,6 +406,8 @@ export interface WildlifeRenderer {
     z: number;
     health: number;
     flags: number;
+    yaw: number;
+    speed: number;
   }[];
   dispose(): void;
 }
@@ -575,6 +577,7 @@ export function createWildlifeRenderer({
   const ids = new Int32Array(capacity);
   const kinds = new Uint8Array(capacity);
   const seenAt = new Float32Array(capacity * 4);
+  const headingAt = new Float32Array(capacity * 2);
   const flagsAt = new Uint8Array(capacity);
   let shown = 0;
 
@@ -689,6 +692,8 @@ export function createWildlifeRenderer({
         seenAt[shown * 4 + 2] = pose.z;
         seenAt[shown * 4 + 3] = pose.health;
         flagsAt[shown] = pose.flags;
+        headingAt[shown * 2] = pose.yaw;
+        headingAt[shown * 2 + 1] = pose.speed;
         shown++;
       }
       for (const [id, track] of tracks) if (!track.seen) tracks.delete(id);
@@ -716,6 +721,8 @@ export function createWildlifeRenderer({
           z: seenAt[i * 4 + 2] as number,
           health: seenAt[i * 4 + 3] as number,
           flags: flagsAt[i] as number,
+          yaw: headingAt[i * 2] as number,
+          speed: headingAt[i * 2 + 1] as number,
         });
       }
       return out;

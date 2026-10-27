@@ -92,7 +92,7 @@ export interface MultiplayerDebug {
   remotes(): { id: number; name: string; slot: number; x: number; y: number; z: number }[];
   /** The machines on screen right now, with Health as a fraction of the full bar. */
   enemies(): { id: number; kind: number; x: number; y: number; z: number; health: number }[];
-  /** The creatures on screen right now (`kind` is the species), with Health as a fraction of the full bar and the `WILD_FLAG` bits the host reports. */
+  /** The creatures on screen right now (`kind` is the species), with Health as a fraction of the full bar, the `WILD_FLAG` bits the host reports, and the way each faces and how fast it goes. */
   wildlife(): {
     id: number;
     kind: number;
@@ -101,6 +101,8 @@ export interface MultiplayerDebug {
     z: number;
     health: number;
     flags: number;
+    yaw: number;
+    speed: number;
   }[];
   /**
    * Puts one creature of a species (a `WILD_SPECIES`) at a spot, as the debug page does, and returns its
@@ -109,6 +111,12 @@ export interface MultiplayerDebug {
   spawnCreature(species: number, x: number, z: number): number | null;
   /** Takes every creature off the field. Only a host (or single-player) can. */
   clearWildlife(): void;
+  /**
+   * Draws the creatures as they stand now (where they are, how fast they were going, how they feel)
+   * and keeps drawing them so: legs go on striding and wings on beating in place, so a picture can catch
+   * a run at its stride however slowly the frames come. `false` lets them move again.
+   */
+  holdWildlife(on: boolean): void;
   /**
    * Fires the pulse blaster at the middle of the creature nearest the player, as this screen has it, and
    * returns that creature's id. Returns null, and fires nothing, while there is no creature to aim at.
@@ -202,6 +210,12 @@ export interface MultiplayerDebug {
   clock(): SurvivalReading;
   /** Jumps the run's clock ahead by this many seconds. Only a host (or single-player) can; others ignore it. */
   warp(seconds: number): void;
+  /**
+   * Tells the simulation where this screen's player stands now. A run that is held (the mouse is not
+   * captured) does not look, so a creature would go on reacting to where the player last was: a test
+   * that moves the player and then `warp`s calls this in between. Only a host (or single-player) can.
+   */
+  observeSelf(): void;
   /** Wounds the Outpost Core by this many points (the readings of `clock()` show its health). Only a host (or single-player) can. */
   hurtCore(amount: number): void;
   /** The local player's Health and Energy as the screen has them (a host's from the simulation, a guest's from what the host last said). */
@@ -262,6 +276,8 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
   options.scene.add(remotes.object);
   const enemies = createEnemyRenderer({ registry: options.registry });
   options.scene.add(enemies.object);
+  /** The creatures as the debug page has frozen them, or null while they move as the host says. */
+  let held: WildPose[] | null = null;
   const wildlife = createWildlifeRenderer({
     registry: options.registry,
     waterLevel: options.waterLevel,
@@ -379,6 +395,9 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     clearWildlife: () => {
       const session = hub.current;
       if (session instanceof HostSession) session.survivalSim?.wildlife?.clear();
+    },
+    holdWildlife: (on) => {
+      held = on ? hub.sampleWildlife().map((pose) => ({ ...pose })) : null;
     },
     fireAtCreature: () => {
       if (hub.phase !== 'open') return null;
@@ -521,6 +540,12 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       const session = hub.current;
       if (session instanceof HostSession) session.survivalSim?.warp(seconds);
     },
+    observeSelf: () => {
+      const session = hub.current;
+      if (!(session instanceof HostSession)) return;
+      const me = here();
+      session.survivalSim?.observe(hub.localId, me.x, me.y, me.z, 0, true);
+    },
     hurtCore: (amount) => {
       const session = hub.current;
       if (session instanceof HostSession) session.survivalSim?.hurtCore(amount);
@@ -558,7 +583,7 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
       remotes.update(dt, hub.sampleRemotes());
       enemies.update(dt, hub.sampleEnemies());
       wildlife.object.visible = !options.wildlifeHidden();
-      wildlife.update(dt, hub.sampleWildlife());
+      wildlife.update(dt, held ?? hub.sampleWildlife());
       debris.setAimed(options.aimedDebris());
       debris.update(dt, hub.economy.debris, hub.run);
       shots.update(dt);

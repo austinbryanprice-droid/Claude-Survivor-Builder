@@ -12,6 +12,7 @@ import { SHOT_FLAG, muzzleOf } from '../../src/shared/shot';
 import { TURRET_GUN, turretMuzzle } from '../../src/shared/turret';
 import { BLASTER } from '../../src/systems/survival/balance';
 import { turretLevel } from '../../src/systems/survival/turrets';
+import { wildHitboxOf } from '../../src/systems/wildlife/balance';
 
 interface At {
   x: number;
@@ -228,7 +229,7 @@ describe('the player’s own shot, drawn at the click', () => {
     effects.predict(EYE, towardMachine(10));
     const bolt = calls.bolt[0] as (typeof calls.bolt)[number];
     // The front of the stag's box: ten blocks out, less half its width.
-    expect(bolt.to.z).toBeCloseTo(-9.5, 4);
+    expect(bolt.to.z).toBeCloseTo(-(10 - (wildHitboxOf(WILD_SPECIES.stag)?.halfWidth ?? 0)), 4);
     expect(calls.impact).toHaveLength(1);
     expect(calls.impact[0]?.color).toBe(FX_COLOR.wild);
     expect(effects.debug().shots[0]?.flags).toBe(SHOT_FLAG.wild);
