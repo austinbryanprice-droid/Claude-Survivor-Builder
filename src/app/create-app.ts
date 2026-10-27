@@ -5,6 +5,7 @@ import { readFlags } from '../shared/flags';
 import { introWanted } from '../shared/intro';
 import { readNetFlags } from '../shared/net-flags';
 import { createReading } from '../shared/survival-state';
+import { titleWanted } from '../shared/title';
 import { readViewFlags } from '../shared/view-flags';
 import { valleyNavigation } from '../systems/survival/valley-nav';
 import { createHud, type Hud } from '../ui/hud';
@@ -14,6 +15,7 @@ import { SHOTS, shotPose } from '../world/terrain/viewpoints';
 import { createBuildControls } from './build-controls';
 import type { IntroController } from './intro';
 import type { Multiplayer } from './multiplayer';
+import { createTitle, type TitleController } from './title';
 import { VALLEY_MIST, createValleyWorld, type ValleyWorld } from './valley-world';
 import { followVitals } from './vitals-effects';
 
@@ -77,7 +79,8 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
 
   // The intro film opens a fresh run for a player alone (or a host with nobody in the room), once per
   // page, unless the URL, the settings or the browser say otherwise. Its code loads only when it is
-  // wanted, or when the pause card is asked to show it.
+  // wanted, or when the pause card is asked to show it. On a page that opens on the title screen,
+  // Play on the title starts the film; on any other, the first click on the pause card does.
   let multiplayer: Multiplayer | null = null;
   let introController: IntroController | null = null;
   let introLoading: Promise<IntroController | null> | null = null;
@@ -96,6 +99,13 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
     view.night === null &&
     view.stock === null &&
     view.research === null;
+  // A plain start opens on the title screen, for a person at the keyboard: not for a page with
+  // switches, a held moment of the film, an invite to somebody's room or a script behind it.
+  const showTitle = titleWanted({
+    mode: view.title,
+    automated: navigator.webdriver === true,
+    custom: !plainStart || view.introAt !== null,
+  });
   const wantsIntro = (): boolean =>
     introWanted({
       mode: view.introAt !== null ? 'on' : view.intro,
@@ -115,6 +125,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
           valley: () => valley,
           wanted: wantsIntro,
           calm: calmIntro,
+          manual: showTitle,
         });
         if (flags.debug && window.__ashbound) window.__ashbound.intro = introController;
         return introController;
@@ -136,6 +147,16 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
     watchIntro: () => void loadIntro().then((controller) => controller?.replay()),
   });
   if (flags.debug) window.__ashbound = { stage, game, build: building.debug };
+  const title: TitleController | null = showTitle
+    ? createTitle({
+        game,
+        calm: calmIntro,
+        film: wantsIntro,
+        prepareFilm: () => loadIntro().then((controller) => controller !== null),
+        playFilm: () => introController?.play() ?? false,
+      })
+    : null;
+  if (flags.debug && window.__ashbound && title) window.__ashbound.title = title;
   if (view.introAt !== null) {
     const heldAt = view.introAt;
     void loadIntro().then((controller) => controller?.hold(heldAt));
@@ -224,6 +245,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
     start: () => game.start(),
     dispose() {
       disposed = true;
+      title?.dispose();
       introController?.dispose();
       building.dispose();
       stopFire?.();

@@ -3,6 +3,7 @@
 import type { BuildControlsDebug } from './app/build-controls';
 import type { IntroController } from './app/intro';
 import type { MultiplayerDebug } from './app/multiplayer';
+import type { TitleController } from './app/title';
 import type { Game } from './engine/game';
 import type { Stage } from './engine/stage';
 
@@ -18,6 +19,7 @@ declare global {
       build?: BuildControlsDebug;
       mp?: MultiplayerDebug;
       intro?: IntroController;
+      title?: TitleController;
     };
   }
 }

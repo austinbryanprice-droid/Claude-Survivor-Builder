@@ -5,6 +5,7 @@
  * the yaw the rest of the game uses.
  */
 import type { CameraPose, CameraRoute } from '../../shared/camera-pose';
+import { blendPose } from '../../shared/intro-camera';
 
 export interface ShotPose {
   readonly x: number;
@@ -353,6 +354,50 @@ export function createFlyRoute(groundAt: (x: number, z: number) => number): Came
       out.pitch =
         ((pitches[b] as number) + ((pitches[c] as number) - (pitches[b] as number)) * ease) * RAD;
       out.fov = ROUTE_FOV;
+      return out;
+    },
+  };
+}
+
+/**
+ * The two views the title screen's camera drifts between: low over the valley with the crash site
+ * below and the sun ahead, and high over the western forest with the lake, the whole valley and
+ * the mountains in the picture. They are not named shots, since a named shot keeps the trees clear
+ * around it and nobody photographs from these.
+ */
+export const TITLE_VIEWS: readonly [ShotPose, ShotPose] = [
+  {
+    x: -26,
+    z: 30,
+    height: 15,
+    bearing: 66,
+    pitch: -7,
+    fov: 64,
+    note: 'The title screen opens here, over the crash site',
+  },
+  {
+    x: -34,
+    z: 52,
+    height: 26,
+    bearing: 60,
+    pitch: -11,
+    fov: 68,
+    note: 'and drifts up and back to here, over the whole valley',
+  },
+];
+
+/** The title route keeps its eye at least this far above the ground, which a hill between its two views could otherwise break. */
+const TITLE_CLEARANCE = 6;
+
+/** The title camera's path: `sample(0)` is the first view and `sample(1)` the second, a straight glide from one to the other. */
+export function createTitleRoute(groundAt: (x: number, z: number) => number): CameraRoute {
+  const [from, to] = [shotPose(TITLE_VIEWS[0], groundAt), shotPose(TITLE_VIEWS[1], groundAt)];
+  return {
+    sample(fraction, out) {
+      Object.assign(out, from);
+      out.roll = 0;
+      blendPose(out, to, fraction);
+      out.y = smoothMax(out.y, groundAt(out.x, out.z) + TITLE_CLEARANCE, ROUTE_BLEND);
       return out;
     },
   };
