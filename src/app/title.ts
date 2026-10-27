@@ -150,8 +150,10 @@ export function createTitle({
     screen.leave(withFilm, TITLE.leadSeconds);
     // The timer is set first: a browser that says no at once takes the screen back, which stops it.
     leadTimer = window.setTimeout(() => void proceed(withFilm, press), TITLE.leadSeconds * 1000);
-    stopWatching = input.onChange(watchMouse);
+    // The hold is made before anyone watches: holding tells every listener, and until the request below
+    // clears it the input still carries the refusal of the last Play, which would read as a new one.
     input.hold(true);
+    stopWatching = input.onChange(watchMouse);
     input.requestLock();
   };
 

@@ -202,6 +202,39 @@ test.describe('the title screen', () => {
     expect(problems).toEqual([]);
   });
 
+  test('starts on the next Play after the browser refused the mouse the first time', async ({
+    page,
+  }) => {
+    // The browser says no to the first request for the mouse and yes to the ones after it, as it
+    // does when a request comes too soon after the player let go of the mouse.
+    await page.addInitScript(() => {
+      const request = HTMLCanvasElement.prototype.requestPointerLock;
+      let refusals = 1;
+      HTMLCanvasElement.prototype.requestPointerLock = function (options) {
+        if (refusals-- <= 0) return request.call(this, options);
+        document.dispatchEvent(new Event('pointerlockerror'));
+        return Promise.reject(new DOMException('Refused for the test', 'NotAllowedError'));
+      };
+    });
+    const problems = await open(page, '?title=on&intro=off&debug&quality=low');
+    await waitForTheRun(page);
+    await play(page).click();
+    await expect(page.locator('.title-hint')).toContainText('did not hand over the mouse', {
+      timeout: STATE_TIMEOUT,
+    });
+    expect(await phase(page)).toBe('waiting');
+
+    // The hint says to click Play again. The refusal is behind that click: it does not turn the
+    // click back, and the mouse it is given is not left in hand on a title that went back to waiting.
+    await play(page).click();
+    await expect(page.locator('.title')).toBeHidden({ timeout: STATE_TIMEOUT });
+    await expect(page.locator('#hud')).toHaveAttribute('data-intro', 'off');
+    await expect(page.locator('#hud')).toHaveAttribute('data-pointer', 'locked');
+    expect(await phase(page)).toBe('done');
+    expect(await mouse(page)).toEqual({ captured: true, locked: true, held: false });
+    expect(problems).toEqual([]);
+  });
+
   test('comes back when the mouse is let go of before the film starts, and the next Play starts it', async ({
     page,
   }) => {
