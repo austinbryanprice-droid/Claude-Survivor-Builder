@@ -356,6 +356,19 @@ describe('what building sounds like', () => {
     expect(elsewhere?.cues[0]?.cue.seed).not.toBe(one?.cues[0]?.cue.seed);
   });
 
+  it('tells what was done to a cell apart, so that a module broken just after it was set down is not taken for a repeat', () => {
+    const generator = packState(moduleShape(MODULE.generator, 0), MATERIAL.scrap);
+    const placed = effectForEdit(edit(generator), 0);
+    const broken = effectForEdit(edit(0), generator);
+    expect([placed?.kind, broken?.kind]).toEqual(['module', 'module']);
+    expect(broken?.key).not.toBe(placed?.key);
+    // Through a governor: the second is heard at once, and a repeat of the first is not.
+    const governor = new Governor();
+    expect(governor.admit('module', 2, 10, placed?.key)).toBe(true);
+    expect(governor.admit('module', 2, 10.01, broken?.key)).toBe(true);
+    expect(governor.admit('module', 2, 10.02, placed?.key)).toBe(false);
+  });
+
   it('writes only cues that are quieter than the voice’s own full level and start within a second', () => {
     const effects: (Effect | null)[] = [
       effectForEdit(edit(SCRAP), 0),

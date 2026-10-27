@@ -433,22 +433,28 @@ export function effectForEdit(event: BlockSetEvent, previous: CellState): Effect
   if (state === previous) return null;
   const seed = hash3(0x65646974, x, y, z) ^ state;
   const at = middleOf(x, y, z);
-  const key = hash3(0x636f6c6c, x, y, z);
   const gnawed = event.by === NO_PLAYER;
+  // What was done to the cell tells one source from another: a module broken just after it was set down is not a repeat.
+  const key = (what: number): number => hash3(what, x, y, z);
   if (state === 0) {
     const module = moduleOfShape(stateShape(previous));
     return module
-      ? { kind: 'module', at, key, cues: moduleBroken(gnawed, seed) }
-      : { kind: 'break', at, key, cues: blockBroken(previous, gnawed, seed) };
+      ? { kind: 'module', at, key: key(0x62726b6d), cues: moduleBroken(gnawed, seed) }
+      : { kind: 'break', at, key: key(0x62726b62), cues: blockBroken(previous, gnawed, seed) };
   }
   const module = moduleOfShape(stateShape(state));
   if (previous === 0) {
     return module
-      ? { kind: 'module', at, key, cues: modulePlaced(module.id, seed) }
-      : { kind: 'place', at, key, cues: blockPlaced(state, seed) };
+      ? { kind: 'module', at, key: key(0x706c616d), cues: modulePlaced(module.id, seed) }
+      : { kind: 'place', at, key: key(0x706c6162), cues: blockPlaced(state, seed) };
   }
   // One piece in place of another: the same piece at a better level.
-  return { kind: 'raise', at, key, cues: raised(stateMaterial(state), seed, module !== undefined) };
+  return {
+    kind: 'raise',
+    at,
+    key: key(0x72616973),
+    cues: raised(stateMaterial(state), seed, module !== undefined),
+  };
 }
 
 /** A module that already stood and has come on or gone dark. */
