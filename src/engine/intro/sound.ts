@@ -9,6 +9,7 @@ import {
   type BedScore,
   type Cue,
 } from '../../shared/intro-sound';
+import { DUCK_GAIN, NARRATION } from '../../shared/narration';
 import { BEDS, type BedRig } from '../audio/beds';
 import { createNoiseBank } from '../audio/noise';
 import { createReverb } from '../audio/reverb';
@@ -57,6 +58,8 @@ export interface IntroSoundStats {
   /** Cues or beds whose recipe threw. */
   failed: number;
   state: 'playing' | 'fading' | 'ringing' | 'stopped';
+  /** True while the mix is stepped down for the narrator's voice. */
+  ducked: boolean;
 }
 
 export interface IntroSound {
@@ -68,6 +71,8 @@ export interface IntroSound {
   fadeOut(seconds: number): void;
   /** The film ran to its end: what is left is handed over and left to ring out into the first moments of play. */
   finish(): void;
+  /** The narrator begins or stops speaking: the whole mix steps down a few decibels for the voice and comes back after it. */
+  duck(speaking: boolean): void;
   readonly stats: IntroSoundStats;
 }
 
@@ -94,14 +99,17 @@ export function createIntroSound(
   ctx: BaseAudioContext,
   { output, live, lookahead = LOOKAHEAD, trace }: IntroSoundOptions,
 ): IntroSound {
-  // Voices and beds go to the bus; the lid filter that muffles the mix behind closed eyes sits after it.
+  // Voices and beds go to the bus; the lid filter that muffles the mix behind closed eyes sits after it,
+  // and after that the step the mix takes down for the narrator's voice.
   const bus = ctx.createGain();
   const lid = ctx.createBiquadFilter();
   lid.type = 'lowpass';
   lid.Q.value = 0.5;
   lid.frequency.value = lidCutoffAt(0);
+  const duck = ctx.createGain();
   bus.connect(lid);
-  lid.connect(output);
+  lid.connect(duck);
+  duck.connect(output);
   const dry = ctx.createGain();
   dry.connect(bus);
   const reverb = createReverb(ctx);
@@ -120,7 +128,14 @@ export function createIntroSound(
   let lidT = LID_FROM;
   let over = false;
   let reported = false;
-  const stats: IntroSoundStats = { voices: 0, beds: 0, skipped: 0, failed: 0, state: 'playing' };
+  const stats: IntroSoundStats = {
+    voices: 0,
+    beds: 0,
+    skipped: 0,
+    failed: 0,
+    state: 'playing',
+    ducked: false,
+  };
 
   const fail = (what: string, error: unknown): void => {
     stats.failed++;
@@ -225,6 +240,8 @@ export function createIntroSound(
         }
         bus.disconnect();
         reverb.output.disconnect();
+        duck.disconnect();
+        stats.ducked = false;
         stats.state = 'stopped';
       },
       Math.max(0, after) * 1000,
@@ -247,6 +264,20 @@ export function createIntroSound(
       bus.gain.setValueAtTime(bus.gain.value, now);
       bus.gain.linearRampToValueAtTime(0, now + seconds);
       teardown(seconds + 0.2);
+    },
+    duck(speaking) {
+      // Nothing to step aside for once the sound has been taken apart.
+      if (stats.state === 'stopped') return;
+      stats.ducked = speaking;
+      const now = ctx.currentTime;
+      duck.gain.cancelScheduledValues(now);
+      duck.gain.setValueAtTime(duck.gain.value, now);
+      duck.gain.setTargetAtTime(
+        speaking ? DUCK_GAIN : 1,
+        now,
+        // The curve is nearly there (95 percent) after three time constants.
+        (speaking ? NARRATION.duckAttack : NARRATION.duckRelease) / 3,
+      );
     },
     finish() {
       if (over) return;

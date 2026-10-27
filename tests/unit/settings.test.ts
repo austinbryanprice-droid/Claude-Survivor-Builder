@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, SETTINGS_LIMITS, sanitizeSettings } from '../../src/shared/settings';
+import {
+  DEFAULT_SETTINGS,
+  NARRATOR_ID_MAX,
+  SETTINGS_LIMITS,
+  sanitizeSettings,
+} from '../../src/shared/settings';
 
 describe('sanitizeSettings', () => {
   it('returns the defaults for anything that is not an object', () => {
@@ -17,6 +22,8 @@ describe('sanitizeSettings', () => {
         quality: 'ultra',
         intro: false,
         volume: 0.4,
+        narration: false,
+        narrator: 'Google UK English Male',
       }),
     ).toEqual({
       mouseSensitivity: 1.5,
@@ -25,6 +32,8 @@ describe('sanitizeSettings', () => {
       quality: 'ultra',
       intro: false,
       volume: 0.4,
+      narration: false,
+      narrator: 'Google UK English Male',
     });
   });
 
@@ -45,6 +54,28 @@ describe('sanitizeSettings', () => {
     expect(sanitizeSettings({}).intro).toBe(true);
     expect(sanitizeSettings({ intro: false }).intro).toBe(false);
     expect(sanitizeSettings({ intro: 'no' }).intro).toBe(true);
+  });
+
+  it('has the film’s narrator speak unless the player turned it off, with the browser’s best voice', () => {
+    expect(DEFAULT_SETTINGS.narration).toBe(true);
+    expect(DEFAULT_SETTINGS.narrator).toBe('');
+    expect(sanitizeSettings({}).narration).toBe(true);
+    expect(sanitizeSettings({ narration: false }).narration).toBe(false);
+    expect(sanitizeSettings({ narration: 'no' }).narration).toBe(true);
+    expect(sanitizeSettings({ narration: 0 }).narration).toBe(true);
+  });
+
+  it('keeps the voice a player chose as long as it is a plausible name, and otherwise the automatic choice', () => {
+    expect(sanitizeSettings({ narrator: 'Daniel' }).narrator).toBe('Daniel');
+    expect(sanitizeSettings({ narrator: '' }).narrator).toBe('');
+    expect(sanitizeSettings({ narrator: 'x'.repeat(NARRATOR_ID_MAX) }).narrator).toHaveLength(
+      NARRATOR_ID_MAX,
+    );
+    // What storage hands back is whatever anyone put there.
+    expect(sanitizeSettings({ narrator: 'x'.repeat(NARRATOR_ID_MAX + 1) }).narrator).toBe('');
+    expect(sanitizeSettings({ narrator: 7 }).narrator).toBe('');
+    expect(sanitizeSettings({ narrator: { name: 'Daniel' } }).narrator).toBe('');
+    expect(sanitizeSettings({ narrator: null }).narrator).toBe('');
   });
 
   it('only keeps a graphics preset that exists', () => {

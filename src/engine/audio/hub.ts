@@ -18,6 +18,8 @@ export interface AudioHub {
   readonly input: AudioNode | null;
   /** The master volume, 0 (silent) to 1. */
   readonly volume: number;
+  /** False for a page that is kept silent (`?sound=off`) or whose browser has no Web Audio: nothing else the game makes should be heard on it either. */
+  readonly enabled: boolean;
   /** Makes the audio context, or wakes it if the browser had it asleep. Call it inside a click or a key press, which is when browsers allow it. */
   unlock(): void;
   /** Sets the master volume, 0 to 1. */
@@ -106,6 +108,9 @@ export function createAudioHub({
     },
     get volume() {
       return volume;
+    },
+    get enabled() {
+      return usable;
     },
     unlock() {
       if (disposed || !usable) return;

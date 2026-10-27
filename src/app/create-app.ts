@@ -169,6 +169,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
         film: wantsIntro,
         prepareFilm: () => loadIntro().then((controller) => controller !== null),
         playFilm: () => introController?.play() ?? false,
+        warmVoice: () => introController?.warmVoice(),
       })
     : null;
   if (flags.debug && window.__ashbound && title) window.__ashbound.title = title;

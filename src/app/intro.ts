@@ -5,7 +5,10 @@ import {
   type IntroPlayback,
   type IntroSite,
 } from '../engine/intro/director';
+import { createNarrator, type Narrator } from '../engine/intro/narration';
 import { createIntroSound, type IntroSound } from '../engine/intro/sound';
+import { createBrowserSpeech } from '../engine/speech';
+import { gainOfVolume } from '../shared/audio';
 import { createIntroOverlay } from '../ui/intro-overlay';
 
 /**
@@ -23,6 +26,12 @@ import { createIntroOverlay } from '../ui/intro-overlay';
  * on the pause card) unlocks the audio, and the sound starts with the picture; Esc or any key that
  * skips the picture fades the sound with it.
  *
+ * A narrator tells the film in the browser's own voice, a line at a time as the film's clock reaches
+ * it, with the music stepping down a few decibels while it speaks. The captions say the same words
+ * on screen whether or not a voice is heard, so a browser with no voice, a player who has turned
+ * the narration off and a muted page lose nothing of the story; Esc or any key that skips the
+ * picture stops the voice with it.
+ *
  * It touches nothing of the run: no commands, no events, nothing on the wire. A guest never sees
  * it, nor a host with a room open, because the run they are in is already going.
  */
@@ -37,6 +46,8 @@ const CAPTURE_WAIT_FRAMES = 3;
 const SKIP_CLEAR_SECONDS = 0.6;
 /** Seconds the last chord of a film that ended on its own takes to fade when another film begins while it still rings. */
 const TAIL_FADE = 0.25;
+/** The voice is woken at most this often. */
+const WARM_EVERY_MS = 3000;
 
 export interface IntroControllerOptions {
   readonly game: Game;
@@ -61,6 +72,10 @@ export interface IntroController {
   readonly playback: IntroPlayback | null;
   /** The sound of the film that is playing or played last, or null when none has had any (a silent page, a held film). */
   readonly sound: IntroSound | null;
+  /** The narrator of the film that is playing or played last, or null when none had a voice to speak with (a silent page, a held film, the narration turned off, a browser that cannot speak). */
+  readonly narration: Narrator | null;
+  /** Wakes the browser's voice from inside the click that will start the film, so that its first line is not late: silent, and a page that will not narrate does nothing. */
+  warmVoice(): void;
   dispose(): void;
 }
 
@@ -84,6 +99,10 @@ export function createIntroController({
   const overlay = createIntroOverlay();
   let playback: IntroPlayback | null = null;
   let sound: IntroSound | null = null;
+  let narrator: Narrator | null = null;
+  let warmedAt = Number.NEGATIVE_INFINITY;
+  /** The browser's own speech, asked for its voices now since some browsers list them only a moment after the page has loaded; null in one that has none. */
+  const speech = createBrowserSpeech();
   /** The film plays on the first request for the mouse of the page, and again whenever it is asked for. A run in play is not offered one, nor is a page whose title screen starts the film. */
   let offered = !manual && !input.captured;
   let requested = false;
@@ -136,6 +155,56 @@ export function createIntroController({
     }
   };
 
+  /** Whether the page may have a narrator: a player who has not turned the voice off, on a page that makes sound, in a browser that can speak. */
+  const mayNarrate = (): boolean => {
+    const { audio, settings } = game;
+    return !!speech && settings.narration && audio.enabled && audio.volume > 0;
+  };
+
+  /** Wakes the browser's voice with a silent word, once in a few seconds: the title's click does it, and so does a film that begins without one. */
+  const warm = (): void => {
+    const at = performance.now();
+    if (!speech || at - warmedAt < WARM_EVERY_MS) return;
+    warmedAt = at;
+    try {
+      speech.warm();
+    } catch {
+      // Warming is only a head start.
+    }
+  };
+
+  /** The film's narrator, when the page may have one. */
+  const startNarration = (film: IntroSound | null): Narrator | null => {
+    if (!speech || !mayNarrate()) return null;
+    const { audio, settings } = game;
+    try {
+      warm();
+      return createNarrator({
+        speech,
+        // The slider is squared into a gain for the film's sound; the voice follows the same curve, so the two stay as loud as each other as it moves.
+        volume: () => gainOfVolume(audio.volume),
+        voice: () => settings.narrator,
+        onSpeaking: (speaking) => film?.duck(speaking),
+      });
+    } catch (error) {
+      // The voice is a courtesy: the captions tell the film without it.
+      console.error('The intro film could not make its narrator; it goes on with captions.', error);
+      return null;
+    }
+  };
+
+  /** A film begun while the last film's final line is still being said cuts it short, so that two voices never speak at once. */
+  const hushNarration = (): void => {
+    try {
+      narrator?.stop();
+    } catch (error) {
+      console.error(
+        "The last intro film's narrator could not be stopped; the new film goes on.",
+        error,
+      );
+    }
+  };
+
   /** A film that ended on its own leaves its last chord ringing into the run for a few seconds: a film begun over it cuts it short, so that two scores never play at once. */
   const hushTail = (): void => {
     try {
@@ -152,8 +221,10 @@ export function createIntroController({
     startedAt = performance.now();
     captured = input.captured;
     hushTail();
-    // A film held at a moment, for a picture or a test, has no time passing for a sound to follow.
+    hushNarration();
+    // A film held at a moment, for a picture or a test, has no time passing for a sound to follow, or for a voice.
     sound = holding ? null : startSound();
+    narrator = holding ? null : startNarration(sound);
     const film = createIntro({
       stage: game.stage,
       site: where,
@@ -162,6 +233,7 @@ export function createIntroController({
       holdAt: heldAt,
       calm: calm(),
       sound,
+      narration: narrator,
     });
     playback = film;
     document.body.classList.add('intro-playing');
@@ -218,6 +290,12 @@ export function createIntroController({
     get sound() {
       return sound;
     },
+    get narration() {
+      return narrator;
+    },
+    warmVoice() {
+      if (!disposed && mayNarrate()) warm();
+    },
     replay() {
       if (playback) return;
       requested = true;
@@ -239,6 +317,8 @@ export function createIntroController({
       stopChanges();
       stopListening();
       if (playback) game.setCinematic(null);
+      hushNarration();
+      speech?.dispose();
       overlay.dispose();
     },
   };

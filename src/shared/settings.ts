@@ -13,6 +13,10 @@ export interface Settings {
   intro: boolean;
   /** Master volume of everything the game sounds, 0 (silent) to 1. The film's mix is set to peak just under the top at 1, so the slider only turns it down. */
   volume: number;
+  /** Has the intro film's narrator speak its lines, in the browser's own voice; the captions are on screen whatever this says. */
+  narration: boolean;
+  /** The voice the narrator speaks with, as the browser names it (`VoiceInfo.id`); empty takes the best English one the browser has. */
+  narrator: string;
 }
 
 export const SETTINGS_LIMITS = {
@@ -21,6 +25,9 @@ export const SETTINGS_LIMITS = {
   volume: { min: 0, max: 1, step: 0.05 },
 } as const;
 
+/** The longest voice name kept: a browser's names are short, and the setting is read back from storage anyone can edit. */
+export const NARRATOR_ID_MAX = 200;
+
 export const DEFAULT_SETTINGS: Settings = {
   mouseSensitivity: 1,
   fov: 70,
@@ -28,6 +35,8 @@ export const DEFAULT_SETTINGS: Settings = {
   quality: DEFAULT_QUALITY,
   intro: true,
   volume: 1,
+  narration: true,
+  narrator: '',
 };
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
@@ -54,5 +63,11 @@ export function sanitizeSettings(raw: unknown): Settings {
         : DEFAULT_SETTINGS.quality,
     intro: typeof source.intro === 'boolean' ? source.intro : DEFAULT_SETTINGS.intro,
     volume: clampNumber(source.volume, volume.min, volume.max, DEFAULT_SETTINGS.volume),
+    narration:
+      typeof source.narration === 'boolean' ? source.narration : DEFAULT_SETTINGS.narration,
+    narrator:
+      typeof source.narrator === 'string' && source.narrator.length <= NARRATOR_ID_MAX
+        ? source.narrator
+        : DEFAULT_SETTINGS.narrator,
   };
 }

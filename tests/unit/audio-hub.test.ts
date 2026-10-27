@@ -130,6 +130,19 @@ describe('the audio hub', () => {
     expect(hub.input).toBeNull();
   });
 
+  it('says whether the page is meant to be heard: not when it was told to be silent, and not once the browser has refused', () => {
+    expect(hubWith().enabled).toBe(true);
+    expect(hubWith(1, false).enabled).toBe(false);
+    // A volume of nothing is quiet, not off: the player can turn it up again.
+    expect(hubWith(0).enabled).toBe(true);
+    const refused = hubWith(1, true, () => {
+      throw new Error('AudioContext is not defined');
+    });
+    expect(refused.enabled).toBe(true);
+    refused.unlock();
+    expect(refused.enabled).toBe(false);
+  });
+
   it('sets the master volume as the square of the slider, eased over a few thousandths of a second', () => {
     const hub = hubWith(1);
     hub.unlock();

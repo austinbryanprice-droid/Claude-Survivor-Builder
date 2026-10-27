@@ -150,6 +150,14 @@ body.intro-playing #build-tag {
   text-transform: uppercase;
 }
 
+/* A narrow window wraps the longer lines of the narration onto two rows, so the prompt moves to the top corner, clear of them. */
+@media (max-width: 720px) {
+  .intro-skip {
+    top: 2.5vh;
+    bottom: auto;
+  }
+}
+
 /* Someone who asked their system for less motion gets the flashes at a third of their strength. */
 @media (prefers-reduced-motion: reduce) {
   .intro-flash {

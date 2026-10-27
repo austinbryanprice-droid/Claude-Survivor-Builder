@@ -10,7 +10,15 @@ import {
   SOUND_SECONDS,
   lidCutoffAt,
 } from '../../src/shared/intro-sound';
-import { FakeAudioContext, FakeFilter, FakeGain, asContext, asNode } from './helpers/fake-audio';
+import { DUCK_GAIN, NARRATION } from '../../src/shared/narration';
+import {
+  FakeAudioContext,
+  FakeFilter,
+  FakeGain,
+  asContext,
+  asNode,
+  reaches,
+} from './helpers/fake-audio';
 
 interface Rig {
   ctx: FakeAudioContext;
@@ -18,6 +26,7 @@ interface Rig {
   events: SoundEvent[];
   bus: FakeGain;
   lid: FakeFilter;
+  output: FakeGain;
 }
 
 function setup(live = true): Rig {
@@ -32,7 +41,7 @@ function setup(live = true): Rig {
   // The lid filter is the first filter the sound makes, and the bus is what feeds it.
   const lid = ctx.ofType(FakeFilter)[0] as FakeFilter;
   const bus = ctx.ofType(FakeGain).find((gain) => gain.outputs.includes(lid)) as FakeGain;
-  return { ctx, sound, events, bus, lid };
+  return { ctx, sound, events, bus, lid, output };
 }
 
 const cues = (events: readonly SoundEvent[]): SoundEvent[] =>
@@ -343,6 +352,86 @@ describe('the film’s sound director', () => {
       if (event.at < 4) expect(event.when).toBe(4);
       else expect(event.when).toBeCloseTo(event.at, 9);
     }
+  });
+});
+
+describe('the film’s sound and the narrator’s voice', () => {
+  /** The step the mix takes for the voice: the gain that the eyelids' filter feeds, and that feeds the output. */
+  const duckOf = (rig: Rig): FakeGain => rig.lid.outputs[0] as FakeGain;
+
+  it('puts one gain between everything the film sounds and the output, so the voice can have the room', () => {
+    const rig = setup();
+    const duck = duckOf(rig);
+    expect(duck).toBeInstanceOf(FakeGain);
+    expect(duck.outputs).toEqual([rig.output]);
+    expect(reaches(rig.bus, duck)).toBe(true);
+    expect(duck.gain.value).toBe(1);
+    // Nothing is stepped down until a voice is heard.
+    expect(duck.gain.events).toEqual([]);
+  });
+
+  it('steps down a few decibels, quickly, when the voice begins, and comes back slowly when it ends', () => {
+    expect(DUCK_GAIN).toBeGreaterThan(0.3);
+    expect(DUCK_GAIN).toBeLessThan(0.6);
+    const rig = setup();
+    const duck = duckOf(rig);
+    rig.ctx.currentTime = 3;
+    rig.sound.duck(true);
+    expect(duck.gain.events).toEqual([
+      { type: 'set', value: 1, time: 3 },
+      { type: 'target', value: DUCK_GAIN, time: 3, constant: NARRATION.duckAttack / 3 },
+    ]);
+    expect(rig.sound.stats.ducked).toBe(true);
+
+    // The gain the browser reports on the way down is the one the way back starts from.
+    duck.gain.value = DUCK_GAIN;
+    rig.ctx.currentTime = 6;
+    rig.sound.duck(false);
+    expect(duck.gain.events.slice(2)).toEqual([
+      { type: 'set', value: DUCK_GAIN, time: 6 },
+      { type: 'target', value: 1, time: 6, constant: NARRATION.duckRelease / 3 },
+    ]);
+    expect(NARRATION.duckRelease).toBeGreaterThan(NARRATION.duckAttack);
+    expect(rig.sound.stats.ducked).toBe(false);
+  });
+
+  it('takes back the step that was scheduled when the voice changes its mind', () => {
+    const rig = setup();
+    const duck = duckOf(rig);
+    rig.ctx.currentTime = 5;
+    rig.sound.duck(true);
+    // A line ends the moment the next begins: the way back is cancelled by the way down again.
+    rig.sound.duck(false);
+    rig.sound.duck(true);
+    const targets = duck.gain.events.filter((event) => event.type === 'target');
+    expect(targets).toHaveLength(1);
+    expect(targets[0]).toMatchObject({ value: DUCK_GAIN, time: 5 });
+  });
+
+  it('does not touch the mix of a film that has been taken apart', () => {
+    const rig = setup();
+    const duck = duckOf(rig);
+    rig.ctx.currentTime = 12;
+    rig.sound.fadeOut(0.25);
+    vi.advanceTimersByTime(600);
+    expect(rig.sound.stats.state).toBe('stopped');
+    const written = duck.gain.events.length;
+    rig.ctx.currentTime = 13;
+    expect(() => rig.sound.duck(true)).not.toThrow();
+    expect(duck.gain.events).toHaveLength(written);
+    expect(duck.disconnected).toBe(true);
+    expect(rig.sound.stats.ducked).toBe(false);
+  });
+
+  it('leaves the film’s own levels alone: the bus and the eyelids’ filter are written by nothing here', () => {
+    const rig = setup();
+    const busBefore = rig.bus.gain.events.length;
+    const lidBefore = rig.lid.frequency.events.length;
+    rig.ctx.currentTime = 2;
+    rig.sound.duck(true);
+    rig.sound.duck(false);
+    expect(rig.bus.gain.events).toHaveLength(busBefore);
+    expect(rig.lid.frequency.events).toHaveLength(lidBefore);
   });
 });
 
