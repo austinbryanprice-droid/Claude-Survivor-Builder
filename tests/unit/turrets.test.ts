@@ -11,6 +11,8 @@ import { SCRAP, flatWorld } from './helpers/nav-world';
 const FLOOR = 10;
 const TURRET_STATE = packState(moduleShape(MODULE.turret, 0), 1);
 const TERMINAL_STATE = packState(moduleShape(MODULE.terminal, 0), 1);
+const GENERATOR_STATE = packState(moduleShape(MODULE.generator, 0), 1);
+const NODE_STATE = packState(moduleShape(MODULE.node, 0), 1);
 /** A turret raised to a level: the level is the material byte of its cell. */
 const turretAt = (level: number) => packState(moduleShape(MODULE.turret, 0), level);
 /** Steps in a second of the run. */
@@ -439,5 +441,130 @@ describe('a turret in the simulation', () => {
     expect(sim.over).toBe(true);
     expect(play(5)).toHaveLength(0);
     expect(sim.felled).toBe(0);
+  });
+});
+
+describe('a turret with power', () => {
+  /** Puts a crowd of machines in range of the turret, so that none runs out in a few seconds of shooting. */
+  const crowd = (crawler: (west: number, dz?: number) => number): void => {
+    for (let i = 0; i < 12; i++) crawler(14 + (i % 3), ((i % 4) - 1.5) * 1.2);
+  };
+  /** The steps, counted from the first, on which a turret of a level fired in `steps` steps of a fight. */
+  function firedOn(
+    level: number,
+    steps: number,
+    setup: (stand: ReturnType<typeof field>['stand'], base: { x: number; z: number }) => void,
+  ): number[] {
+    const { stand, base, crawler, play } = field();
+    stand(base.x, base.z, turretAt(level));
+    setup(stand, base);
+    crowd(crawler);
+    const fired: number[] = [];
+    for (let step = 0; step < steps; step++) if (play(1).length > 0) fired.push(step);
+    return fired.map((step) => step - (fired[0] as number));
+  }
+  const withGenerator = (
+    stand: ReturnType<typeof field>['stand'],
+    base: { x: number; z: number },
+  ) => void stand(base.x, base.z + 3, GENERATOR_STATE);
+  const alone = () => undefined;
+
+  it('shoots 3 times where it shot 2, at every level, and does nothing else different', () => {
+    // 120 steps are 6 seconds; the waits are 10, 5 and 12 steps, and 6.67, 3.33 and 8 with power.
+    expect(TURRET.poweredRate).toBe(1.5);
+    for (const [level, calm, lit] of [
+      [1, 12, 18],
+      [2, 24, 36],
+      [3, 10, 15],
+    ] as const) {
+      expect(firedOn(level, 120, alone), `level ${level} without power`).toHaveLength(calm);
+      expect(firedOn(level, 120, withGenerator), `level ${level} with power`).toHaveLength(lit);
+    }
+  });
+
+  it('keeps its pace to a fraction of a step: shots on steps 0, 7, 14, 20, 27, 34, 40 at the first level', () => {
+    expect(firedOn(1, 45, withGenerator)).toEqual([0, 7, 14, 20, 27, 34, 40]);
+    expect(firedOn(2, 20, withGenerator)).toEqual([0, 4, 7, 10, 14, 17]);
+    expect(firedOn(3, 40, withGenerator)).toEqual([0, 8, 16, 24, 32]);
+  });
+
+  it('keeps its old pace when nothing powers it, on every step of the same fight', () => {
+    expect(firedOn(1, 45, alone)).toEqual([0, 10, 20, 30, 40]);
+    expect(firedOn(2, 20, alone)).toEqual([0, 5, 10, 15]);
+    expect(firedOn(3, 40, alone)).toEqual([0, 12, 24, 36]);
+  });
+
+  it('is powered by a Node that carries a Generator’s power to it, and by none that does not', () => {
+    // The Generator is 12 blocks off, past its own reach; a Node halfway takes power from it and gives it on.
+    const far = (stand: ReturnType<typeof field>['stand'], base: { x: number; z: number }) =>
+      void stand(base.x, base.z + 12, GENERATOR_STATE);
+    const chained = (stand: ReturnType<typeof field>['stand'], base: { x: number; z: number }) => {
+      far(stand, base);
+      stand(base.x, base.z + 6, NODE_STATE);
+    };
+    expect(firedOn(1, 120, far)).toHaveLength(12);
+    expect(firedOn(1, 120, chained)).toHaveLength(18);
+    // A Node with no Generator behind it has nothing to give.
+    const bare = (stand: ReturnType<typeof field>['stand'], base: { x: number; z: number }) =>
+      void stand(base.x, base.z + 6, NODE_STATE);
+    expect(firedOn(1, 120, bare)).toHaveLength(12);
+  });
+
+  it('does the damage of its level and reaches as far as its level, power or not', () => {
+    for (const powered of [false, true]) {
+      const { stand, base, crawler, play, machines, flat } = field();
+      stand(base.x, base.z, turretAt(2));
+      if (powered) stand(base.x, base.z + 3, GENERATOR_STATE);
+      const target = crawler(14);
+      expect(play(1)).toHaveLength(1);
+      const states = Array.from({ length: 2 }, () => ({
+        id: 0,
+        kind: 0,
+        x: 0,
+        y: 0,
+        z: 0,
+        yaw: 0,
+        health: 255,
+        flags: 0,
+      }));
+      expect(machines.write(states)).toBe(1);
+      expect(states[0]?.id).toBe(target);
+      expect(states[0]?.health).toBe(
+        Math.round(
+          ((ENEMIES.crawler.health - turretLevel(2).damage) / ENEMIES.crawler.health) * 255,
+        ),
+      );
+      // A machine a block past its range is not shot, with or without power.
+      const range = turretLevel(2).range;
+      crawler(flat.core.x - (base.x + 0.5) + range + 1, 6);
+      expect(play(2).filter((shot) => shot.enemy !== target)).toHaveLength(0);
+    }
+  });
+
+  it('goes back to its old pace the moment its power is broken, after the shot already due', () => {
+    const { stand, remove, base, crawler, play } = field();
+    stand(base.x, base.z);
+    const generator = stand(base.x, base.z + 3, GENERATOR_STATE);
+    crowd(crawler);
+    const fired: number[] = [];
+    for (let step = 0; step < 50; step++) {
+      if (step === 15) remove(generator);
+      if (play(1).length > 0) fired.push(step - (fired[0] ?? step));
+    }
+    // 0, 7 and 14 with power; the shot due at 20 still comes, and then the old pace of 10.
+    expect(fired).toEqual([0, 7, 14, 20, 30, 40]);
+  });
+
+  it('speeds up from the next shot when power arrives, not before', () => {
+    const { stand, base, crawler, play } = field();
+    stand(base.x, base.z);
+    crowd(crawler);
+    const fired: number[] = [];
+    for (let step = 0; step < 40; step++) {
+      if (step === 5) stand(base.x, base.z + 3, GENERATOR_STATE);
+      if (play(1).length > 0) fired.push(step);
+    }
+    // The shot at 0 set the next for 10; the one at 10 has power behind it, and the next is 6.67 on.
+    expect(fired.map((step) => step - (fired[0] as number))).toEqual([0, 10, 17, 24, 30, 37]);
   });
 });

@@ -55,7 +55,7 @@ describe('the research ladder', () => {
   it('says what opens each row from the ladder tables, and what a group holds', () => {
     const ladder = ladderForHud(reading(0));
     expect(ladder.rows[0]?.need).toBe('From the start');
-    expect(ladder.rows[1]?.need).toBe(`${pointsText(powerAt)} · Generator`);
+    expect(ladder.rows[1]?.need).toBe(`${pointsText(powerAt)} · Generator, Power Node`);
     expect(ladder.rows.slice(2).map((row) => row.need)).toEqual(
       RESEARCH.steps.map((step) => pointsText(step.points)),
     );

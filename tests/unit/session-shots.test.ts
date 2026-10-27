@@ -546,6 +546,81 @@ describe('a turret’s shot', () => {
   });
 });
 
+describe('a turret with power', () => {
+  const GENERATOR = packState(moduleShape(MODULE.generator, 0), 1);
+  const NODE = packState(moduleShape(MODULE.node, 0), 1);
+  /** Three blocks from the turret, inside a Generator's reach of six. */
+  const BESIDE = { x: TURRET_CELL.x - 3, y: FLOOR, z: TURRET_CELL.z };
+  /** Twelve blocks off in a line: past a Generator's reach, with a Node between that is six from each. */
+  const FAR = { x: TURRET_CELL.x, y: FLOOR, z: TURRET_CELL.z - 12 };
+  const HALFWAY = { x: TURRET_CELL.x, y: FLOOR, z: TURRET_CELL.z - 6 };
+
+  /** The shots a guest hears in two seconds and a little, with the cells in the host's world as the test builds them. */
+  async function shotsIn(
+    seconds: number,
+    cells: readonly { at: { x: number; y: number; z: number }; state: number }[],
+  ) {
+    const { room, machines, guests } = await range(1, {}, (world) => {
+      world.setBlock(TURRET_CELL.x, TURRET_CELL.y, TURRET_CELL.z, TURRET_STATE);
+      for (const cell of cells) world.setBlock(cell.at.x, cell.at.y, cell.at.z, cell.state);
+    });
+    const heard = listen(guests[0]!.session);
+    await play(room, seconds);
+    return { room, machines, heard };
+  }
+
+  // A Basic Turret shoots every half second and the crawler takes six blows: five by two seconds
+  // at its own pace, and the sixth, which fells it, at two and a half. At one and a half times the
+  // rate the sixth comes at one and two thirds.
+  const WINDOW = 2.1;
+  const BLOWS = Math.ceil(ENEMIES.crawler.health / turretLevel(1).damage);
+
+  it('shoots at its own pace with nothing to power it', async () => {
+    const { machines, heard } = await shotsIn(WINDOW, []);
+    expect(BLOWS).toBe(6);
+    expect(heard).toHaveLength(5);
+    expect(machines().count).toBe(1);
+  });
+
+  it('shoots one and a half times as often beside a Generator, which fells the crawler sooner', async () => {
+    const { machines, heard } = await shotsIn(WINDOW, [{ at: BESIDE, state: GENERATOR }]);
+    expect(heard).toHaveLength(BLOWS);
+    expect(heard.at(-1)?.flags).toBe(SHOT_FLAG.enemy | SHOT_FLAG.kill);
+    expect(machines().count).toBe(0);
+  });
+
+  it('shoots at its own pace beyond a Generator’s reach', async () => {
+    const { heard } = await shotsIn(WINDOW, [{ at: FAR, state: GENERATOR }]);
+    expect(heard).toHaveLength(5);
+  });
+
+  it('is powered by a Node the Generator reaches, which carries power the rest of the way', async () => {
+    const { machines, heard } = await shotsIn(WINDOW, [
+      { at: FAR, state: GENERATOR },
+      { at: HALFWAY, state: NODE },
+    ]);
+    expect(heard).toHaveLength(BLOWS);
+    expect(machines().count).toBe(0);
+  });
+
+  it('gets nothing from a Node that has no power itself', async () => {
+    const { heard } = await shotsIn(WINDOW, [{ at: HALFWAY, state: NODE }]);
+    expect(heard).toHaveLength(5);
+  });
+
+  it('is back at its own pace the moment the Generator is broken', async () => {
+    const { room, machines, guests } = await range(1, {}, (world) => {
+      world.setBlock(TURRET_CELL.x, TURRET_CELL.y, TURRET_CELL.z, TURRET_STATE);
+      world.setBlock(BESIDE.x, BESIDE.y, BESIDE.z, GENERATOR);
+    });
+    const heard = listen(guests[0]!.session);
+    room.hostWorld.setBlock(BESIDE.x, BESIDE.y, BESIDE.z, 0);
+    await play(room, WINDOW);
+    expect(heard).toHaveLength(5);
+    expect(machines().count).toBe(1);
+  });
+});
+
 describe('what the host refuses to hear', () => {
   it('counts a shot with a missing or malformed part as noise, and does not spend the blaster on it', async () => {
     const { room, code } = await range(1);

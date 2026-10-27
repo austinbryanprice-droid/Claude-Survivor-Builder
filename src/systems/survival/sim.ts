@@ -21,7 +21,7 @@ import { debrisField } from '../economy/field';
 import { BLASTER, RESPAWN, SURVIVAL, VITALS, hitboxOf } from './balance';
 import { EnemySim, type Target } from './enemies';
 import { NavGrid, type NavCell, type NavWorld } from './nav';
-import { Generators } from './power';
+import { PowerGrid } from './power';
 import { Turrets, type ModuleSource, type TurretShot } from './turrets';
 import { PlayerVitals } from './vitals';
 import { WaveDirector } from './waves';
@@ -74,10 +74,10 @@ export interface SurvivalOptions {
    */
   standing?: ((module: number) => boolean) | null;
   /**
-   * Walks the modules standing in the world, which is how the turrets and the Generators among them
-   * are found: each step, every turret that is ready shoots the nearest machine it has a clear line
-   * to, and a player within reach of a Generator gets Energy back. Without it no turret shoots and no
-   * Generator gives.
+   * Walks the modules standing in the world, which is how the turrets, the Generators and the Power
+   * Nodes among them are found: each step, every turret that is ready shoots the nearest machine it
+   * has a clear line to (faster while it has power), and a player within reach of a Generator gets
+   * Energy back. Without it no turret shoots and no Generator gives.
    */
   modules?: ModuleSource | null;
 }
@@ -143,7 +143,7 @@ export class SurvivalSim {
   private readonly wealth: Economy | null;
   private readonly standing: ((module: number) => boolean) | null;
   private readonly turrets: Turrets | null;
-  private readonly generators: Generators | null;
+  private readonly power: PowerGrid | null;
   /** What the turrets have shot since the host last asked. */
   private readonly turretShots: TurretShot[] = [];
   /** The players the machines can go after in this step, kept between steps so a step allocates nothing. */
@@ -180,8 +180,9 @@ export class SurvivalSim {
           )
         : null;
     this.standing = options.standing ?? null;
-    this.turrets = this.machines && options.modules ? new Turrets(options.modules) : null;
-    this.generators = options.modules ? new Generators(options.modules) : null;
+    this.power = options.modules ? new PowerGrid(options.modules) : null;
+    this.turrets =
+      this.machines && options.modules ? new Turrets(options.modules, this.power) : null;
     // A run that starts at a later night has had the dawns before it: their research, read as the
     // run goes on from there (which the `?research=` switch then replaces) and the heaps they
     // uncovered, the better grades included.
@@ -504,10 +505,11 @@ export class SurvivalSim {
     if (beginsByDay) {
       this.health = Math.min(SURVIVAL.core.maxHealth, this.health + MEND_PER_STEP);
     }
-    // The Generators that stand now are the ones that charge the players this step.
-    this.generators?.refresh();
+    // The Generators that stand now are the ones that charge the players this step, and the ones that
+    // have power are the ones whose turrets shoot faster.
+    this.power?.refresh();
     for (const [id, vitals] of this.players) {
-      vitals.step(SIM_STEP_SECONDS, this.core, this.generators);
+      vitals.step(SIM_STEP_SECONDS, this.core, this.power);
       if (!vitals.alive && !this.fallen.includes(id)) this.goDown(id);
     }
     this.bringBack();

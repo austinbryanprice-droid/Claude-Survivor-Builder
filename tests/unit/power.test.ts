@@ -3,8 +3,8 @@ import { MODULE, moduleShape, packState } from '../../src/shared/blocks';
 import { PLAYER } from '../../src/shared/movement';
 import { inReach, reachDistance, reachEdge } from '../../src/shared/power';
 import { createVitalsReading } from '../../src/shared/vitals-state';
-import { POWER, VITALS } from '../../src/systems/survival/balance';
-import { Generators } from '../../src/systems/survival/power';
+import { POWER, TURRET as TURRET_TABLE, VITALS } from '../../src/systems/survival/balance';
+import { PowerGrid, reachOfModule } from '../../src/systems/survival/power';
 import { SurvivalSim } from '../../src/systems/survival/sim';
 import type { ModuleSite } from '../../src/systems/survival/turrets';
 import { PlayerVitals } from '../../src/systems/survival/vitals';
@@ -13,6 +13,7 @@ import { CORE_FOOTPRINT, CORE_HEIGHT, outpostFor } from '../../src/world/outpost
 const GENERATOR = packState(moduleShape(MODULE.generator, 0), 1);
 const TERMINAL = packState(moduleShape(MODULE.terminal, 0), 1);
 const TURRET = packState(moduleShape(MODULE.turret, 0), 1);
+const NODE = packState(moduleShape(MODULE.node, 0), 1);
 const STEP = 0.05;
 /** Half the height of a player: their body is measured from the middle. */
 const HALF = PLAYER.height / 2;
@@ -29,7 +30,7 @@ function world(...sites: ModuleSite[]) {
 }
 
 /** Plays this many seconds in steps of the simulation's size. */
-function play(vitals: PlayerVitals, seconds: number, generators: Generators | null): void {
+function play(vitals: PlayerVitals, seconds: number, generators: PowerGrid | null): void {
   const steps = Math.round(seconds / STEP);
   for (let i = 0; i < steps; i++) vitals.step(STEP, null, generators);
 }
@@ -154,18 +155,32 @@ describe('the table of power', () => {
       VITALS.energy.idlePerSecond + VITALS.energy.sprintPerSecond,
     );
   });
+
+  it('has a Node that carries power on farther than a Generator reaches, so a few of them cross a base', () => {
+    expect(POWER.node.radius).toBeGreaterThan(POWER.generator.radius);
+    expect(TURRET_TABLE.poweredRate).toBeGreaterThan(1);
+  });
+
+  it('says how far a module’s power reaches, and 0 for one that gives none', () => {
+    expect(reachOfModule(MODULE.generator)).toBe(POWER.generator.radius);
+    expect(reachOfModule(MODULE.node)).toBe(POWER.node.radius);
+    expect(reachOfModule(MODULE.turret)).toBe(0);
+    expect(reachOfModule(MODULE.terminal)).toBe(0);
+    expect(reachOfModule(0)).toBe(0);
+    expect(reachOfModule(99)).toBe(0);
+  });
 });
 
 describe('the Generators that stand', () => {
   it('know of none in a world with no modules', () => {
-    const generators = new Generators(world().source);
+    const generators = new PowerGrid(world().source);
     generators.refresh();
     expect(generators.standing).toBe(0);
     expect(generators.chargeAt(0, 0, 0)).toBe(0);
   });
 
   it('know of none before they have looked', () => {
-    const generators = new Generators(world({ x: 0, y: 0, z: 0, state: GENERATOR }).source);
+    const generators = new PowerGrid(world({ x: 0, y: 0, z: 0, state: GENERATOR }).source);
     expect(generators.standing).toBe(0);
     expect(generators.chargeAt(0.5, 0, 0.5)).toBe(0);
   });
@@ -177,13 +192,13 @@ describe('the Generators that stand', () => {
       { x: 6, y: 0, z: 0, state: TURRET },
       { x: 9, y: 0, z: 0, state: packState(moduleShape(MODULE.generator, 3), 1) },
     );
-    const generators = new Generators(held.source);
+    const generators = new PowerGrid(held.source);
     generators.refresh();
     expect(generators.standing).toBe(2);
   });
 
   it('give what the table says to a player in reach, and nothing outside it', () => {
-    const generators = new Generators(world({ x: 10, y: 5, z: 10, state: GENERATOR }).source);
+    const generators = new PowerGrid(world({ x: 10, y: 5, z: 10, state: GENERATOR }).source);
     generators.refresh();
     const field = POWER.generator;
     expect(generators.chargeAt(10.5, 5, 10.5)).toBe(field.perSecond);
@@ -193,7 +208,7 @@ describe('the Generators that stand', () => {
   });
 
   it('do not add up: a player in the reach of two gets what one gives', () => {
-    const generators = new Generators(
+    const generators = new PowerGrid(
       world({ x: 0, y: 0, z: 0, state: GENERATOR }, { x: 2, y: 0, z: 0, state: GENERATOR }).source,
     );
     generators.refresh();
@@ -203,7 +218,7 @@ describe('the Generators that stand', () => {
 
   it('notice one placed or broken at the next look, and not before', () => {
     const held = world();
-    const generators = new Generators(held.source);
+    const generators = new PowerGrid(held.source);
     generators.refresh();
     const site = { x: 0, y: 0, z: 0, state: GENERATOR };
     held.list.push(site);
@@ -221,8 +236,8 @@ describe('the Generators that stand', () => {
 describe('a player beside a Generator', () => {
   const site = { x: 20, y: 10, z: 20, state: GENERATOR };
 
-  function standing(): Generators {
-    const generators = new Generators(world(site).source);
+  function standing(): PowerGrid {
+    const generators = new PowerGrid(world(site).source);
     generators.refresh();
     return generators;
   }
@@ -251,7 +266,7 @@ describe('a player beside a Generator', () => {
     const vitals = new PlayerVitals();
     vitals.set({ energy: 50 });
     standBeside(vitals, site, 1);
-    play(vitals, 5, new Generators(world(site).source));
+    play(vitals, 5, new PowerGrid(world(site).source));
     expect(vitals.charging).toBe(false);
   });
 
@@ -274,7 +289,7 @@ describe('a player beside a Generator', () => {
       z: Math.floor(core.z),
       state: GENERATOR,
     };
-    const generators = new Generators(world(beside).source);
+    const generators = new PowerGrid(world(beside).source);
     generators.refresh();
     const both = new PlayerVitals();
     both.set({ energy: 20 });
@@ -344,8 +359,12 @@ describe('the Generators in the survival simulation', () => {
     expect(sim.readVitals(1, out)).toMatchObject({ charging: false });
   });
 
-  it('charge nobody when the only module that stands is a Terminal or a turret', () => {
-    const { sim } = run({ ...site, state: TERMINAL }, { ...site, x: 6, state: TURRET });
+  it('charge nobody when the only modules that stand are a Terminal, a turret and a Node', () => {
+    const { sim } = run(
+      { ...site, state: TERMINAL },
+      { ...site, x: 6, state: TURRET },
+      { ...site, x: 7, state: NODE },
+    );
     sim.advance(2);
     expect(sim.readVitals(1, out)).toMatchObject({ charging: false });
   });
@@ -376,5 +395,248 @@ describe('the Generators in the survival simulation', () => {
     );
     sim.advance(1);
     expect(sim.readVitals(1, out)).toMatchObject({ charging: false });
+  });
+});
+
+describe('the grid of power', () => {
+  const gen = POWER.generator.radius;
+  const hop = POWER.node.radius;
+  /** A module in a cell; a test may move it or change it after the grid has looked, as the world does. */
+  type Standing = { -readonly [K in keyof ModuleSite]: ModuleSite[K] };
+  const at = (x: number, state: number, y = 0, z = 0): Standing => ({ x, y, z, state });
+  /** A grid that has looked at a world holding these modules. */
+  const look = (...sites: ModuleSite[]): PowerGrid => {
+    const grid = new PowerGrid(world(...sites).source);
+    grid.refresh();
+    return grid;
+  };
+
+  it('knows nothing before it has looked', () => {
+    const grid = new PowerGrid(world(at(0, GENERATOR), at(3, TURRET)).source);
+    expect(grid.powered(0, 0, 0)).toBe(false);
+    expect(grid.stateAt(0, 0, 0)).toBe('none');
+    expect(grid.stateAt(3, 0, 0)).toBe('none');
+  });
+
+  it('gives a Generator power of its own, standing by itself', () => {
+    const grid = look(at(0, GENERATOR));
+    expect(grid.powered(0, 0, 0)).toBe(true);
+    expect(grid.stateAt(0, 0, 0)).toBe('on');
+  });
+
+  it('powers a turret or a Node within a Generator’s reach, from the middle of one cell to the middle of the other, and not past it', () => {
+    for (const state of [TURRET, NODE]) {
+      const lone = (x: number, z = 0) =>
+        look(at(0, GENERATOR), at(x, state, 0, z)).stateAt(x, 0, z);
+      expect(lone(gen), 'at the radius').toBe('on');
+      expect(lone(gen + 1), 'a block past it').toBe('off');
+      expect(lone(gen, 1), 'across and a block over').toBe('off');
+      expect(lone(-gen), 'behind it').toBe('on');
+    }
+  });
+
+  it('measures the reach in three dimensions, up and down as well as across', () => {
+    const grid = look(
+      at(0, GENERATOR),
+      at(0, TURRET, gen, 0),
+      at(0, TURRET, gen + 1, 3),
+      at(3, TURRET, 3, 3),
+      at(4, TURRET, 4, 3),
+      at(0, TURRET, -gen, 6),
+    );
+    expect(grid.stateAt(0, gen, 0)).toBe('on');
+    expect(grid.stateAt(0, gen + 1, 3)).toBe('off');
+    // 3, 3 and 3 away is 5.2 blocks; 4, 4 and 3 is 6.4.
+    expect(grid.stateAt(3, 3, 3)).toBe('on');
+    expect(grid.stateAt(4, 4, 3)).toBe('off');
+    expect(grid.stateAt(0, -gen, 6)).toBe('off');
+  });
+
+  it('lets a Node that has power carry it on, farther than the Generator reaches', () => {
+    const grid = look(
+      at(0, GENERATOR),
+      at(gen, NODE),
+      at(gen + hop, TURRET),
+      at(gen + hop + 1, TURRET, 0, 2),
+    );
+    expect(grid.stateAt(gen, 0, 0)).toBe('on');
+    expect(grid.stateAt(gen + hop, 0, 0)).toBe('on');
+    expect(grid.stateAt(gen + hop + 1, 0, 2)).toBe('off');
+  });
+
+  it('carries power down a chain of Nodes, each within reach of the one before, and no farther', () => {
+    const grid = look(
+      at(0, GENERATOR),
+      at(gen, NODE),
+      at(gen + hop, NODE),
+      at(gen + 2 * hop, NODE),
+      at(gen + 3 * hop, TURRET),
+      at(gen + 3 * hop + 1, TURRET, 0, 3),
+    );
+    expect(grid.stateAt(gen + 3 * hop, 0, 0)).toBe('on');
+    expect(grid.stateAt(gen + 3 * hop + 1, 0, 3)).toBe('off');
+  });
+
+  it('leaves a gap in the chain dark: break the middle Node and everything past it goes off', () => {
+    const middle = at(gen + hop, NODE);
+    const held = world(
+      at(0, GENERATOR),
+      at(gen, NODE),
+      middle,
+      at(gen + 2 * hop, NODE),
+      at(gen + 2 * hop + 4, TURRET),
+    );
+    const grid = new PowerGrid(held.source);
+    grid.refresh();
+    expect(grid.stateAt(gen + 2 * hop + 4, 0, 0)).toBe('on');
+    held.list.splice(held.list.indexOf(middle), 1);
+    grid.refresh();
+    expect(grid.stateAt(gen + 2 * hop, 0, 0)).toBe('off');
+    expect(grid.stateAt(gen + 2 * hop + 4, 0, 0)).toBe('off');
+    expect(grid.stateAt(gen, 0, 0)).toBe('on');
+    held.list.push(middle);
+    grid.refresh();
+    expect(grid.stateAt(gen + 2 * hop + 4, 0, 0)).toBe('on');
+  });
+
+  it('leaves a Node out of reach of any power dark, and the turrets round it', () => {
+    const grid = look(at(0, GENERATOR), at(30, NODE), at(34, TURRET), at(30, TURRET, 0, 6));
+    expect(grid.stateAt(30, 0, 0)).toBe('off');
+    expect(grid.stateAt(34, 0, 0)).toBe('off');
+    expect(grid.stateAt(30, 0, 6)).toBe('off');
+    expect(grid.powered(30, 0, 0)).toBe(false);
+  });
+
+  it('does not let a turret pass power on: only a Generator and a Node do', () => {
+    const grid = look(
+      at(0, GENERATOR),
+      at(gen, TURRET),
+      at(gen + 4, TURRET),
+      at(gen + 4, NODE, 0, 3),
+    );
+    expect(grid.stateAt(gen, 0, 0)).toBe('on');
+    expect(grid.stateAt(gen + 4, 0, 0)).toBe('off');
+    expect(grid.stateAt(gen + 4, 0, 3)).toBe('off');
+  });
+
+  it('gives power to each of two Generators’ neighbors by the nearer or the other, and a Node between two is on once', () => {
+    const grid = look(
+      at(0, GENERATOR),
+      at(2 * gen, GENERATOR),
+      at(gen, NODE),
+      at(gen, TURRET, 0, 4),
+    );
+    expect(grid.stateAt(gen, 0, 0)).toBe('on');
+    expect(grid.stateAt(gen, 0, 4)).toBe('on');
+  });
+
+  it('is the same whichever order the world lists its modules in', () => {
+    const sites = [
+      at(0, GENERATOR),
+      at(gen, NODE),
+      at(gen + hop, NODE),
+      at(gen + 2 * hop, TURRET),
+      at(gen + 2 * hop + 9, TURRET),
+      at(40, TERMINAL),
+    ];
+    const forward = look(...sites);
+    const backward = look(...[...sites].reverse());
+    for (const { x, y, z } of sites) {
+      expect(backward.stateAt(x, y, z), `cell ${x}`).toBe(forward.stateAt(x, y, z));
+    }
+    expect(forward.stateAt(gen + 2 * hop, 0, 0)).toBe('on');
+    expect(forward.stateAt(gen + 2 * hop + 9, 0, 0)).toBe('off');
+  });
+
+  it('has no state for a Terminal or for air, and no power for them', () => {
+    const grid = look(at(0, GENERATOR), at(2, TERMINAL));
+    expect(grid.stateAt(2, 0, 0)).toBe('none');
+    expect(grid.powered(2, 0, 0)).toBe(false);
+    expect(grid.stateAt(1, 0, 0)).toBe('none');
+    expect(grid.stateAt(0, 5, 0)).toBe('none');
+  });
+
+  it('gives a Node no Energy to hand to a player, however much power it has', () => {
+    const grid = look(at(0, GENERATOR), at(gen, NODE));
+    // Beside the Node and a block past the Generator’s reach: the Node has power, and the player nothing from it.
+    expect(grid.stateAt(gen, 0, 0)).toBe('on');
+    const x = gen + 0.5 + 3;
+    expect(grid.chargeAt(x, 0.5 - HALF, 0.5)).toBe(0);
+    expect(grid.chargeAt(0.5 + gen - 1, 0.5 - HALF, 0.5)).toBe(POWER.generator.perSecond);
+  });
+
+  it('notices a Generator broken, and the turrets it powered go off at the next look and not before', () => {
+    const generator = at(0, GENERATOR);
+    const held = world(generator, at(3, TURRET));
+    const grid = new PowerGrid(held.source);
+    grid.refresh();
+    expect(grid.powered(3, 0, 0)).toBe(true);
+    held.list.splice(0, 1);
+    expect(grid.powered(3, 0, 0)).toBe(true);
+    grid.refresh();
+    expect(grid.powered(3, 0, 0)).toBe(false);
+    expect(grid.stateAt(3, 0, 0)).toBe('off');
+    expect(grid.standing).toBe(0);
+  });
+
+  it('notices a Node placed in a gap, and the turret beyond it comes on', () => {
+    // Past the Generator’s reach and inside a Node’s, if one stood between.
+    const far = gen + hop - 2;
+    const held = world(at(0, GENERATOR), at(far, TURRET));
+    const grid = new PowerGrid(held.source);
+    grid.refresh();
+    expect(grid.stateAt(far, 0, 0)).toBe('off');
+    held.list.push(at(gen, NODE));
+    grid.refresh();
+    expect(grid.stateAt(far, 0, 0)).toBe('on');
+  });
+
+  it('notices a module that stands in another cell, or is another module, when the count is the same', () => {
+    const turret = at(3, TURRET);
+    const held = world(at(0, GENERATOR), turret);
+    const grid = new PowerGrid(held.source);
+    grid.refresh();
+    expect(grid.stateAt(3, 0, 0)).toBe('on');
+    // The turret is broken and another is put far away: one module in the list before, one after.
+    turret.x = 40;
+    grid.refresh();
+    expect(grid.stateAt(3, 0, 0)).toBe('none');
+    expect(grid.stateAt(40, 0, 0)).toBe('off');
+    // A Terminal stands where a turret did.
+    turret.x = 3;
+    turret.state = TERMINAL;
+    grid.refresh();
+    expect(grid.stateAt(3, 0, 0)).toBe('none');
+  });
+
+  it('keeps the same answer when nothing changed, whatever level a turret has been raised to', () => {
+    const turret = at(3, TURRET);
+    const grid = look(at(0, GENERATOR), turret);
+    expect(grid.powered(3, 0, 0)).toBe(true);
+    turret.state = packState(moduleShape(MODULE.turret, 0), 3);
+    grid.refresh();
+    expect(grid.powered(3, 0, 0)).toBe(true);
+    grid.refresh();
+    expect(grid.powered(3, 0, 0)).toBe(true);
+  });
+
+  it('tells each module that takes part, and whether it has power, and not the Terminal', () => {
+    const grid = look(at(0, GENERATOR), at(3, NODE), at(50, TURRET), at(2, TERMINAL, 0, 5));
+    const seen: [number, number, number, boolean][] = [];
+    grid.forEach((x, y, z, on) => seen.push([x, y, z, on]));
+    expect(seen).toEqual([
+      [0, 0, 0, true],
+      [3, 0, 0, true],
+      [50, 0, 0, false],
+    ]);
+  });
+
+  it('is empty in a world with no modules', () => {
+    const grid = look();
+    const seen: number[] = [];
+    grid.forEach((x) => seen.push(x));
+    expect(seen).toEqual([]);
+    expect(grid.stateAt(0, 0, 0)).toBe('none');
+    expect(grid.standing).toBe(0);
   });
 });

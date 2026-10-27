@@ -19,7 +19,9 @@ import type { EnemySim } from './enemies';
  * stopped by the blocks the crew built, the ground and the Core, so a turret walled in at its own
  * level cannot shoot that way and a turret on a wall can shoot over it. Players are never in the way
  * of a bolt and never hurt by one. Which cells hold turrets is read from the world each step, so a
- * turret placed, broken or chewed is known the moment the world knows it.
+ * turret placed, broken or chewed is known the moment the world knows it. A turret that has power
+ * (SPEC section 9: a Generator, or a Power Node that is carrying it) shoots `TURRET.poweredRate`
+ * times as often; one without shoots as it always did.
  */
 
 /** A module standing in a cell, as the world lists it: where, and its state (the shape names the module, the material byte is its level). */
@@ -32,6 +34,11 @@ export interface ModuleSite {
 
 /** Walks the modules standing in the world: calls `visit` once for each, in no particular order. */
 export type ModuleSource = (visit: (site: ModuleSite) => void) => void;
+
+/** What a turret asks of the crew's power: whether the module standing in a cell has any. */
+export interface Powered {
+  powered(x: number, y: number, z: number): boolean;
+}
 
 /** One shot of a turret, as the host reports it: which turret fired, and how the bolt ended. */
 export interface TurretShot {
@@ -48,6 +55,13 @@ export interface TurretShot {
   /** The machine it struck. */
   readonly enemy: number;
 }
+
+/**
+ * A turret's due time is a fraction of a step once it has power, added up shot after shot, so it can come
+ * out a hair past the whole step it was due on (three waits of 6.67 steps are 20.000000000000004). This is
+ * how much of a step is not counted against it.
+ */
+const DUE_SLACK = 1e-6;
 
 /** A machine a turret may shoot at: where its feet are, and how far its aim point is from the turret's head. */
 interface Candidate {
@@ -66,7 +80,12 @@ export function turretLevel(level: number): TurretLevel {
 }
 
 export class Turrets {
-  /** The step each turret in the middle of its wait may fire again on, keyed by cell. */
+  /**
+   * The step each turret in the middle of its wait may fire again on, keyed by cell. It is not a whole
+   * number of steps for a turret that has power, so one that fires without a gap keeps its pace to a
+   * fraction of a step: a turret at 1.5 times its rate shoots 3 times in 2 intervals however they
+   * fall among the steps.
+   */
   private readonly readyAt = new Map<number, number>();
   private readonly candidates: Candidate[] = Array.from({ length: TURRET.tries }, () => ({
     id: 0,
@@ -89,6 +108,7 @@ export class Turrets {
   // What the turret being served needs, set by `step` and `serve` for the visitors below.
   private tick = 0;
   private range2 = 0;
+  private rate = 1;
   private felled = 0;
   private machines: EnemySim | null = null;
   private ray: RayWorld | null = null;
@@ -103,7 +123,10 @@ export class Turrets {
     z: number,
   ): void => this.consider(id, kind, x, y, z);
 
-  constructor(private readonly source: ModuleSource) {}
+  constructor(
+    private readonly source: ModuleSource,
+    private readonly power: Powered | null = null,
+  ) {}
 
   /**
    * Lets every turret that is ready shoot, on step `tick`, and appends what they did to `out`.
@@ -120,7 +143,8 @@ export class Turrets {
     this.ray = null;
     this.out = null;
     // A turret whose wait is over is the same as one that never fired.
-    for (const [key, ready] of this.readyAt) if (ready <= tick) this.readyAt.delete(key);
+    for (const [key, ready] of this.readyAt)
+      if (ready - DUE_SLACK <= tick) this.readyAt.delete(key);
     return this.felled;
   }
 
@@ -128,10 +152,11 @@ export class Turrets {
   private serve(site: ModuleSite): void {
     if (moduleOfShape(stateShape(site.state))?.id !== MODULE.turret) return;
     const key = cellKey(site.x, site.y, site.z);
-    if (this.tick < (this.readyAt.get(key) ?? 0)) return;
+    if (this.tick + DUE_SLACK < (this.readyAt.get(key) ?? 0)) return;
     const level = turretLevel(stateMaterial(site.state));
     turretPivot(site.x, site.y, site.z, this.pivot);
     this.range2 = level.range * level.range;
+    this.rate = this.power?.powered(site.x, site.y, site.z) ? TURRET.poweredRate : 1;
     this.found = 0;
     this.machines?.forEach(this.visitMachine);
     for (let i = 0; i < this.found; i++) {
@@ -206,7 +231,11 @@ export class Turrets {
       flags |= SHOT_FLAG.kill;
       this.felled++;
     }
-    this.readyAt.set(key, this.tick + Math.max(1, Math.round(level.interval * SIM_HZ)));
+    // The wait counts from when the gun was due and not from when the step came, if the step came within
+    // one of it: a turret that fires without a gap loses nothing to the steps being whole.
+    const wait = Math.max(1, (level.interval * SIM_HZ) / this.rate);
+    const due = this.readyAt.get(key);
+    this.readyAt.set(key, (due !== undefined && this.tick - due < 1 ? due : this.tick) + wait);
     out.push({
       x: site.x,
       y: site.y,

@@ -1122,7 +1122,7 @@ describe('the module slot', () => {
     const { controller } = rig();
     expect(MODULE_SLOT).toBe(BLASTER_SLOT + 1);
     expect(MODULE_SLOT).toBeLessThan(HOTBAR_SLOTS);
-    expect(HOTBAR_MODULES).toEqual([MODULE.terminal, MODULE.turret, MODULE.generator]);
+    expect(HOTBAR_MODULES).toEqual([MODULE.terminal, MODULE.turret, MODULE.generator, MODULE.node]);
     for (let slot = 0; slot < HOTBAR_SLOTS; slot++) {
       controller.selectSlot(slot);
       expect(controller.modular, `slot ${slot}`).toBe(slot === MODULE_SLOT);
@@ -1229,7 +1229,7 @@ describe('the module slot', () => {
     expect(r.controller.hudState().crosshair).toBe('place');
   });
 
-  it('chooses the Basic Turret and the Generator with the shape key, each at its first level, and goes round to the Terminal again', () => {
+  it('chooses the Basic Turret, the Generator and the Power Node with the shape key, each at its first level, and goes round to the Terminal again', () => {
     const { controller } = rig();
     controller.selectSlot(MODULE_SLOT);
     expect(controller.module).toBe(MODULE.terminal);
@@ -1245,6 +1245,9 @@ describe('the module slot', () => {
     controller.cycleShape();
     expect(controller.module).toBe(MODULE.generator);
     expect(controller.piece).toBe(packState(moduleShape(MODULE.generator, 0), 1));
+    controller.cycleShape();
+    expect(controller.module).toBe(MODULE.node);
+    expect(controller.piece).toBe(packState(moduleShape(MODULE.node, 0), 1));
     controller.cycleShape();
     expect(controller.module).toBe(MODULE.terminal);
   });
@@ -1401,6 +1404,27 @@ describe('the ring on the ground that shows how far power reaches', () => {
     const { place, target } = r.controller.target;
     expect(place).not.toEqual(target);
     expect(r.controller.reach.cell).toEqual({ x: place.x, y: place.y, z: place.z });
+  });
+
+  it('is as wide round a Power Node in hand as the Node reaches, which is not as wide as a Generator’s', () => {
+    const r = rig();
+    r.controller.selectSlot(MODULE_SLOT);
+    for (let i = 0; i < HOTBAR_MODULES.indexOf(MODULE.node); i++) r.controller.cycleShape();
+    expect(r.controller.module).toBe(MODULE.node);
+    r.controller.update(0.016, r.lookDown(3));
+    const { place } = r.controller.target;
+    expect(r.controller.reach.cell).toEqual({ x: place.x, y: place.y, z: place.z });
+    expect(r.controller.reach.radius).toBe(POWER.node.radius);
+    expect(POWER.node.radius).not.toBe(POWER.generator.radius);
+  });
+
+  it('is round a Power Node the cursor is on, whatever is in hand', () => {
+    const r = rig();
+    const y = Math.floor(r.surface);
+    r.world.setBlock(SPOT.x, y, SPOT.z, packState(moduleShape(MODULE.node, 2), 1));
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.reach.cell).toEqual({ x: SPOT.x, y, z: SPOT.z });
+    expect(r.controller.reach.radius).toBe(POWER.node.radius);
   });
 });
 
