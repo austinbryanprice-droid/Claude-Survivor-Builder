@@ -9,6 +9,7 @@ npm ci                # install
 npm run dev           # dev server
 npm run check         # typecheck, lint, format check, unit tests, build (run before every PR)
 npm run test:e2e      # builds, then runs the Playwright browser tests
+npm run balance       # prints the balance report (what the economy gives against what it costs, a day at a time)
 npm run format        # Prettier, writes files
 ```
 
