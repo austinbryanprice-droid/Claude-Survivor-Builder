@@ -293,6 +293,16 @@ From 5i2 a night can send a skimmer, a machine that flies (the numbers and the r
 - **Shots at it are judged as for any machine.** The host takes the skimmer's pose from where the shooter's screen had it (`EnemyMirror.sample`, never more than half a second back) and judges the bolt against the box of its kind standing on that pose's `y`, so a guest's shot at a machine in the air is judged as a shot at one on the ground is, and the host's word for it comes back the same way.
 - **Protocol version 22.** Kind 2 is a machine a version 21 build would refuse the packet for. A host and a guest on different versions refuse each other and say why.
 
+### The breacher (Phase 5i3)
+
+From 5i3 a night can send a breacher, a machine that goes off at a wall or at the Core (the numbers and the reasons are in [decisions](decisions.md#phase-5i3-the-breacher-2026-10-27)). Every rule is the host's: where it walks, when it stops to charge, which blocks the blast breaks and whom it wounds are worked out in its simulation, and a guest is shown the result.
+
+- **A kind in the enemy packet.** The breacher is kind 3 (`ENEMY_KIND.breacher`). The packet's shape does not change, so a guest draws it where the host has it with the mesh and the model of its kind, and its Health is the same byte. A packet that names a kind past `ENEMY_KIND_COUNT`, now 4, is refused whole, as before.
+- **Its charge is the flag a bite is.** The 1.2 seconds in which it stands still and charges are the attack flag of its pose, so a guest builds up the shudder and the swelling of the cell on its own clock from the flag, with nothing new on the wire. A machine that has gone off is simply no longer in the next packet.
+- **The hole is the world's own edit.** The host breaks the blocks the blast clears as it breaks a chewed one: each is a `set` to air with no player behind it, which every guest applies, which a guest who joins later finds in the snapshot, and which the guests' own rules (the ghost, the draw of a module, the power, the pool's ceiling) follow as they follow any break. A guest works out nothing about the blast itself. Like chewed blocks, they are broken only while the run is going, so a host alone with the mouse free keeps them waiting.
+- **One new survival event, `blast`.** Once for each breacher that goes off, in the survival frame the other events use: `{ k: 'blast', n, x, y, z }`, the cycle it went off in and the point it went off at, to a tenth of a block. Every screen draws a flash and a spray of sparks there (`ShotFx.blast`); nothing is written on the HUD for it. A wound to a player is that player's `vt` frame and a wound to the Core is the `sv` frame's health, as for every machine.
+- **Protocol version 23.** Kind 3 is a machine a version 22 build would refuse the packet for, and `blast` is an event it does not know. A host and a guest on different versions refuse each other and say why.
+
 ## URL switches
 
 None are needed to play. They exist for tests, for a private server, and for a host on a strict network.

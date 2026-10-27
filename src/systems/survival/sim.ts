@@ -33,6 +33,11 @@ const DAY_TICKS = DAY_SECONDS * SIM_HZ;
 const STEP_EPSILON = 1e-9;
 const MEND_PER_STEP = SURVIVAL.core.mendPerSecond / SIM_HZ;
 
+/** A length in blocks to the tenth, so the point a blast went off at takes a few characters on the wire. */
+function tenth(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
 export interface SurvivalOptions {
   /** Seconds into the run to start at (the `?night=` switch); 0 is sunrise of day 1. */
   startAt?: number;
@@ -191,6 +196,11 @@ export class SurvivalSim {
       this.machines && options.modules ? new Turrets(options.modules, this.power) : null;
     // The special kinds leave Tier 4 cells in the pool when the crew fells one, by blaster or by turret.
     if (this.machines) this.machines.onFelled = (kind) => this.leaveDrop(kind);
+    // A breacher that goes off is announced to the screens, to the tenth of a block.
+    if (this.machines) {
+      this.machines.onBlast = (x, y, z) =>
+        this.pending.push({ k: 'blast', n: this.cycle, x: tenth(x), y: tenth(y), z: tenth(z) });
+    }
     // A run that starts at a later night has had the dawns before it: their research, read as the
     // run goes on from there (which the `?research=` switch then replaces) and the heaps they
     // uncovered, the better grades included.

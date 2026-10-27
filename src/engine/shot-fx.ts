@@ -19,10 +19,10 @@ import type { Vec3 } from '../shared/look';
 /**
  * The light of the pulse blaster: the flash at the muzzle, the bolt streaking to its mark, the
  * sparks where it lands and the burst of a machine felled; and, since it is the same light, the
- * golden spray of a heap of wreckage stripped. Everything glows (it is drawn additively
- * into the HDR target, above the bloom's threshold), nothing is lit or casts a shadow, and nothing
- * here is an asset: a bolt is a ribbon turned to face the camera, a spark a small square with a soft
- * round (or, for a flash, star-shaped) face.
+ * golden spray of a heap of wreckage stripped and the great flash of a breacher going off.
+ * Everything glows (it is drawn additively into the HDR target, above the bloom's threshold),
+ * nothing is lit or casts a shadow, and nothing here is an asset: a bolt is a ribbon turned to face
+ * the camera, a spark a small square with a soft round (or, for a flash, star-shaped) face.
  *
  * Each kind is one instanced mesh, so a firefight is two draw calls whatever it holds. What an
  * effect does while it lives is worked out in the vertex shader from the moment it was born and the
@@ -122,6 +122,16 @@ const SPRAY = {
     life: [0.4, 0.8],
     size: [0.04, 0.09],
   },
+  /** A breacher going off: the same fire as a machine coming apart, twice as much of it, thrown farther and slower to die. */
+  blast: {
+    push: 0,
+    spread: 1,
+    lift: 0.35,
+    count: 64,
+    speed: [4, 15],
+    life: [0.5, 1.1],
+    size: [0.06, 0.14],
+  },
   /** Scrap flung off a heap that is being torn apart: up and out, falling back heavy. */
   strip: {
     push: 0,
@@ -140,6 +150,8 @@ const FLASH = {
   impact: { life: 0.14, size: 0.6 },
   burst: { life: 0.22, size: 1.6 },
   burstCore: { life: 0.12, size: 0.9 },
+  blast: { life: 0.4, size: 3.4 },
+  blastCore: { life: 0.2, size: 1.9 },
   strip: { life: 0.2, size: 1.1 },
   stripCore: { life: 0.1, size: 0.6 },
 } as const;
@@ -296,6 +308,8 @@ export interface ShotFx {
   impact(at: Vec3, dir: Vec3, color: string, delay?: number): void;
   /** A machine falling apart at `at`, `delay` seconds from now. */
   burst(at: Vec3, delay?: number): void;
+  /** A breacher going off at `at`: a flash as wide as the blast, a white core in it and a fan of fire thrown every way. */
+  blast(at: Vec3): void;
   /** A heap of wreckage stripped at `at` (the middle of the heap): a gold flash and scrap flung up and out. */
   strip(at: Vec3): void;
   /** Lets `dt` seconds pass for the effects that are playing. */
@@ -561,6 +575,14 @@ export function createShotFx({ seed = 0x5107 }: ShotFxOptions = {}): ShotFx {
       spark(at, still, FLASH.burst.life, FLASH.burst.size, true, orange, later);
       spark(at, still, FLASH.burstCore.life, FLASH.burstCore.size, true, white, later);
       spray(at, still, SPRAY.burst, [orange, amber, orange], later);
+    },
+
+    blast(at) {
+      const orange = rgb(FX_COLOR.burst);
+      const amber = rgb(FX_COLOR.hit);
+      spark(at, still, FLASH.blast.life, FLASH.blast.size, true, orange, 0);
+      spark(at, still, FLASH.blastCore.life, FLASH.blastCore.size, true, white, 0);
+      spray(at, still, SPRAY.blast, [orange, amber, orange, white], 0);
     },
 
     strip(at) {

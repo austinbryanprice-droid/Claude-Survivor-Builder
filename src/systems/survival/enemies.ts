@@ -28,11 +28,17 @@ import { NAV_WALLED, type NavCell, type NavGrid } from './nav';
  * open, so it cannot walk into water, up a cliff or through a wall. What an enemy is, its speed,
  * its bite and how much of a hit it takes, is the body of its kind (`bodyOf`).
  *
- * The one exception is a machine that flies (the skimmer, Phase 5i2). It has no use for the routes:
+ * Two machines do something else. One that flies (the skimmer, Phase 5i2) has no use for the routes:
  * it goes for the nearest player in its pull, else straight for the Core, in a line over water, cliffs
  * and walls, bites (zaps) from where it hovers, and never chews. Every step it eases its height toward
  * a hover over the highest of the ground and whatever is built under it and just ahead of it, so it
  * rises over a wall as it comes to it. It crowds only with others that fly, as walkers do with walkers.
+ *
+ * The breacher (Phase 5i3) neither bites nor chews. It follows the map's route as a crawler does and
+ * takes no notice of the crew; where the route runs into a wall, or at the Core, it stops, faces it,
+ * charges for `blast.windup` seconds and goes off, once, and is gone. The blast breaks every block of
+ * the crew's within its radius (the host breaks them as it does a chewed one), wounds the players beside
+ * it and, if it reaches the Core, the Core. Felled before it goes off, it does none of that.
  */
 
 /** What a bite is aimed at: nothing, the Core, or (a positive number) the player with that id. */
@@ -49,6 +55,10 @@ const SPAWN_ATTEMPTS_IN_ARC = 16;
 const CROWD_PUSH = 0.35;
 /** A wind-up this close to nothing is over: the sum of 0.05-second steps does not land exactly on 0.4. */
 const WINDUP_EPSILON = 1e-6;
+/** A breacher begins its charge once it faces its mark to within this many radians. */
+const FACING = 0.2;
+/** How high above their feet a blast reaches a player: the middle of the body, not the soles. */
+const CHEST_HEIGHT = 0.9;
 const TWO_PI = Math.PI * 2;
 
 /** Someone an enemy may go after: a player who is in the world and not down. */
@@ -89,6 +99,8 @@ export interface SpawnPlan {
 
 /** How a machine that flies keeps its height (`EnemyBody.flies`). */
 type Flight = NonNullable<EnemyBody['flies']>;
+/** What a breacher's blast does (`EnemyBody.blast`). */
+type Blast = NonNullable<EnemyBody['blast']>;
 
 interface Enemy {
   readonly id: number;
@@ -134,10 +146,18 @@ export class EnemySim {
    */
   onFelled: ((kind: number) => void) | null = null;
 
+  /**
+   * Called with the middle of every blast, once, as a breacher goes off. The survival simulation tells
+   * the screens of it; the blocks it breaks are in `drainBreaks`, and the wounds it dealt are the strikes.
+   */
+  onBlast: ((x: number, y: number, z: number) => void) | null = null;
+
   /** How far each wall block has been chewed, from 0 to 1, keyed by cell. */
   private readonly chewed = new Map<number, number>();
   private readonly touched = new Set<number>();
   private readonly breaks: NavCell[] = [];
+  /** The breachers that went off in this step: they leave the field when the step is done, not felled. */
+  private readonly spent: Enemy[] = [];
 
   // Scratch values, so a step allocates nothing.
   private readonly aimPoint = { x: 0, z: 0 };
@@ -283,6 +303,7 @@ export class EnemySim {
     for (let i = 0; i < this.list.length; i++) {
       this.stepOne(this.list[i] as Enemy, dt, targets, count, strikes);
     }
+    this.sweepSpent();
     this.crowd();
     this.wearOff(dt);
   }
@@ -297,6 +318,11 @@ export class EnemySim {
     e.cooldown = Math.max(0, e.cooldown - dt);
     if (e.hurt > 0) e.hurt = Math.max(0, e.hurt - dt);
     e.speed = 0;
+
+    if (e.body.blast) {
+      this.breach(e, e.body.blast, dt, targets, count, strikes);
+      return;
+    }
 
     const victim = this.victimOf(e, targets, count);
     if (victim !== BITE_NOTHING) {
@@ -359,17 +385,21 @@ export class EnemySim {
       }
     }
     if (best !== BITE_NOTHING) return best;
+    return this.coreWithin(e, body.reach.core) ? BITE_CORE : BITE_NOTHING;
+  }
 
+  /** True when the Core's walls are within `reach` blocks of the enemy's feet. Leaves the spot it faces in `goalX` and `goalZ`. */
+  private coreWithin(e: Enemy, reach: number): boolean {
     const core = this.options.core;
     const nearX = Math.min(core.cellX + CORE_FOOTPRINT, Math.max(core.cellX, e.x));
     const nearZ = Math.min(core.cellZ + CORE_FOOTPRINT, Math.max(core.cellZ, e.z));
     const dx = nearX - e.x;
     const dz = nearZ - e.z;
-    if (dx * dx + dz * dz > body.reach.core * body.reach.core) return BITE_NOTHING;
+    if (dx * dx + dz * dz > reach * reach) return false;
     // Facing the point on the wall nearest to it; from inside the footprint's shadow, the middle.
     this.goalX = dx === 0 && dz === 0 ? core.x : nearX;
     this.goalZ = dx === 0 && dz === 0 ? core.z : nearZ;
-    return BITE_CORE;
+    return true;
   }
 
   private bite(e: Enemy, victim: number, dt: number, strikes: Strikes): void {
@@ -414,6 +444,89 @@ export class EnemySim {
     // Through. The host breaks the block and tells us it is gone.
     this.chewed.delete(key);
     this.breaks.push({ x: cell.x, y: cell.y, z: cell.z });
+  }
+
+  // --------------------------------------------------------------------------------------------
+  // Breaching.
+  // --------------------------------------------------------------------------------------------
+
+  /**
+   * A breacher's step. It takes no notice of the crew: it walks the map's route to the Core, and where
+   * that route runs into a wall, or when it is at the Core, it faces what is in front of it and charges.
+   * Once it has begun to charge nothing stops it but a blow that fells it: the blast goes off whether or
+   * not the wall is still there.
+   */
+  private breach(
+    e: Enemy,
+    blast: Blast,
+    dt: number,
+    targets: readonly Target[],
+    count: number,
+    strikes: Strikes,
+  ): void {
+    e.biting = BITE_NOTHING;
+    if (e.windup > 0) {
+      e.windup -= dt;
+      if (e.windup <= WINDUP_EPSILON) this.goOff(e, blast, targets, count, strikes);
+      return;
+    }
+
+    if (!this.coreWithin(e, e.body.reach.core)) {
+      const here = this.nav.indexAt(e.x, e.z);
+      if (here < 0) return;
+      const next = this.nav.nextOf(here);
+      if (
+        next < 0 ||
+        this.nav.state[next] !== NAV_WALLED ||
+        this.nearColumn(e.x, e.z, next) > ENEMIES.gnawReach
+      ) {
+        if (this.nav.aim(e.x, e.z, ENEMIES.lookAhead, this.aimPoint)) {
+          this.walk(e, this.aimPoint.x, this.aimPoint.z, dt);
+        }
+        return;
+      }
+      // It is at the wall its route runs into: face the column, and break the block that is in the way.
+      this.nav.cellOf(next, this.aimPoint);
+      this.goalX = this.aimPoint.x + 0.5;
+      this.goalZ = this.aimPoint.z + 0.5;
+    }
+    if (Math.abs(this.turn(e, this.goalX, this.goalZ, dt)) <= FACING) e.windup = blast.windup;
+  }
+
+  /**
+   * The blast. Its middle is `ahead` blocks in front of the breacher at half its height. Every block of
+   * the crew's within `radius` of it is broken, every player whose chest is within `playerRadius` of it is
+   * wounded, and the Core is if it stands within `coreReach` of the middle. The breacher is spent.
+   */
+  private goOff(
+    e: Enemy,
+    blast: Blast,
+    targets: readonly Target[],
+    count: number,
+    strikes: Strikes,
+  ): void {
+    e.windup = 0;
+    const x = e.x + Math.sin(e.yaw) * blast.ahead;
+    const y = e.y + e.body.height * 0.5;
+    const z = e.z + Math.cos(e.yaw) * blast.ahead;
+    this.nav.blocksWithin(x, y, z, blast.radius, this.breaks);
+
+    const reach = blast.playerRadius * blast.playerRadius;
+    for (let i = 0; i < count; i++) {
+      const t = targets[i] as Target;
+      const dx = t.x - x;
+      const dy = t.y + CHEST_HEIGHT - y;
+      const dz = t.z - z;
+      if (dx * dx + dy * dy + dz * dz <= reach) strikes.hurtPlayer(t.id, blast.player);
+    }
+
+    const core = this.options.core;
+    const nearX = Math.min(core.cellX + CORE_FOOTPRINT, Math.max(core.cellX, x));
+    const nearZ = Math.min(core.cellZ + CORE_FOOTPRINT, Math.max(core.cellZ, z));
+    if (Math.hypot(nearX - x, nearZ - z) <= blast.coreReach) strikes.hurtCore(blast.core);
+
+    this.spent.push(e);
+    this.onBlast?.(x, y, z);
   }
 
   /** Chewing nobody is working at any more wears off, so a wall mends from a half-chewed block. */
@@ -684,6 +797,13 @@ export class EnemySim {
     if (at >= 0) this.list.splice(at, 1);
     this.byId.delete(enemy.id);
     this.changes++;
+  }
+
+  /** Takes the breachers that went off in this step off the field. They were not felled: nothing is dropped. */
+  private sweepSpent(): void {
+    if (this.spent.length === 0) return;
+    for (const enemy of this.spent) this.remove(enemy);
+    this.spent.length = 0;
   }
 
   /** The next id nobody is using. Ids count up and wrap at 65535, which is what the wire holds. */

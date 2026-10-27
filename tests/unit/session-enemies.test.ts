@@ -5,7 +5,7 @@ import { ManualScheduler } from '../../src/net/scheduler';
 import { fixedWorld } from '../../src/net/session';
 import { MATERIAL } from '../../src/shared/blocks';
 import { DAY_SECONDS } from '../../src/shared/daycycle';
-import { ENEMY_KIND } from '../../src/shared/enemy-state';
+import { ENEMY_FLAG, ENEMY_KIND } from '../../src/shared/enemy-state';
 import { createEconomyReading, poolSlot } from '../../src/shared/economy';
 import { createRng } from '../../src/shared/hash';
 import { NET } from '../../src/shared/net-config';
@@ -455,6 +455,99 @@ describe('the flying machines', () => {
     for (const view of views) expect(energyOf(view)).toBe(CELLS);
     for (const seen of heard) expect(seen.filter((event) => event.k === 'drop')).toEqual([drop]);
     expect(room.host.sampleEnemies()).toEqual([]);
+  });
+});
+
+describe('the breaching machines', () => {
+  const BLAST = ENEMIES.breacher.blast;
+
+  it('are drawn as breachers on every screen, charging when they are, with the flag the wire carries', async () => {
+    const { room, machines } = arena({}, {}, wall);
+    room.host.setLocalActive(true);
+    const code = await room.openRoom();
+    const guest = await room.join(code, 'Ada');
+    const breacher = machines().spawnAt(11.5, -3.5, 1, ENEMY_KIND.breacher);
+    expect(breacher).not.toBeNull();
+    await play(room, 1);
+    for (const seen of [room.host.sampleEnemies(), guest.session.sampleEnemies()]) {
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ id: breacher, kind: ENEMY_KIND.breacher });
+    }
+    // It stops at the wall and charges for a second and a fifth: the guest's pose says so too.
+    await play(room, 0.5);
+    for (const seen of [room.host.sampleEnemies(), guest.session.sampleEnemies()]) {
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.flags & ENEMY_FLAG.attack).not.toBe(0);
+    }
+  });
+
+  it('blow a hole in the wall in their way: every screen sees the blocks go and hears of the blast', async () => {
+    const { room, hostWorld, machines } = arena({}, {}, wall);
+    room.host.setLocalActive(true);
+    const code = await room.openRoom();
+    const guest = await room.join(code, 'Ada');
+    const hostSaw: WorldEvent[] = [];
+    const guestSaw: WorldEvent[] = [];
+    room.host.onEvent((event) => hostSaw.push(event));
+    guest.session.onEvent((event) => guestSaw.push(event));
+    const views = [room.host, guest.session];
+    const heard = views.map((view) => {
+      const seen: SurvivalEvent[] = [];
+      view.survival.onEvent((event) => seen.push(event));
+      return seen;
+    });
+    const energy = room.host.vitals.read(createVitalsReading()).energy;
+    const max = sim(room).coreMax;
+
+    machines().spawnAt(11.5, -3.5, 1, ENEMY_KIND.breacher);
+    await play(room, 6);
+
+    // It went off, once, and is gone from every screen.
+    expect(room.host.sampleEnemies()).toEqual([]);
+    expect(guest.session.sampleEnemies()).toEqual([]);
+    const told = heard.map((seen) => seen.filter((event) => event.k === 'blast'));
+    expect(told[0]).toHaveLength(1);
+    expect(told[1]).toEqual(told[0]);
+    const [blast] = told[0] as [Extract<SurvivalEvent, { k: 'blast' }>];
+    expect(blast.n).toBe(1);
+
+    // The blocks it broke are the world's own breaks, in reach of where it went off, and the guest saw the same.
+    const broken = hostSaw.filter((event) => event.type === 'set' && event.state === 0);
+    expect(broken.length).toBeGreaterThan(2);
+    for (const event of broken) {
+      expect(event).toMatchObject({ type: 'set', x: 8, y: FLOOR, state: 0, by: NO_PLAYER });
+      const cell = event as Extract<WorldEvent, { type: 'set' }>;
+      const reach = Math.hypot(
+        cell.x + 0.5 - blast.x,
+        cell.y + 0.5 - blast.y,
+        cell.z + 0.5 - blast.z,
+      );
+      expect(reach).toBeLessThanOrEqual(BLAST.radius + 0.1);
+    }
+    expect(hostWorld.cells.size).toBe(WALL_BLOCKS - broken.length);
+    expect(guestSaw).toEqual(hostSaw);
+    expect(guest.world().edits()).toEqual(hostWorld.edits());
+    // The wall was out in the field: the Core was not touched, and breaking is nobody's building.
+    expect(sim(room).coreHealth).toBe(max);
+    expect(room.host.vitals.read(createVitalsReading()).energy).toBe(energy);
+  });
+
+  it('wound the Core by the blast when they reach it, and the crew hears of it', async () => {
+    const { room, machines } = arena();
+    room.host.setLocalActive(true);
+    const code = await room.openRoom();
+    const guest = await room.join(code, 'Ada');
+    const seen: SurvivalEvent[] = [];
+    guest.session.survival.onEvent((event) => seen.push(event));
+    const max = sim(room).coreMax;
+    machines().spawnAt(4.5, -3.5, 1, ENEMY_KIND.breacher);
+    await play(room, 8);
+    expect(sim(room).coreHealth).toBe(max - BLAST.core);
+    expect(seen.filter((event) => event.k === 'blast')).toHaveLength(1);
+    expect(room.host.sampleEnemies()).toEqual([]);
+    const reading = createReading();
+    guest.session.survival.read(reading);
+    expect(reading.coreHealth).toBe(max - BLAST.core);
   });
 });
 

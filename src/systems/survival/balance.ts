@@ -231,6 +231,23 @@ export interface EnemyBody {
     readonly lookAhead: number;
     readonly scan: number;
   };
+  /**
+   * Set for a machine that goes off. It ignores players, walks the map to the first wall on its route
+   * (or to the Core), stands facing it and charges for `windup` seconds, then goes off and is gone: it
+   * breaks every block of the crew's whose middle is within `radius` of the point `ahead` blocks in
+   * front of it (the Core's own are left), wounds every player within `playerRadius` of that point by
+   * `player` points, and takes `core` points off the Core when that point is within `coreReach` of its
+   * walls. A machine felled before it goes off does none of it.
+   */
+  readonly blast?: {
+    readonly windup: number;
+    readonly ahead: number;
+    readonly radius: number;
+    readonly playerRadius: number;
+    readonly player: number;
+    readonly core: number;
+    readonly coreReach: number;
+  };
 }
 
 /** Seconds one machine of the crawler's kind takes to chew through one block, by material: tougher blocks hold longer. */
@@ -358,6 +375,42 @@ export const ENEMIES = {
     drop: { material: MATERIAL.energy, amount: 2 },
     flies: { hover: 2.6, climb: 8, lookAhead: 3.5, scan: 32 },
   },
+
+  /**
+   * The breacher (Phase 5i3): a slow, heavy machine for taking a base apart. It ignores the crew, walks
+   * the crawler's map to the first wall on its route (or to the Core), stops, charges and goes off, and
+   * is gone: the blast opens a hole in the wall, wounds anyone beside it and hurts the Core if it reaches
+   * it. Felled before it goes off it leaves the most Tier 4 cells of any kind. It does not bite, so its
+   * `bite`, `reach.player`, `reach.height` and `aggro` are nothing. A first guess to be tuned by playing
+   * (docs/decisions.md, Phase 5i3) and by the balance simulator of 5j: three times a crawler's Health,
+   * nine shots of the blaster on a first night.
+   */
+  breacher: {
+    health: 90,
+    speed: 1.8,
+    turnRate: 5,
+    radius: 0.55,
+    height: 1.2,
+    hitbox: { halfWidth: 0.85, height: 1.3 },
+    step: 1,
+    bite: { player: 0, core: 0, windup: 0, interval: 0 },
+    /** Only the Core matters to it: it begins to charge this close to the Core's walls. */
+    reach: { player: 0, core: 1.4, height: 0 },
+    aggro: 0,
+    gnawSeconds: GNAW_SECONDS,
+    gnawDefault: 2,
+    takes: 1,
+    drop: { material: MATERIAL.energy, amount: 4 },
+    blast: {
+      windup: 1.2,
+      ahead: 0.9,
+      radius: 1.8,
+      playerRadius: 3,
+      player: 35,
+      core: 150,
+      coreReach: 2,
+    },
+  },
 } as const;
 
 /**
@@ -386,14 +439,14 @@ export const WAVES = {
 
   /**
    * The body each kind of the plan has (`ENEMY_KIND`), and how many times that body's Health it has.
-   * The armored crawler (5i1) and the flying skimmer (5i2) have bodies of their own; the breacher
-   * walks, is drawn and fights as a crawler until 5i3 gives it one.
+   * Every kind of the plan has a body of its own now: the armored crawler (5i1), the flying skimmer
+   * (5i2) and the breacher (5i3).
    */
   kinds: {
     crawler: { body: ENEMY_KIND.crawler, health: 1 },
     armored: { body: ENEMY_KIND.armored, health: 1 },
     flyer: { body: ENEMY_KIND.flyer, health: 1 },
-    breacher: { body: ENEMY_KIND.crawler, health: 1 },
+    breacher: { body: ENEMY_KIND.breacher, health: 1 },
   },
 
   /** How much tougher the machines are: from the night `toughFrom` by `tough`, and from `growsFrom` that much again for each night. */
@@ -430,6 +483,8 @@ export function bodyOf(kind: number): EnemyBody | undefined {
       return ENEMIES.armored;
     case ENEMY_KIND.flyer:
       return ENEMIES.flyer;
+    case ENEMY_KIND.breacher:
+      return ENEMIES.breacher;
     default:
       return undefined;
   }

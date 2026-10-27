@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { MATERIAL, MATERIALS } from '../../src/shared/blocks';
 import { ENEMY_KIND, ENEMY_KIND_COUNT } from '../../src/shared/enemy-state';
-import { ENEMIES, WAVES, bodyOf, hitboxOf } from '../../src/systems/survival/balance';
+import {
+  ENEMIES,
+  SURVIVAL,
+  VITALS,
+  WAVES,
+  bodyOf,
+  hitboxOf,
+} from '../../src/systems/survival/balance';
 
 describe('the bodies of the machines', () => {
   it('are one for each kind the wire admits, and none for a kind it does not', () => {
@@ -12,12 +19,14 @@ describe('the bodies of the machines', () => {
     expect(bodyOf(ENEMY_KIND.crawler)).toBe(ENEMIES.crawler);
     expect(bodyOf(ENEMY_KIND.armored)).toBe(ENEMIES.armored);
     expect(bodyOf(ENEMY_KIND.flyer)).toBe(ENEMIES.flyer);
+    expect(bodyOf(ENEMY_KIND.breacher)).toBe(ENEMIES.breacher);
   });
 
   it('give the targets a bolt is aimed at, and none for a kind with no body', () => {
     expect(hitboxOf(ENEMY_KIND.crawler)).toEqual(ENEMIES.crawler.hitbox);
     expect(hitboxOf(ENEMY_KIND.armored)).toEqual(ENEMIES.armored.hitbox);
     expect(hitboxOf(ENEMY_KIND.flyer)).toEqual(ENEMIES.flyer.hitbox);
+    expect(hitboxOf(ENEMY_KIND.breacher)).toEqual(ENEMIES.breacher.hitbox);
     expect(hitboxOf(ENEMY_KIND_COUNT)).toBeUndefined();
     expect(hitboxOf(-1)).toBeUndefined();
     // A target the body stands in, with its legs counted: wider and taller than the body itself.
@@ -71,6 +80,36 @@ describe('the bodies of the machines', () => {
     expect(hover).toBeGreaterThan(flyer.height);
   });
 
+  it('make the breacher slow and heavy, with no bite, and the only one that goes off', () => {
+    const { crawler, armored, breacher } = ENEMIES;
+    expect(breacher.health).toBeGreaterThan(armored.health);
+    expect(breacher.takes).toBe(1);
+    expect(breacher.speed).toBeLessThan(crawler.speed);
+    expect(breacher.turnRate).toBeLessThan(crawler.turnRate);
+    expect(breacher.radius).toBeGreaterThan(armored.radius);
+    // It bites nobody, aims at nobody and chases nobody: the blast is all it does.
+    expect(breacher.bite).toEqual({ player: 0, core: 0, windup: 0, interval: 0 });
+    expect(breacher.reach.player).toBe(0);
+    expect(breacher.aggro).toBe(0);
+    // It still climbs what a crawler climbs: the same map serves both.
+    expect(breacher.step).toBe(crawler.step);
+    // Nothing else goes off, and a goer-off has a charge long enough to see, to shoot at and to run from.
+    expect(Object.values(ENEMY_KIND).filter((kind) => bodyOf(kind)?.blast)).toEqual([
+      ENEMY_KIND.breacher,
+    ]);
+    const { windup, ahead, radius, playerRadius, player, core, coreReach } = breacher.blast;
+    expect(windup).toBeGreaterThanOrEqual(1);
+    expect(ahead).toBeLessThan(breacher.reach.core);
+    // The blocks it breaks are within the reach of the people it wounds: the blast is felt where it breaks.
+    expect(playerRadius).toBeGreaterThan(radius);
+    expect(coreReach).toBeGreaterThan(0);
+    // One blast never fells a player at full Health or the Core at full health, and it hurts the Core more.
+    expect(player).toBeGreaterThan(0);
+    expect(player).toBeLessThan(VITALS.maxHealth);
+    expect(core).toBeGreaterThan(player);
+    expect(core).toBeLessThan(SURVIVAL.core.maxHealth);
+  });
+
   it('leave Tier 4 cells only for the special machines', () => {
     expect(ENEMIES.crawler.drop).toBeNull();
     expect(ENEMIES.armored.drop).toEqual({ material: MATERIAL.energy, amount: expect.any(Number) });
@@ -81,6 +120,13 @@ describe('the bodies of the machines', () => {
     expect(Number.isInteger(ENEMIES.flyer.drop!.amount)).toBe(true);
     expect(ENEMIES.flyer.drop!.amount).toBeGreaterThan(0);
     expect(ENEMIES.flyer.drop!.amount).toBeLessThan(ENEMIES.armored.drop!.amount);
+    // The breacher leaves the most of any: felling it before it goes off is the whole reward.
+    expect(ENEMIES.breacher.drop).toEqual({
+      material: MATERIAL.energy,
+      amount: expect.any(Number),
+    });
+    expect(Number.isInteger(ENEMIES.breacher.drop!.amount)).toBe(true);
+    expect(ENEMIES.breacher.drop!.amount).toBeGreaterThan(ENEMIES.armored.drop!.amount);
     for (const kind of Object.values(ENEMY_KIND)) {
       const drop = bodyOf(kind)!.drop;
       if (drop) expect(MATERIALS.map((material) => material.id)).toContain(drop.material);
@@ -112,10 +158,10 @@ describe('the bodies the waves send', () => {
     }
   });
 
-  it('give the armored and the flying specials bodies of their own, and the kind still to come the crawler’s for now', () => {
+  it('give every kind of the plan a body of its own', () => {
     expect(WAVES.kinds.crawler.body).toBe(ENEMY_KIND.crawler);
     expect(WAVES.kinds.armored.body).toBe(ENEMY_KIND.armored);
     expect(WAVES.kinds.flyer.body).toBe(ENEMY_KIND.flyer);
-    expect(WAVES.kinds.breacher.body).toBe(ENEMY_KIND.crawler);
+    expect(WAVES.kinds.breacher.body).toBe(ENEMY_KIND.breacher);
   });
 });

@@ -22,6 +22,8 @@ const ARMORED = ENEMIES.armored;
 const CELLS = ARMORED.drop?.amount ?? 0;
 const FLYER = ENEMIES.flyer;
 const FLYER_CELLS = FLYER.drop?.amount ?? 0;
+const BREACHER = ENEMIES.breacher;
+const BREACHER_CELLS = BREACHER.drop?.amount ?? 0;
 
 /** Blows that fell an armored crawler of the first night: its health over the share it takes. */
 const FELLING = ARMORED.health / ARMORED.takes;
@@ -258,5 +260,60 @@ describe('what a felled skimmer leaves in the pool', () => {
     expect(machines.has(skimmer)).toBe(false);
     expect(energy()).toBe(FLYER_CELLS);
     expect(events()).toEqual([{ k: 'drop', n: 1, m: MATERIAL.energy, c: FLYER_CELLS }]);
+  });
+});
+
+describe('what a felled breacher leaves in the pool', () => {
+  it('is the most Tier 4 cells of any machine, once, when it is felled before it goes off', () => {
+    const { machines, put, energy, events } = field();
+    const breacher = put(ENEMY_KIND.breacher, 14, 3);
+    expect(BREACHER_CELLS).toBeGreaterThan(FLYER_CELLS);
+    expect(BREACHER_CELLS).toBeGreaterThan(CELLS);
+    expect(BREACHER.drop?.material).toBe(MATERIAL.energy);
+    expect(machines.hurt(breacher, BREACHER.health - 0.1)).toBe(false);
+    expect(energy()).toBe(0);
+    expect(events()).toEqual([]);
+    expect(machines.hurt(breacher, 0.2)).toBe(true);
+    expect(energy()).toBe(BREACHER_CELLS);
+    expect(events()).toEqual([{ k: 'drop', n: 1, m: MATERIAL.energy, c: BREACHER_CELLS }]);
+    machines.hurt(breacher, 1000);
+    expect(energy()).toBe(BREACHER_CELLS);
+  });
+
+  it('comes from the blaster: nine shots fell one, and the ninth leaves the cells', () => {
+    const { shoot, out, energy, events, machines, put } = field();
+    machines.clear();
+    const breacher = put(ENEMY_KIND.breacher, 14, 0);
+    const shots = Math.ceil(BREACHER.health / BLASTER.damage);
+    expect(shots).toBe(9);
+    for (let shot = 1; shot < shots; shot++) {
+      expect(shoot()).toBe(true);
+      expect(out.flags).toBe(SHOT_FLAG.enemy);
+      expect(out.enemy).toBe(breacher);
+    }
+    expect(energy()).toBe(0);
+    expect(shoot()).toBe(true);
+    expect(out.flags).toBe(SHOT_FLAG.enemy | SHOT_FLAG.kill);
+    expect(machines.count).toBe(0);
+    expect(energy()).toBe(BREACHER_CELLS);
+    expect(events()).toEqual([{ k: 'drop', n: 1, m: MATERIAL.energy, c: BREACHER_CELLS }]);
+  });
+
+  it('comes from a turret too: the shot that fells it leaves the cells', () => {
+    const { flat, machines, put, stand, sim, energy, events } = field();
+    machines.clear();
+    const breacher = put(ENEMY_KIND.breacher, 14, 0);
+    stand(Math.floor(flat.core.x) - 8, Math.floor(flat.core.z));
+    // Leave it one basic turret shot's worth of health.
+    machines.hurt(breacher, BREACHER.health - 4);
+    const shots: TurretShot[] = [];
+    for (let i = 0; i < 20 && energy() === 0; i++) {
+      sim.warp(0.05);
+      sim.drainTurretShots(shots);
+    }
+    expect(shots.some((shot) => (shot.flags & SHOT_FLAG.kill) !== 0)).toBe(true);
+    expect(machines.has(breacher)).toBe(false);
+    expect(energy()).toBe(BREACHER_CELLS);
+    expect(events()).toEqual([{ k: 'drop', n: 1, m: MATERIAL.energy, c: BREACHER_CELLS }]);
   });
 });
