@@ -16,6 +16,7 @@ The composition root: the one place that knows the engine, the world and the int
 - `seat-spawn.ts` says where each of the four seats starts: in a row beside the spawn point, above anything built there.
 - `browser-storage.ts` is storage that never throws (private windows, blocked cookies).
 - `intro.ts` is the intro film's controller: it starts the film inside the click that asks for the mouse (so the mouse arrives in hand and the input is held deaf while the film plays), skips it on any key or click, ends it at once when the mouse is let go, and hands the same mouse to the player when it ends. It is wanted for every plain Play, whatever the system says about motion: a system that asks for less gets the film with the camera held steady (`calm`) and its flashes at a third, not no film. `attach-intro.ts` is the one file that knows both the film and the valley: it tells the film where the crater, the furrow and the Core are and how to hide what the crash made, and `create-app.ts` loads it only when a film is wanted or asked for, so a page with none pays nothing for its code.
+- `title.ts` is the title screen's controller: a plain page opens on it (`titleWanted` in `shared/title.ts` says when), the valley drifting under the name of the game and one Play. Play asks for the mouse inside the click and holds the input deaf, fades the picture to black and has the intro controller start the film (`play()`; on such a page the controller is `manual`, so the film waits for Play); with the film off, or its code not to be had, it glides the camera into the player's view instead. It watches the mouse until the film or the glide has it: a refusal, or a let-go before then, brings the title back to wait for another Play. See [decisions](../../docs/decisions.md#the-title-screen-2026-10-27).
 
 ## Keys
 
@@ -51,6 +52,7 @@ Click the page to take the mouse; Esc gives it back.
 | `research=<n>`                 | Open the run with n research points (0 to 9999), already read by a Terminal, to try the better materials                                           |
 | `intro=on\|off`                | `on` plays the intro film at the first Play whatever else is going on, `off` never does (otherwise it plays on a plain page, not under automation) |
 | `introAt=<seconds>`            | Hold the intro film at this second, with no mouse needed: for pictures and tests                                                                   |
+| `title=on\|off`                | `on` shows the title screen on any page, `off` never does (otherwise it shows on a plain page, not under automation)                               |
 | `seed=<n>`                     | Build another valley                                                                                                                               |
 | `demo=outpost\|swatch\|hall`   | Raise a demo structure before the first frame (`demo` alone: the outpost)                                                                          |
 | `terrain=heightfield`          | Mesh the terrain as a smoothed heightfield instead of surface nets                                                                                 |
