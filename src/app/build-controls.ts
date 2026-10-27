@@ -77,6 +77,8 @@ export interface BuildControls {
   setSession(session: BuildSession | null): void;
   /** Calls `listener` with the camera and the way it looks each time a shot of the blaster goes to the session. */
   onFire(listener: (origin: Vec3, dir: Vec3) => void): () => void;
+  /** Calls `listener` each time a click or a key of the hands is turned away, whether this screen saw why or the host said so. */
+  onRefused(listener: () => void): () => void;
   readonly debug: BuildControlsDebug;
   dispose(): void;
 }
@@ -107,6 +109,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
 
   const bodies: Vec3[] = [];
   const fireListeners = new Set<(origin: Vec3, dir: Vec3) => void>();
+  const refusedListeners = new Set<() => void>();
   const controller = new BuildController({
     blocks: () => current().voxels,
     ground: () => game.world.collision.ground,
@@ -131,6 +134,9 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
     warmUp,
     economy: () => session?.economy ?? IDLE_ECONOMY,
     power: (x, y, z) => valley()?.power.stateAt(x, y, z) ?? 'none',
+    refused() {
+      for (const listener of refusedListeners) listener();
+    },
   });
 
   // The player's eyes are where reach is measured from; the camera is where the cursor looks from.
@@ -287,6 +293,12 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
         fireListeners.delete(listener);
       };
     },
+    onRefused(listener) {
+      refusedListeners.add(listener);
+      return () => {
+        refusedListeners.delete(listener);
+      };
+    },
     debug,
     dispose() {
       stopRefusals?.();
@@ -295,6 +307,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
       stopLock();
       for (const stop of stops) stop();
       fireListeners.clear();
+      refusedListeners.clear();
       if (idleTimer !== undefined) clearTimeout(idleTimer);
     },
   };
