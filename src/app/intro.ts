@@ -14,14 +14,19 @@ import { createIntroOverlay } from '../ui/intro-overlay';
  * and hands the same mouse to the player when it ends, with no second click. Any key or click skips
  * it; letting go of the mouse (Esc) ends it at once and leaves the pause card up.
  *
+ * A page that opens on the title screen starts the film from there instead (`play`): the title's
+ * Play asks for the mouse itself and the film follows a moment later, once the picture has faded.
+ *
  * It touches nothing of the run: no commands, no events, nothing on the wire. A guest never sees
  * it, nor a host with a room open, because the run they are in is already going.
  */
 
 /** Skip keys and clicks are ignored this long after the film starts: the click that began it can come twice. */
 const SKIP_GRACE_MS = 800;
-/** If the mouse has not arrived by now the browser is not going to hand it over. */
+/** If the mouse has not arrived by now the browser is not going to hand it over... */
 const CAPTURE_WAIT_MS = 2500;
+/** ...unless the page itself was too busy to read the answer, which waits behind the timer: it gets this many frames more to read it. */
+const CAPTURE_WAIT_FRAMES = 3;
 /** Seconds the screen takes to clear from black after a skip. */
 const SKIP_CLEAR_SECONDS = 0.6;
 
@@ -33,11 +38,15 @@ export interface IntroControllerOptions {
   readonly wanted: () => boolean;
   /** Whether the player's system asks for less motion, which makes the film calmer: asked as each film begins. */
   readonly calm: () => boolean;
+  /** True when a title screen starts the film (`play`): the first request for the mouse of the page then starts nothing by itself. */
+  readonly manual?: boolean;
 }
 
 export interface IntroController {
   /** Plays the film now, from the pause card's "Watch the intro": asks for the mouse, and the film starts with it. */
   replay(): void;
+  /** Plays the film now, for a title screen that has asked for the mouse itself: the input is held from here, and the mouse that arrives is handed to the player when the film ends. False when a film is already on or the page is closing. */
+  play(): boolean;
   /** Plays the film held at `seconds`, with no mouse needed: for pictures and tests. */
   hold(seconds: number): IntroPlayback | null;
   /** The film that is playing, or null. */
@@ -59,17 +68,19 @@ export function createIntroController({
   site,
   wanted,
   calm,
+  manual = false,
 }: IntroControllerOptions): IntroController {
   const { input } = game;
   const overlay = createIntroOverlay();
   let playback: IntroPlayback | null = null;
-  /** The film plays on the first request for the mouse of the page, and again whenever it is asked for. A run in play is not offered one. */
-  let offered = !input.captured;
+  /** The film plays on the first request for the mouse of the page, and again whenever it is asked for. A run in play is not offered one, nor is a page whose title screen starts the film. */
+  let offered = !manual && !input.captured;
   let requested = false;
   let startedAt = 0;
   let captured = false;
   let holding = false;
   let waitTimer = 0;
+  let stopWaiting: (() => void) | null = null;
   let disposed = false;
 
   const skip = (event: Event): void => {
@@ -86,6 +97,8 @@ export function createIntroController({
     window.removeEventListener('keydown', onKey, true);
     window.removeEventListener('mousedown', onMouse, true);
     window.clearTimeout(waitTimer);
+    stopWaiting?.();
+    stopWaiting = null;
   };
 
   const onEnd = (how: IntroEnd): void => {
@@ -120,7 +133,15 @@ export function createIntroController({
     game.setCinematic(film);
     if (!holding) {
       waitTimer = window.setTimeout(() => {
-        if (playback === film && !input.captured) abort(true);
+        if (playback !== film || input.captured) return;
+        // A page that stalled (the film's shaders compile in its first frame) reaches this timer before it has read what the browser said meanwhile: the frames it draws read it.
+        let left = CAPTURE_WAIT_FRAMES;
+        stopWaiting = game.onFrame(() => {
+          if (--left > 0) return;
+          stopWaiting?.();
+          stopWaiting = null;
+          if (playback === film && !input.captured) abort(true);
+        });
       }, CAPTURE_WAIT_MS);
     }
     return film;
@@ -161,6 +182,10 @@ export function createIntroController({
       input.requestLock();
       // A browser that refuses the request has already said so through `onChange`; this is for one that says nothing.
       requested = false;
+    },
+    play() {
+      offered = false;
+      return begin(null) !== null;
     },
     hold(seconds) {
       offered = false;

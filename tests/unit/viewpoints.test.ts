@@ -7,7 +7,9 @@ import {
   ROUTE_FOV,
   SHOTS,
   SPAWN_SHOT,
+  TITLE_VIEWS,
   createFlyRoute,
+  createTitleRoute,
   shotPose,
   yawFromBearing,
 } from '../../src/world/terrain/viewpoints';
@@ -126,5 +128,75 @@ describe('the benchmark route', () => {
       lowest = Math.min(lowest, pose.y - hill(pose.x, pose.z));
     }
     expect(lowest).toBeGreaterThan(1.1);
+  });
+});
+
+describe('the title screen route', () => {
+  const route = createTitleRoute(flat);
+
+  it('runs from the first view to the second', () => {
+    const [first, second] = TITLE_VIEWS.map((view) => shotPose(view, flat));
+    const start = route.sample(0, blank());
+    const end = route.sample(1, blank());
+    expect(first && start.x).toBeCloseTo(first?.x ?? NaN, 9);
+    expect(first && start.y).toBeCloseTo(first?.y ?? NaN, 9);
+    expect(first && start.fov).toBeCloseTo(first?.fov ?? NaN, 9);
+    expect(second && end.x).toBeCloseTo(second?.x ?? NaN, 9);
+    expect(second && end.z).toBeCloseTo(second?.z ?? NaN, 9);
+    expect(second && wrapAngle(end.yaw)).toBeCloseTo(wrapAngle(second?.yaw ?? NaN), 9);
+    expect(end.roll).toBe(0);
+  });
+
+  it('is a steady glide with the sun ahead: no jumps, and the view turns the short way', () => {
+    let previous = route.sample(0, blank());
+    for (let i = 1; i <= 200; i++) {
+      const pose = route.sample(i / 200, blank());
+      expect(
+        Math.hypot(pose.x - previous.x, pose.y - previous.y, pose.z - previous.z),
+      ).toBeLessThan(0.5);
+      expect(Math.abs(wrapAngle(pose.yaw - previous.yaw))).toBeLessThan(0.01);
+      previous = pose;
+    }
+  });
+
+  it('writes the whole pose each time, so a pose left over from another camera cannot show through', () => {
+    const dirty: CameraPose = { x: 9, y: 9, z: 9, yaw: 9, pitch: 9, fov: 9, roll: 3 };
+    const clean = route.sample(0.4, blank());
+    route.sample(0.4, dirty);
+    expect(dirty).toEqual({ ...clean, roll: 0 });
+  });
+
+  it('keeps high above the real ground and the water all the way along', () => {
+    const { grid } = valley();
+    const real = createTitleRoute((x, z) => grid.groundAt(x, z));
+    const pose = blank();
+    for (let i = 0; i <= 200; i++) {
+      real.sample(i / 200, pose);
+      expect(pose.y - grid.groundAt(pose.x, pose.z), `at ${i / 200}`).toBeGreaterThan(6 - 1e-6);
+    }
+  });
+
+  it('lifts the path over a hill that rises between its two views', () => {
+    const [from, to] = TITLE_VIEWS;
+    const midX = ((from?.x ?? 0) + (to?.x ?? 0)) / 2;
+    const midZ = ((from?.z ?? 0) + (to?.z ?? 0)) / 2;
+    const hill = (x: number, z: number): number =>
+      30 * Math.exp(-((x - midX) ** 2 + (z - midZ) ** 2) / 40);
+    const lifted = createTitleRoute(hill);
+    const pose = blank();
+    let lowest = Infinity;
+    for (let i = 0; i <= 400; i++) {
+      lifted.sample(i / 400, pose);
+      lowest = Math.min(lowest, pose.y - hill(pose.x, pose.z));
+    }
+    expect(lowest).toBeGreaterThan(5.9);
+  });
+
+  it('keeps clear of the named shots: the views are not photographed from, so they hold no trees back', () => {
+    for (const view of TITLE_VIEWS) {
+      expect(Object.values(SHOTS).some((shot) => shot.x === view.x && shot.z === view.z)).toBe(
+        false,
+      );
+    }
   });
 });

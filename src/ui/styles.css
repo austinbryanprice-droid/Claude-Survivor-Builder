@@ -38,6 +38,7 @@ body {
 
 #build-tag {
   position: fixed;
+  z-index: 7;
   left: 12px;
   bottom: 10px;
   font-size: 12px;
