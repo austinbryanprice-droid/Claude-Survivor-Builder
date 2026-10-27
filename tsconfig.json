@@ -18,5 +18,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["src", "tests", "vite.config.ts", "playwright.config.ts"]
+  "include": ["src", "tests", "vite.config.ts", "vitest.balance.config.ts", "playwright.config.ts"]
 }
