@@ -16,8 +16,6 @@ import { createTitleRoute } from '../world/terrain/viewpoints';
 /** Said under Play when the browser would not hand over the mouse. */
 const REFUSED_HINT =
   'The browser did not hand over the mouse. Wait a moment, then click Play again.';
-/** The screen waits this long in black for the film's code before it glides into the run without the film. */
-const FILM_WAIT_MS = 5000;
 /** Seconds the picture takes to come back from black when the film would not start. */
 const RETURN_SECONDS = 0.6;
 
@@ -129,7 +127,7 @@ export function createTitle({
   };
 
   const proceed = async (withFilm: boolean, press: number): Promise<void> => {
-    const ready = withFilm && (await within(prepareFilm(), FILM_WAIT_MS, false));
+    const ready = withFilm && (await within(prepareFilm(), TITLE.filmWaitSeconds * 1000, false));
     // The player let go of the mouse while the film's code was coming: they are back at the title, or on to another press.
     if (press !== presses || phase !== 'leaving') return;
     // When the film starts it takes the camera, which ends the drift and the screen with it.

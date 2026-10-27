@@ -15,6 +15,12 @@ describe('the title screen', () => {
     expect(TITLE.glideSeconds).toBeGreaterThan(TITLE.leadSeconds);
     expect(TITLE.glideSeconds).toBeLessThan(4);
   });
+
+  it('waits a few seconds in black for the film, long enough for a slow connection and not so long that a stuck one holds the player', () => {
+    expect(TITLE.filmWaitSeconds).toBeGreaterThan(TITLE.leadSeconds);
+    expect(TITLE.filmWaitSeconds).toBeGreaterThanOrEqual(3);
+    expect(TITLE.filmWaitSeconds).toBeLessThanOrEqual(10);
+  });
 });
 
 describe('the drift of the title camera', () => {
