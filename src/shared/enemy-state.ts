@@ -12,14 +12,16 @@ export const ENEMY_KIND = {
   armored: 1,
   /** The flying skimmer: small and quick, it hovers over walls and water and zaps from above (Phase 5i2). */
   flyer: 2,
+  /** The breacher: slow and heavy, it ignores the crew, walks to the first wall on its way (or the Core), charges and goes off (Phase 5i3). */
+  breacher: 3,
 } as const;
 
 /** How many kinds the wire accepts: a packet naming one past this is refused. */
-export const ENEMY_KIND_COUNT = 3;
+export const ENEMY_KIND_COUNT = 4;
 
 /** The bits of an enemy's `flags`. */
 export const ENEMY_FLAG = {
-  /** It is winding up a bite, which the drawing shows as a lunge. */
+  /** It is winding up a bite (a zap, or the charge of a breacher's blast), which the drawing shows as a lunge, a beam or a glow. */
   attack: 1,
   /** A blow landed a moment ago, which the drawing shows as a flash. */
   hurt: 2,

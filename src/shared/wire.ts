@@ -162,6 +162,11 @@ function readSurvivalEvent(raw: unknown): SurvivalEvent | null {
       // A drop says which material went into the pool and how many cells of it.
       if (!isInt(raw.m, 1, POOL_SLOTS) || !isInt(raw.c, 1, MAX_U16)) return null;
       return { k: 'drop', n: raw.n, m: raw.m, c: raw.c };
+    case 'blast': {
+      // A blast says where it went off, in the world's own range.
+      const at = readVec3([raw.x, raw.y, raw.z], NET.move.limit);
+      return at ? { k: 'blast', n: raw.n, x: at[0], y: at[1], z: at[2] } : null;
+    }
   }
 }
 

@@ -188,8 +188,12 @@ function charges(count: number): string {
   return `${count} ${count === 1 ? 'respawn' : 'respawns'} left`;
 }
 
-/** The message shown when the light changes, a wave is coming, a player goes down or comes back, or the run ends. */
-export function messageFor(event: SurvivalEvent, nameOf: Namer = NO_NAMES): string {
+/**
+ * The message shown when the light changes, a wave is coming, a player goes down or comes back, a
+ * felled machine leaves something in the pool, or the run ends. Null for an event that has no words:
+ * a breacher going off is seen and heard, not read.
+ */
+export function messageFor(event: SurvivalEvent, nameOf: Namer = NO_NAMES): string | null {
   switch (event.k) {
     case 'nightfall':
       return `Night ${event.n} has fallen`;
@@ -214,5 +218,7 @@ export function messageFor(event: SurvivalEvent, nameOf: Namer = NO_NAMES): stri
       const material = MATERIALS.find((candidate) => candidate.id === event.m)?.name ?? 'material';
       return `A machine left ${event.c} ${material} in the pool`;
     }
+    case 'blast':
+      return null;
   }
 }

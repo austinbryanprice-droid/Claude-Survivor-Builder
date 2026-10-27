@@ -396,7 +396,7 @@ describe('the messages about a player going down and coming back', () => {
     );
   });
 
-  it('have words for every kind of event', () => {
+  it('have words for every kind of event that is read', () => {
     const events: SurvivalEvent[] = [
       { k: 'nightfall', n: 1 },
       { k: 'wave', n: 1, i: 1, of: 2, c: 6 },
@@ -406,7 +406,11 @@ describe('the messages about a player going down and coming back', () => {
       { k: 'back', n: 1, p: 2, c: 1 },
       { k: 'drop', n: 4, m: MATERIAL.energy, c: 3 },
     ];
-    for (const event of events) expect(messageFor(event, nameOf).length).toBeGreaterThan(5);
+    for (const event of events) expect(messageFor(event, nameOf)?.length).toBeGreaterThan(5);
+  });
+
+  it('say nothing of a breacher going off: that is seen, not read', () => {
+    expect(messageFor({ k: 'blast', n: 9, x: 4.5, y: 12.6, z: -7.2 }, nameOf)).toBeNull();
   });
 });
 

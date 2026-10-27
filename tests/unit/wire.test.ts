@@ -266,6 +266,7 @@ describe('host control frames', () => {
     { t: 'se', e: { k: 'back', n: 2, p: 3, c: 0 } },
     { t: 'se', e: { k: 'back', n: 9, p: 1, c: 11 } },
     { t: 'se', e: { k: 'drop', n: 4, m: 4, c: 3 } },
+    { t: 'se', e: { k: 'blast', n: 9, x: 12.5, y: 10.6, z: -3.2 } },
     { t: 'vt', hp: [100, 100], en: [100, 100], chg: false, rt: 0, sk: 0 },
     { t: 'vt', hp: [37, 100], en: [0, 100], chg: true, rt: 0, sk: 31 },
     { t: 'vt', hp: [0, 100], en: [25, 100], chg: false, rt: 5, sk: 0 },
@@ -398,6 +399,26 @@ describe('host control frames', () => {
       { c: 1.5 },
       { c: 70000 },
       { c: null },
+    ]) {
+      const text = JSON.stringify({ t: 'se', e: { ...base, ...bad } });
+      expect(decodeHostFrame(text), text).toBeNull();
+    }
+  });
+
+  it('refuses a blast that does not say where it went off, or that went off beyond the world', () => {
+    const base = { k: 'blast', n: 9, x: 12.5, y: 10.6, z: -3.2 };
+    expect(decodeHostFrame(JSON.stringify({ t: 'se', e: base }))).toEqual({ t: 'se', e: base });
+    for (const bad of [
+      { x: undefined },
+      { y: undefined },
+      { z: undefined },
+      { x: '12.5' },
+      { y: null },
+      { z: [1] },
+      { x: 1e9 },
+      { y: -1e9 },
+      { n: 0 },
+      { n: 70000 },
     ]) {
       const text = JSON.stringify({ t: 'se', e: { ...base, ...bad } });
       expect(decodeHostFrame(text), text).toBeNull();
@@ -973,11 +994,21 @@ describe('enemy packets', () => {
       // The other kinds, and a machine that flies hovering high over a tall build.
       enemy({ id: 8, kind: ENEMY_KIND.armored, x: 3.5, y: 9, z: -2, yaw: 0.5, health: 200 }),
       enemy({ id: 9, kind: ENEMY_KIND.flyer, x: -3.3, y: 41.5, z: 5.5, yaw: 0.3, health: 120 }),
+      enemy({
+        id: 10,
+        kind: ENEMY_KIND.breacher,
+        x: 7.5,
+        y: 10,
+        z: 1.25,
+        yaw: -1.1,
+        health: 90,
+        flags: 1,
+      }),
     ];
     const packet = decodeEnemies(encodeEnemies(65534, 5_000_000, states, states.length))!;
     expect(packet.seq).toBe(65534);
     expect(packet.hostTime).toBe(5_000_000);
-    expect(packet.entries).toHaveLength(5);
+    expect(packet.entries).toHaveLength(states.length);
     states.forEach((sent, i) => {
       const got = packet.entries[i] as EnemyState;
       expect(got.id).toBe(sent.id);

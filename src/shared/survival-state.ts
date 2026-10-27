@@ -138,7 +138,18 @@ export type SurvivalEvent =
   /** The Core has brought player `p` back at the base; `c` respawn charges are left. */
   | { readonly k: 'back'; readonly n: number; readonly p: number; readonly c: number }
   /** A machine the crew felled left `c` cells of material `m` (a `MATERIAL` id) in the shared pool. */
-  | { readonly k: 'drop'; readonly n: number; readonly m: number; readonly c: number };
+  | { readonly k: 'drop'; readonly n: number; readonly m: number; readonly c: number }
+  /**
+   * A breacher went off at this point, in blocks. Only the screens read it, for the flash: the blocks
+   * it broke come as their own world events and the wounds as the players' Health.
+   */
+  | {
+      readonly k: 'blast';
+      readonly n: number;
+      readonly x: number;
+      readonly y: number;
+      readonly z: number;
+    };
 
 export const SURVIVAL_EVENT_KINDS: readonly SurvivalEvent['k'][] = [
   'nightfall',
@@ -148,6 +159,7 @@ export const SURVIVAL_EVENT_KINDS: readonly SurvivalEvent['k'][] = [
   'down',
   'back',
   'drop',
+  'blast',
 ];
 
 /**

@@ -493,6 +493,34 @@ export class NavGrid {
     return false;
   }
 
+  /**
+   * Puts into `out` every block of the crew's whose middle is within `radius` of a point, for a blast,
+   * and returns how many. The Core's own cells are not the crew's and stay.
+   */
+  blocksWithin(x: number, y: number, z: number, radius: number, out: NavCell[]): number {
+    const before = out.length;
+    const squared = radius * radius;
+    const lowX = Math.floor(x - radius);
+    const highX = Math.floor(x + radius);
+    const lowY = Math.floor(y - radius);
+    const highY = Math.floor(y + radius);
+    const lowZ = Math.floor(z - radius);
+    const highZ = Math.floor(z + radius);
+    for (let cx = lowX; cx <= highX; cx++) {
+      for (let cy = lowY; cy <= highY; cy++) {
+        for (let cz = lowZ; cz <= highZ; cz++) {
+          const dx = cx + 0.5 - x;
+          const dy = cy + 0.5 - y;
+          const dz = cz + 0.5 - z;
+          if (dx * dx + dy * dy + dz * dz > squared) continue;
+          if (this.world.blockAt(cx, cy, cz) === 0 || this.core.contains(cx, cy, cz)) continue;
+          out.push({ x: cx, y: cy, z: cz });
+        }
+      }
+    }
+    return out.length - before;
+  }
+
   /** Seconds a crawler takes to chew through the block in a cell. */
   gnawSeconds(x: number, y: number, z: number): number {
     return this.body.gnawSeconds(stateMaterial(this.world.blockAt(x, y, z)));

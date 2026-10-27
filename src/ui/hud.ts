@@ -232,7 +232,12 @@ export function createHud(
       stopRunEvents = null;
       run = view;
       playerHud.setSurvival(view);
-      if (view) stopRunEvents = view.onEvent((event) => toast.queue(messageFor(event, nameOf)));
+      if (view) {
+        stopRunEvents = view.onEvent((event) => {
+          const words = messageFor(event, nameOf);
+          if (words !== null) toast.queue(words);
+        });
+      }
       // The run takes the sky when it arrives, which the pause card's Time of day should show.
       pause.refresh();
       if (refreshRun()) place();
