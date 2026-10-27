@@ -41,7 +41,8 @@ const TURRET_STATE = packState(moduleShape(MODULE.turret, 0), 1);
 const TURRET_PRICE = MODULES.find((module) => module.id === MODULE.turret)!.cost.amount;
 const GENERATOR_NAME = MODULES.find((module) => module.id === MODULE.generator)!.name;
 const GENERATOR_STATE = packState(moduleShape(MODULE.generator, 0), 1);
-/** The points that open the Power row of the ladder, which opens the Generator. */
+const NODE_STATE = packState(moduleShape(MODULE.node, 0), 1);
+/** The points that open the Power row of the ladder, which opens the Generator and the Power Node. */
 const POWER_AT = RESEARCH.groups[0].points;
 const SMALL = { width: 480, height: 270 };
 const FRAME_GAP_MS = 1500;
@@ -2130,6 +2131,124 @@ test.describe('multiplayer', () => {
       }
       await expect.poll(() => chargingOf(ada), { ...slow, message: 'the charge ends' }).toBe(false);
       expect(await rejectionsOf(host)).toEqual([]);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
+  test("power is worked out on every screen from the world's own edits: a Generator and a Power Node light a turret on the guest's screen as they do on the host's, and breaking the Generator puts both out", async ({
+    browser,
+    baseURL,
+  }) => {
+    // The crew's pool is the host's, and opens with plenty of every material.
+    const host = await openPlayer(browser, baseURL, 'Host', { stock: 200 });
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone: Player[] = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and the screen only changes when one is drawn.
+    const slow = { timeout: 60_000 };
+    interface Cell {
+      x: number;
+      y: number;
+      z: number;
+    }
+    /** What this screen works out the module in a cell has of power: 'on', 'off', or 'none'. */
+    const powerOf = (p: Player, cell: Cell) =>
+      p.page.evaluate(
+        ([x, y, z]) =>
+          (
+            window.__ashbound!.game.world as unknown as {
+              power: { stateAt(x: number, y: number, z: number): string };
+            }
+          ).power.stateAt(x!, y!, z!),
+        [cell.x, cell.y, cell.z] as const,
+      );
+    /** Whether the lights of the module this screen draws in a cell are up. */
+    const litOf = (p: Player, cell: Cell) =>
+      p.page.evaluate(
+        ([x, y, z]) =>
+          (
+            window.__ashbound!.game.world as unknown as {
+              view: {
+                modules: { isPowered(x: number, y: number, z: number): boolean | null };
+              };
+            }
+          ).view.modules.isPowered(x!, y!, z!),
+        [cell.x, cell.y, cell.z] as const,
+      );
+    const rejectionsOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.rejections())).map((r) => r.reason);
+    /** Waits until the module in a cell has this power, and its lights this state, on every screen. */
+    const expectEverywhere = async (cell: Cell, power: string, lit: boolean, what: string) => {
+      for (const p of everyone) {
+        await expect
+          .poll(() => powerOf(p, cell), { ...slow, message: `${p.name} sees ${what} ${power}` })
+          .toBe(power);
+        await expect
+          .poll(() => litOf(p, cell), { ...slow, message: `${p.name} draws ${what} lit: ${lit}` })
+          .toBe(lit);
+      }
+    };
+    /** Waits until this screen shows another player's avatar within two blocks of a spot. */
+    const expectSeen = (viewer: Player, name: string, at: { x: number; z: number }) =>
+      expect
+        .poll(
+          async () => {
+            const seen = (await remotes(viewer)).find((r) => r.name === name);
+            return !!seen && Math.hypot(seen.x - at.x, seen.z - at.z) < 2;
+          },
+          { ...slow, message: `${viewer.name} sees ${name} in place` },
+        )
+        .toBe(true);
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      await host.page.evaluate((n) => window.__ashbound!.mp!.setResearch(n), POWER_AT);
+
+      // Ada goes out to a ring thirteen blocks from the Core, where the ground round her is open, and
+      // the host is told where she stands before she builds.
+      const adaAt = await hopFromTheCore(ada.page, 13, 0.9);
+      await expectSeen(host, 'Ada', adaAt);
+      const buildNear = (state: number, dx: number, dz: number): Promise<Cell> =>
+        ada.page.evaluate(([a, b, s]) => window.__ashbound!.mp!.placeNear(a!, b!, s!), [
+          dx,
+          dz,
+          state,
+        ] as const);
+
+      // A turret on its own has no power on either screen, and its lights are down on both.
+      const turret = await buildNear(TURRET_STATE, 3, 0);
+      await expectSameWorld(everyone, 1);
+      await expectEverywhere(turret, 'off', false, 'the turret');
+
+      // A Generator seven blocks from it is beyond its reach: the Generator burns, and the turret has none.
+      const generator = await buildNear(GENERATOR_STATE, -4, 0);
+      await expectSameWorld(everyone, 2);
+      await expectEverywhere(generator, 'on', true, 'the Generator');
+      await expectEverywhere(turret, 'off', false, 'the turret');
+
+      // A Power Node between them takes the power from the Generator and passes it on to the turret.
+      const node = await buildNear(NODE_STATE, 0, -3);
+      await expectSameWorld(everyone, 3);
+      await expectEverywhere(node, 'on', true, 'the Node');
+      await expectEverywhere(turret, 'on', true, 'the turret');
+
+      // The host walks up to the Generator and breaks it: the guest's screen follows the host's, and the
+      // Node and the turret go dark on both.
+      const hostAt = { x: generator.x + 0.5 + 2, z: generator.z + 0.5 };
+      await standAt(host.page, hostAt.x, hostAt.z);
+      await expectSeen(ada, 'Host', hostAt);
+      await host.page.evaluate(([x, y, z]) => window.__ashbound!.mp!.breakBlock(x!, y!, z!), [
+        generator.x,
+        generator.y,
+        generator.z,
+      ] as const);
+      await expectSameWorld(everyone, 2);
+      await expectEverywhere(node, 'off', false, 'the Node');
+      await expectEverywhere(turret, 'off', false, 'the turret');
+      expect(await rejectionsOf(host)).toEqual([]);
+      expect(await rejectionsOf(ada)).toEqual([]);
       expectNoProblems(everyone);
     } finally {
       await closeAll(everyone);
