@@ -60,7 +60,10 @@ export function ladderForHud(reading: EconomyReading): HudLadder {
   }
   for (const group of RESEARCH_GROUPS) {
     const state = stand(group.points);
-    const names = group.modules.map((id) => MODULES.find((module) => module.id === id)?.name ?? '');
+    // A module's name is kept on one line: when the row is narrow the line breaks after a comma, never inside "Power Node".
+    const names = group.modules.map((id) =>
+      (MODULES.find((module) => module.id === id)?.name ?? '').replace(/ /g, '\u00a0'),
+    );
     rows.push({
       at: group.points,
       row: {
