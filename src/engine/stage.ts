@@ -90,6 +90,7 @@ export class Stage {
   private skyDirty = true;
   private clockTime = 0;
   private skyDriver: SkyDriver | null = null;
+  private skyOverride: (() => SkyState) | null = null;
   private drivenPhase = Number.NaN;
   private canvasWidth = 2;
   private canvasHeight = 2;
@@ -238,15 +239,27 @@ export class Stage {
   }
 
   /**
-   * Whether the sky has moved since it was last worked out, without anyone asking: the demo clock
-   * moves every frame, the game's clock only when it has, and a held moment never.
+   * Takes the sky away from the held moment and the clock for a while, as the intro does to run a
+   * night through in a few seconds: `sky` is asked once a frame and what it returns is drawn. Null
+   * gives the sky back to whatever held it before.
+   */
+  setSkyOverride(sky: (() => SkyState) | null): void {
+    this.skyOverride = sky;
+    this.skyDirty = true;
+  }
+
+  /**
+   * Whether the sky has moved since it was last worked out, without anyone asking: an override
+   * moves every frame, the demo clock too, the game's clock only when it has, and a held moment never.
    */
   private skyMoves(): boolean {
+    if (this.skyOverride !== null) return true;
     if (this.fixedMoment !== null) return false;
     return this.skyDriver === null || this.skyDriver() !== this.drivenPhase;
   }
 
   private computeSky(): SkyState {
+    if (this.skyOverride) return this.skyOverride();
     if (this.fixedMoment) return skyStateAt(this.fixedMoment.elevation, this.fixedMoment.bearing);
     if (this.skyDriver) {
       this.drivenPhase = this.skyDriver();
