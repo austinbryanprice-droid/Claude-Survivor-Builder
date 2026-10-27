@@ -43,11 +43,12 @@ describe('the research ladder', () => {
   });
 
   it('names the next row the points have not reached, and none once the ladder is climbed', () => {
-    const [power, composite, alloy, energy] = RESEARCH_ROWS;
+    const [power, composite, camp, alloy, energy] = RESEARCH_ROWS;
     expect(nextRow(0)).toBe(power);
     expect(nextRow(power!.points - 1)).toBe(power);
     expect(nextRow(power!.points)).toBe(composite);
-    expect(nextRow(composite!.points)).toBe(alloy);
+    expect(nextRow(composite!.points)).toBe(camp);
+    expect(nextRow(camp!.points)).toBe(alloy);
     expect(nextRow(energy!.points - 1)).toBe(energy);
     expect(nextRow(energy!.points)).toBeNull();
     expect(nextRow(RESEARCH.max)).toBeNull();
@@ -77,12 +78,21 @@ describe('the research ladder', () => {
 
 describe('the groups of modules the points open', () => {
   it('has the Power group at 10 points, the first night survived, holding the Generator and the Power Node', () => {
-    expect(RESEARCH_GROUPS).toHaveLength(1);
+    expect(RESEARCH_GROUPS).toHaveLength(2);
     const power = RESEARCH_GROUPS[0]!;
     expect(power).toMatchObject({ id: 'power', name: 'Power', points: 10 });
     expect(power.modules).toEqual([MODULE.generator, MODULE.node]);
     // One night is worth at least what it takes, so the first dawn opens it.
     expect(RESEARCH.perNight).toBeGreaterThanOrEqual(power.points);
+  });
+
+  it('has the Camp group at 40 points, the fourth night survived, holding Storage', () => {
+    const camp = RESEARCH_GROUPS[1]!;
+    expect(camp).toMatchObject({ id: 'camp', name: 'Camp', points: 40 });
+    expect(camp.modules).toEqual([MODULE.storage]);
+    // Three nights, however clean, fall short of it and four reach it: the base's comforts wait for night 4.
+    expect(3 * (RESEARCH.perNight + RESEARCH.cleanNight)).toBeLessThan(camp.points);
+    expect(4 * RESEARCH.perNight).toBeGreaterThanOrEqual(camp.points);
   });
 
   it('holds only modules the tables define, each in one group', () => {
@@ -101,6 +111,8 @@ describe('the groups of modules the points open', () => {
 
   it('finds the group of a module, and none for a module no research gates', () => {
     expect(groupOfModule(MODULE.generator)?.id).toBe('power');
+    expect(groupOfModule(MODULE.node)?.id).toBe('power');
+    expect(groupOfModule(MODULE.storage)?.id).toBe('camp');
     expect(groupOfModule(MODULE.terminal)).toBeUndefined();
     expect(groupOfModule(MODULE.turret)).toBeUndefined();
     expect(groupOfModule(99)).toBeUndefined();
@@ -111,6 +123,9 @@ describe('the groups of modules the points open', () => {
     expect(moduleLock(MODULE.generator, 9)).toEqual({ have: 9, need: 10 });
     expect(moduleLock(MODULE.generator, 10)).toBeNull();
     expect(moduleLock(MODULE.generator, 400)).toBeNull();
+    expect(moduleLock(MODULE.storage, 10)).toEqual({ have: 10, need: 40 });
+    expect(moduleLock(MODULE.storage, 39)).toEqual({ have: 39, need: 40 });
+    expect(moduleLock(MODULE.storage, 40)).toBeNull();
     expect(moduleLock(MODULE.terminal, 0)).toBeNull();
     expect(moduleLock(MODULE.turret, 0)).toBeNull();
   });
@@ -121,12 +136,14 @@ describe('the whole ladder', () => {
     expect(RESEARCH_ROWS.map((row) => row.name)).toEqual([
       'Power',
       'Reinforced Composite',
+      'Camp',
       'Advanced Alloy',
       'Energy-Infused',
     ]);
     expect(RESEARCH_ROWS.map((row) => row.kind)).toEqual([
       'modules',
       'material',
+      'modules',
       'material',
       'material',
     ]);
@@ -138,9 +155,11 @@ describe('the whole ladder', () => {
     expect(rowsReached(0, 9)).toEqual([]);
     expect(rowsReached(0, 10).map((row) => row.name)).toEqual(['Power']);
     expect(rowsReached(10, 19)).toEqual([]);
+    expect(rowsReached(30, 40).map((row) => row.name)).toEqual(['Camp']);
     expect(rowsReached(5, 60).map((row) => row.name)).toEqual([
       'Power',
       'Reinforced Composite',
+      'Camp',
       'Advanced Alloy',
     ]);
     expect(rowsReached(0, RESEARCH.max)).toHaveLength(RESEARCH_ROWS.length);

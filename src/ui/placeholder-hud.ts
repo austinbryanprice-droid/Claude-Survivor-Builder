@@ -14,6 +14,7 @@ import {
   upgradePrompt,
   type BuildHudSource,
 } from './build-hud';
+import { poolFull } from './pool-hud';
 import { wrapBearing } from './player-hud/format';
 import { PlayerHud, type HotbarSlot, type PlayerHudState } from './player-hud/player-hud';
 import { chargesForHud, clockForHud, coreForHud, downForHud, objectiveForRun } from './run-hud';
@@ -123,6 +124,7 @@ export function createPlaceholderHud(
         const material = MATERIALS[i];
         if (i < poolReading.stock.length && slot.blueprint && material) {
           slot.stock = pool?.stock[i];
+          slot.full = pool !== null && poolFull(pool.stock[i] ?? 0, pool.cap);
           slot.locked = pool !== null && slotLocked(material.id, pool);
         }
       });

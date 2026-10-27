@@ -579,12 +579,55 @@ function node(): Parts {
   };
 }
 
+/**
+ * Storage: a supply container on a steel pad. A boxy shell with ribbed sides and a roof plate stands on the
+ * pad, corner posts hold it square, and a double door with a bar handle at the seam is the side a player
+ * sees, with a cyan status strip over it and a row of amber hazard dashes along the pad below. A small
+ * beacon blinks at the back of the roof. It takes no power, so its lights are always lit.
+ */
+function storage(): Parts {
+  const sides = [-1, 1] as const;
+  const corners = sides.flatMap((sx) => sides.map((sz) => [sx, sz] as const));
+  const ribs = [-0.25, -0.15, -0.05, 0.05, 0.15, 0.25];
+  const dashes = [-0.28, -0.14, 0, 0.14, 0.28];
+  return {
+    plate: [
+      // The foundation under the pad: it meets the ground where the module floats over it.
+      box(0.7, 0.78, 0.66, 0, -0.59, 0, 0),
+      box(0.86, 0.3, 0.8, 0, -0.05, 0),
+      box(0.8, 0.5, 0.7, 0, 0.35, 0, 0.2),
+      box(0.2, 0.05, 0.3, -0.18, 0.675, 0, 0.3),
+      // The recessed panel of each leaf of the door.
+      ...sides.map((sz) => box(0.012, 0.28, 0.17, 0.412, 0.33, sz * 0.145, 0)),
+    ],
+    trim: [
+      box(0.74, 0.05, 0.64, 0, 0.625, 0, 0.4),
+      ...corners.map(([sx, sz]) => box(0.06, 0.52, 0.06, sx * 0.4, 0.35, sz * 0.35, 0.3)),
+      ...sides.flatMap((sz) => ribs.map((x) => box(0.03, 0.38, 0.02, x, 0.35, sz * 0.355, 0))),
+      // The leaves of the door.
+      ...sides.map((sz) => box(0.015, 0.4, 0.27, 0.4025, 0.35, sz * 0.145, 0)),
+    ],
+    amber: [
+      ...sides.map((sz) => box(0.02, 0.2, 0.018, 0.428, 0.36, sz * 0.035, 0)),
+      ...dashes.map((z) => box(0.008, 0.05, 0.07, 0.43, -0.07, z, 0)),
+      box(0.05, 0.03, 0.05, -0.3, 0.665, 0.25, 0),
+    ],
+    lights: [
+      box(0.88, 0.014, 0.82, 0, 0.1, 0, 0),
+      ...sides.map((sz) => box(0.012, 0.03, 0.03, 0.41, 0.52, sz * 0.145, 0)),
+    ],
+    screen: [box(0.012, 0.03, 0.34, 0.404, 0.575, 0, 0)],
+    beacon: [box(0.03, 0.03, 0.03, -0.3, 0.695, 0.25, 0)],
+  };
+}
+
 /** The models, by module id. */
 const BUILDERS: Readonly<Record<number, (level: number) => Build>> = {
   [MODULE.terminal]: () => ({ body: terminal() }),
   [MODULE.turret]: turret,
   [MODULE.generator]: () => ({ body: generator() }),
   [MODULE.node]: () => ({ body: node() }),
+  [MODULE.storage]: () => ({ body: storage() }),
 };
 
 /** One merged geometry for each look the parts use. */

@@ -27,6 +27,8 @@ const [COMPOSITE_AT, ALLOY_AT, ENERGY_AT] = RESEARCH.steps.map((step) => step.po
   number,
   number,
 ];
+/** The points the Camp row asks for, between Composite and Alloy: it opens the Storage. */
+const CAMP_AT = RESEARCH.groups[1].points;
 
 async function open(page: Page): Promise<string[]> {
   const problems: string[] = [];
@@ -189,7 +191,8 @@ test.describe('the Research Terminal and the points it reads', () => {
       ]);
       await wait(page.locator('.ph-research')).toHaveAttribute('data-tone', 'waiting');
       await expect(page.locator('.ph-research-label')).toHaveText('Needs Terminal');
-      await expect(page.locator('.ph-research-value')).toHaveText(`${COMPOSITE_AT}/${ALLOY_AT}`);
+      // The next row up the ladder is the Camp row, not Alloy.
+      await expect(page.locator('.ph-research-value')).toHaveText(`${COMPOSITE_AT}/${CAMP_AT}`);
       await wait(slotAt(page, 1)).toHaveAttribute('data-locked', '');
       await page.keyboard.press('Digit2');
       await wait(slotAt(page, 1)).toHaveAttribute('data-selected', '');
@@ -236,18 +239,22 @@ test.describe('the Research Terminal and the points it reads', () => {
       await wait(page.locator('.ph-ladder')).toBeVisible();
       await expect(page.locator('.ph-interact')).toBeHidden();
       await expect(page.locator('.ph-ladder-points')).toHaveText(String(COMPOSITE_AT));
-      // Scrap, Power, Reinforced Composite, Advanced Alloy and Energy-Infused, in the order the points reach them.
+      // Scrap, Power, Reinforced Composite, Camp, Advanced Alloy and Energy-Infused, in the order the points reach them.
       const rows = page.locator('.ph-ladder-row');
-      await expect(rows).toHaveCount(5);
+      await expect(rows).toHaveCount(6);
       await expect(rows.nth(0)).toHaveAttribute('data-state', 'open');
       await expect(rows.nth(1)).toHaveAttribute('data-state', 'open');
       await expect(rows.nth(2)).toHaveAttribute('data-state', 'open');
       await expect(rows.nth(3)).toHaveAttribute('data-state', 'shut');
       await expect(rows.nth(4)).toHaveAttribute('data-state', 'shut');
+      await expect(rows.nth(5)).toHaveAttribute('data-state', 'shut');
       await expect(rows.nth(3).locator('.ph-ladder-note')).toHaveText(
-        `${ALLOY_AT - COMPOSITE_AT} to go`,
+        `${CAMP_AT - COMPOSITE_AT} to go`,
       );
       await expect(rows.nth(4).locator('.ph-ladder-note')).toHaveText(
+        `${ALLOY_AT - COMPOSITE_AT} to go`,
+      );
+      await expect(rows.nth(5).locator('.ph-ladder-note')).toHaveText(
         `${ENERGY_AT - COMPOSITE_AT} to go`,
       );
       await page.screenshot({ path: testInfo.outputPath('terminal-ladder.png') });
@@ -264,12 +271,20 @@ test.describe('the Research Terminal and the points it reads', () => {
       await wait(page.locator('.ph-ladder')).toBeVisible();
       await setResearch(page, ALLOY_AT, false);
       await expect(page.locator('.ph-ladder-points')).toHaveText(String(ALLOY_AT));
-      await expect(page.locator('.ph-ladder-row').nth(3)).toHaveAttribute('data-state', 'waiting');
-      await expect(page.locator('.ph-ladder-row').nth(3).locator('.ph-ladder-note')).toHaveText(
-        'Not read yet',
-      );
+      // The Camp row (3) and the Alloy row (4) are both earned now, and neither has been read.
+      for (const row of [3, 4]) {
+        await expect(page.locator('.ph-ladder-row').nth(row)).toHaveAttribute(
+          'data-state',
+          'waiting',
+        );
+        await expect(page.locator('.ph-ladder-row').nth(row).locator('.ph-ladder-note')).toHaveText(
+          'Not read yet',
+        );
+      }
       await setResearch(page, ALLOY_AT, true);
-      await expect(page.locator('.ph-ladder-row').nth(3)).toHaveAttribute('data-state', 'open');
+      for (const row of [3, 4]) {
+        await expect(page.locator('.ph-ladder-row').nth(row)).toHaveAttribute('data-state', 'open');
+      }
       await page.keyboard.press('KeyE');
       await wait(page.locator('.ph-ladder')).toBeHidden();
     });

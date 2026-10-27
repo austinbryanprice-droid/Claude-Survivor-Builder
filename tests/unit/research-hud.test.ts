@@ -42,7 +42,8 @@ describe('the research pill', () => {
       gains: 0,
     });
     expect(researchForHud(12)).toMatchObject({ value: '12/20', fraction: 0.6 });
-    expect(researchForHud(20)).toMatchObject({ value: '20/55', tone: 'rising' });
+    expect(researchForHud(20)).toMatchObject({ value: '20/40', tone: 'rising' });
+    expect(researchForHud(40)).toMatchObject({ value: '40/55', tone: 'rising' });
     expect(researchForHud(54).fraction).toBeCloseTo(54 / 55);
   });
 
@@ -72,8 +73,8 @@ describe('the research pill', () => {
   it('says a Terminal is needed while the points reach a row that nothing has read', () => {
     expect(researchForHud(24, 0, 0)).toEqual({
       points: 24,
-      fraction: 24 / 55,
-      value: '24/55',
+      fraction: 24 / 40,
+      value: '24/40',
       label: 'Needs Terminal',
       tone: 'waiting',
       gains: 0,
@@ -103,8 +104,10 @@ describe('the research pill', () => {
     expect(researchWaiting(19, 10)).toBe(false);
     expect(researchWaiting(20, 10)).toBe(true);
     expect(researchWaiting(20, 20)).toBe(false);
-    expect(researchWaiting(54, 20)).toBe(false);
-    expect(researchWaiting(55, 20)).toBe(true);
+    expect(researchWaiting(39, 20)).toBe(false);
+    expect(researchWaiting(40, 20)).toBe(true);
+    expect(researchWaiting(54, 40)).toBe(false);
+    expect(researchWaiting(55, 40)).toBe(true);
     expect(researchWaiting(0, 0)).toBe(false);
   });
 });
@@ -201,7 +204,8 @@ describe('the messages about research', () => {
     watcher.update(reading(12));
     expect(watcher.update(reading(24))).toEqual(['Research +12', 'Reinforced Composite unlocked']);
     expect(watcher.update(reading(36))).toEqual(['Research +12']);
-    expect(watcher.update(reading(60))).toEqual(['Research +24', 'Advanced Alloy unlocked']);
+    expect(watcher.update(reading(40))).toEqual(['Research +4', 'Camp unlocked']);
+    expect(watcher.update(reading(60))).toEqual(['Research +20', 'Advanced Alloy unlocked']);
   });
 
   it('tell every row a jump opened, in the order of the ladder', () => {
@@ -211,6 +215,7 @@ describe('the messages about research', () => {
       'Research +120',
       'Power unlocked',
       'Reinforced Composite unlocked',
+      'Camp unlocked',
       'Advanced Alloy unlocked',
       'Energy-Infused unlocked',
     ]);
@@ -254,6 +259,7 @@ describe('the messages about research', () => {
     expect(watcher.update(reading(60, 400, 60))).toEqual([
       'Power unlocked',
       'Reinforced Composite unlocked',
+      'Camp unlocked',
       'Advanced Alloy unlocked',
     ]);
     expect(watcher.update(reading(60, 400, 60))).toEqual([]);
@@ -263,7 +269,7 @@ describe('the messages about research', () => {
     const watcher = new ResearchWatcher();
     watcher.update(reading(0, 0));
     expect(watcher.update(reading(30))).toEqual([]);
-    expect(watcher.update(reading(40))).toEqual(['Research +10']);
+    expect(watcher.update(reading(39))).toEqual(['Research +9']);
     watcher.update(reading(0, 0));
     expect(watcher.update(reading(5))).toEqual([]);
   });

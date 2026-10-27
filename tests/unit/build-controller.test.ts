@@ -1131,7 +1131,13 @@ describe('the module slot', () => {
     const { controller } = rig();
     expect(MODULE_SLOT).toBe(BLASTER_SLOT + 1);
     expect(MODULE_SLOT).toBeLessThan(HOTBAR_SLOTS);
-    expect(HOTBAR_MODULES).toEqual([MODULE.terminal, MODULE.turret, MODULE.generator, MODULE.node]);
+    expect(HOTBAR_MODULES).toEqual([
+      MODULE.terminal,
+      MODULE.turret,
+      MODULE.generator,
+      MODULE.node,
+      MODULE.storage,
+    ]);
     for (let slot = 0; slot < HOTBAR_SLOTS; slot++) {
       controller.selectSlot(slot);
       expect(controller.modular, `slot ${slot}`).toBe(slot === MODULE_SLOT);
@@ -1238,7 +1244,7 @@ describe('the module slot', () => {
     expect(r.controller.hudState().crosshair).toBe('place');
   });
 
-  it('chooses the Basic Turret, the Generator and the Power Node with the shape key, each at its first level, and goes round to the Terminal again', () => {
+  it('chooses the Basic Turret, the Generator, the Power Node and Storage with the shape key, each at its first level, and goes round to the Terminal again', () => {
     const { controller } = rig();
     controller.selectSlot(MODULE_SLOT);
     expect(controller.module).toBe(MODULE.terminal);
@@ -1257,6 +1263,9 @@ describe('the module slot', () => {
     controller.cycleShape();
     expect(controller.module).toBe(MODULE.node);
     expect(controller.piece).toBe(packState(moduleShape(MODULE.node, 0), 1));
+    controller.cycleShape();
+    expect(controller.module).toBe(MODULE.storage);
+    expect(controller.piece).toBe(packState(moduleShape(MODULE.storage, 0), 1));
     controller.cycleShape();
     expect(controller.module).toBe(MODULE.terminal);
   });
