@@ -32,6 +32,8 @@ const [COMPOSITE_AT, ALLOY_AT, ENERGY_AT] = RESEARCH.steps.map((step) => step.po
 ];
 /** The points the Power row asks for, below the first material: it opens the Generator, and the first night survived pays for it. */
 const POWER_AT = RESEARCH.groups[0].points;
+/** The points the Camp row asks for, between Composite and Alloy: it opens the Storage. */
+const CAMP_AT = RESEARCH.groups[1].points;
 /** What a night survived gives, with and without the bonus for a Core nothing touched. */
 const NIGHT = RESEARCH.perNight;
 const CLEAN_NIGHT = RESEARCH.perNight + RESEARCH.cleanNight;
@@ -251,7 +253,8 @@ test.describe('research', () => {
       ).toEqual([`Research +${COMPOSITE_AT}`, 'Power unlocked', 'Reinforced Composite unlocked']);
       await wait(slotAt(page, 1)).not.toHaveAttribute('data-locked', '');
       await wait(slotAt(page, 1).locator('.ph-count')).toHaveText('5');
-      await expect(page.locator('.ph-research-value')).toHaveText(`${COMPOSITE_AT}/${ALLOY_AT}`);
+      // The next row up the ladder is the Camp row, not Alloy.
+      await expect(page.locator('.ph-research-value')).toHaveText(`${COMPOSITE_AT}/${CAMP_AT}`);
       await poll(async () => (await aimAt(page, -0.5)).placeRefusal).toBeNull();
       await wait(page.locator('.ph-prompt')).toContainText('Cost 1 Reinforced Composite');
       const aim = await aimAt(page, -0.5);
