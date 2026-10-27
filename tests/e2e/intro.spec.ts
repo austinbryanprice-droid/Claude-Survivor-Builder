@@ -62,6 +62,10 @@ async function startTheFilm(page: Page): Promise<void> {
 }
 
 test.describe('the intro film', () => {
+  // Each of these builds a film's worth of scenery and waits on a few frames a second of software
+  // rendering, which is longer than the default 30 s on a slow machine.
+  test.describe.configure({ timeout: 90_000 });
+
   test('opens a fresh run from the click on Play and hands the same mouse to the player when a key skips it', async ({
     page,
   }) => {
@@ -191,6 +195,42 @@ test.describe('the intro film', () => {
       timeout: STATE_TIMEOUT,
     });
     expect(await page.evaluate(() => window.__ashbound?.intro?.playback ?? null)).toBeNull();
+  });
+
+  test('starts by itself at the first Play of a plain page, calmer for a system that asks for less motion, and a key ends it', async ({
+    page,
+  }) => {
+    // A system that asks for less motion must not leave the film out, only turn it down: the player
+    // cannot see that their system said so, and would find Play going straight into the run.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    // Playwright's browser says a script drives it, which is what keeps the film out of every other
+    // spec; a person's browser does not say so.
+    await page.addInitScript(() => {
+      Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => false });
+    });
+    const problems = await open(page, '?quality=low');
+    // The film's code has loaded once its overlay is in the page.
+    await page.locator('.intro').waitFor({ state: 'attached', timeout: STATE_TIMEOUT });
+    await page.getByRole('button', { name: 'Play' }).click();
+
+    await expect(page.locator('#hud')).toHaveAttribute('data-intro', 'on', {
+      timeout: STATE_TIMEOUT,
+    });
+    await expect(page.locator('.intro')).toBeVisible();
+    await expect(page.locator('.pause')).toBeHidden();
+    await expect(page.locator('.intro-flash')).toHaveCSS('filter', 'opacity(0.35)');
+
+    // The prompt to skip comes up a second and a half in, which is past the moment it ignores skips.
+    await expect(page.locator('.intro-skip')).not.toHaveCSS('opacity', '0', {
+      timeout: STATE_TIMEOUT,
+    });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#hud')).toHaveAttribute('data-intro', 'off', {
+      timeout: STATE_TIMEOUT,
+    });
+    await expect(page.locator('body')).not.toHaveClass(/intro-playing/);
+    await expect(page.locator('.intro')).toBeHidden({ timeout: STATE_TIMEOUT });
+    expect(problems).toEqual([]);
   });
 
   test('draws every scene of the film without a shader error, with its caption and its title where the script says', async ({

@@ -294,19 +294,15 @@ export interface IntroWish {
   readonly automated: boolean;
   /** The URL asks for something other than the plain start: a held time of day, a night, a viewpoint, a demo, a benchmark, no HUD. */
   readonly custom: boolean;
-  /** The player's system asks for less motion, which a film of flashes and a shaking camera is not. */
-  readonly reducedMotion: boolean;
 }
 
-/** Whether a fresh run should open with the film. */
-export function introWanted({
-  mode,
-  setting,
-  automated,
-  custom,
-  reducedMotion,
-}: IntroWish): boolean {
+/**
+ * Whether a fresh run should open with the film. A player whose system asks for less motion is not
+ * left out, since they cannot see that their system said so and would only find Play skipping it:
+ * the film is calmer for them instead (see `IntroOptions.calm`).
+ */
+export function introWanted({ mode, setting, automated, custom }: IntroWish): boolean {
   if (mode === 'on') return true;
   if (mode === 'off') return false;
-  return setting && !automated && !custom && !reducedMotion;
+  return setting && !automated && !custom;
 }

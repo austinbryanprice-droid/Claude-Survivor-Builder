@@ -1,6 +1,7 @@
 import { Group } from 'three';
 import { describe, expect, it } from 'vitest';
 import { createIntro, type IntroEnd, type IntroSite } from '../../src/engine/intro/director';
+import { shakeAt } from '../../src/engine/intro/tracks';
 import type { Stage } from '../../src/engine/stage';
 import type { CameraPose } from '../../src/shared/camera-pose';
 import type { SkyState } from '../../src/shared/daycycle';
@@ -10,9 +11,10 @@ import {
   STOP_AT,
   createIntroFrame,
   introPhaseAt,
+  sceneAt,
   type IntroFrame,
 } from '../../src/shared/intro';
-import { MIN_CLEARANCE } from '../../src/shared/intro-camera';
+import { MIN_CLEARANCE, shakePose } from '../../src/shared/intro-camera';
 import { WORLD_HALF } from '../../src/world/terrain/field';
 import { crashSiteFor } from './helpers/crash-site';
 import { createTestRegistry } from './helpers/registry';
@@ -32,7 +34,7 @@ const pose = (overrides: Partial<CameraPose> = {}): CameraPose => ({
 /** Where the player's own camera would be at the start of a run: on the grass, looking at the lake. */
 const PLAYER_VIEW = pose({ x: 12, y: 13.7, z: 7, yaw: -1.6, pitch: -0.05, fov: 70 });
 
-function setup(holdAt: number | null = null) {
+function setup(holdAt: number | null = null, calm = false) {
   const registry = createTestRegistry();
   const world = new Group();
   const skies: (null | (() => SkyState))[] = [];
@@ -56,6 +58,7 @@ function setup(holdAt: number | null = null) {
     onFrame: (frame) => frames.push({ ...frame }),
     onEnd: (how) => ends.push(how),
     holdAt,
+    calm,
   });
   const materials = Reflect.get(registry, 'materials') as Set<unknown>;
   const out = pose();
@@ -226,6 +229,37 @@ describe('the intro film', () => {
       before = { x: out.x, y: out.y, z: out.z };
     }
     expect(Number.isFinite(before.x)).toBe(true);
+  });
+
+  it('holds the camera steady for a system that asks for less motion: the same shot, minus the shake', () => {
+    // Moments in the fall and the skid, where the camera is shaken.
+    for (const seconds of [6.8, 9.3, 11.7]) {
+      const shaken = setup(seconds, false);
+      const steady = setup(seconds, true);
+      shaken.step(0);
+      steady.step(0);
+
+      // Shaking the steady shot by the film's own amount gives the shaken one, so nothing else differs.
+      const scene = sceneAt(seconds);
+      const amount = shakeAt(seconds, scene.name, seconds - scene.from);
+      expect(amount, `at ${seconds}`).toBeGreaterThan(0);
+      const again: CameraPose = { ...steady.out };
+      shakePose(again, seconds, amount);
+      for (const axis of ['x', 'y', 'z', 'yaw', 'pitch', 'fov'] as const) {
+        expect(shaken.out[axis] ?? 0, `${axis} at ${seconds}`).toBeCloseTo(again[axis] ?? 0, 9);
+      }
+      expect(shaken.out.roll ?? 0).toBeCloseTo(again.roll ?? 0, 9);
+
+      // And the shake was there to take away.
+      const apart = Math.hypot(
+        shaken.out.x - steady.out.x,
+        shaken.out.y - steady.out.y,
+        shaken.out.z - steady.out.z,
+      );
+      expect(apart, `at ${seconds}`).toBeGreaterThan(0.001);
+      // What the overlay is given is the same: the flashes are turned down by the stylesheet.
+      expect(steady.frames[0]).toEqual(shaken.frames[0]);
+    }
   });
 
   it('draws every frame of the overlay it is given: bars, captions, flashes', () => {

@@ -102,14 +102,20 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
       setting: settings.intro,
       automated: navigator.webdriver === true,
       custom: !plainStart,
-      reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     }) &&
     (multiplayer === null || multiplayer.lobby.hub.role === 'solo');
+  // A system that asks for less motion still gets the film, with the camera held steady and the flashes down.
+  const calmIntro = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const loadIntro = (): Promise<IntroController | null> => {
     introLoading ??= import('./attach-intro')
       .then(({ attachIntro }) => {
         if (disposed) return null;
-        introController = attachIntro({ game, valley: () => valley, wanted: wantsIntro });
+        introController = attachIntro({
+          game,
+          valley: () => valley,
+          wanted: wantsIntro,
+          calm: calmIntro,
+        });
         if (flags.debug && window.__ashbound) window.__ashbound.intro = introController;
         return introController;
       })

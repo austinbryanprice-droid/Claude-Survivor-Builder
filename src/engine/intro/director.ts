@@ -48,6 +48,8 @@ export interface IntroOptions {
   readonly onEnd: (how: IntroEnd) => void;
   /** Holds the film at this many seconds instead of playing it: for pictures and tests. */
   readonly holdAt?: number | null;
+  /** A calmer film for a player whose system asks for less motion: the camera does not shake (the overlay takes the flashes down itself). */
+  readonly calm?: boolean;
 }
 
 export interface IntroPlayback extends Cinematic {
@@ -149,7 +151,7 @@ export function createIntro(options: IntroOptions): IntroPlayback {
       wreck.at(time, subject);
       sampleTrack(TRACKS[scene.name], local, sample);
       aimTrack(frame, sample, subjectPoint, scratch, filmPose);
-      shakePose(filmPose, time, shakeAt(time, scene.name, local));
+      shakePose(filmPose, time, options.calm ? 0 : shakeAt(time, scene.name, local));
 
       // The last of the film flies the camera into the player's own view.
       const handoff = (time - (INTRO_SECONDS - HANDOFF_SECONDS)) / HANDOFF_SECONDS;

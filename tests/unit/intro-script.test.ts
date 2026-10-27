@@ -240,18 +240,22 @@ describe('when a fresh run opens with the intro', () => {
     setting: true,
     automated: false,
     custom: false,
-    reducedMotion: false,
   };
 
   it('plays for a player who has not turned it off', () => {
     expect(introWanted(plain)).toBe(true);
   });
 
-  it('stays out of the way of the player settings, scripts, custom views and reduced motion', () => {
+  it('stays out of the way of the player settings, scripts and custom views', () => {
     expect(introWanted({ ...plain, setting: false })).toBe(false);
     expect(introWanted({ ...plain, automated: true })).toBe(false);
     expect(introWanted({ ...plain, custom: true })).toBe(false);
-    expect(introWanted({ ...plain, reducedMotion: true })).toBe(false);
+  });
+
+  it('does not ask what the system says about motion: a player cannot see that, and the film is calmer for them instead', () => {
+    // The wish has no such field to answer by, so a system that asks for less motion is a plain start like any other.
+    expect(Object.keys(plain).sort()).toEqual(['automated', 'custom', 'mode', 'setting']);
+    expect(introWanted(plain)).toBe(true);
   });
 
   it('is settled by the address when it says so', () => {
@@ -260,7 +264,6 @@ describe('when a fresh run opens with the intro', () => {
       setting: false,
       automated: true,
       custom: true,
-      reducedMotion: true,
     };
     expect(introWanted(everythingAgainst)).toBe(true);
     expect(introWanted({ ...plain, mode: 'off' })).toBe(false);
