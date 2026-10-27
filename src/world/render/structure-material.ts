@@ -122,6 +122,7 @@ void main() {
   vec3 fill = ambientLight(N);
   vec3 ambient = mix(fill, vec3(dot(fill, LUMA)) * FILL_TINT, FILL_NEUTRAL) * FILL_GAIN * ao;
   vec3 lit = albedo * (direct + ambient);
+  lit += albedo * lampLight(P, N) * mix(1.0, ao, 0.5);
   lit += uKeyColor * specColor * shine * shadow * aoDirect;
   lit += env * mix(vec3(1.0), col, metal) * mix(0.05, 1.0, metal) * gloss * (ENV_BASE + (1.0 - ENV_BASE) * fresnel) * ao;
 

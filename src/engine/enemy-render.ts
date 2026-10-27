@@ -207,6 +207,7 @@ void main() {
            + uKeyColor * specColor * shine * shadow
            + uAmbSky * rim * 0.2 * (0.4 + 0.6 * metal)
            + glow;
+  lit += albedo * lampLight(vWorld, N);
   lit = mix(lit, vec3(1.0, 0.82, 0.64) * 1.5, vFlash * 0.75);
   lit = applyAtmosphere(lit, vWorld);
   gl_FragColor = vec4(lit, 1.0);

@@ -357,6 +357,7 @@ void main() {
            + uKeyColor * specColor * shine * shadow
            + uAmbSky * rim * 0.18 * (0.4 + 0.6 * metal)
            + glow;
+  lit += albedo * lampLight(vWorld, N) * ground;
   // The cursor on a heap lights its edges, and a strip lights all of it white-hot for a moment.
   lit += vec3(1.0, 0.78, 0.42) * vAimed * (0.03 + 0.6 * rim) * (0.85 + 0.15 * sin(t * 5.0));
   lit = mix(lit, vec3(1.0, 0.82, 0.64) * 1.5, vFlash * 0.7);
