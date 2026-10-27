@@ -49,6 +49,16 @@ export interface IntroSoundPort {
   finish(): void;
 }
 
+/** What the film asks of its narrator (`createNarrator` in `narration.ts` is the real one). */
+export interface IntroNarrationPort {
+  /** Tells it where the film is; called every frame the film plays. */
+  update(filmTime: number): void;
+  /** The film was skipped or cut: whatever is being said stops now. */
+  stop(): void;
+  /** The film ran to its end: no more lines are begun, and the one being said is let finish. */
+  finish(): void;
+}
+
 export interface IntroOptions {
   readonly stage: Stage;
   readonly site: IntroSite;
@@ -62,6 +72,8 @@ export interface IntroOptions {
   readonly calm?: boolean;
   /** The film's music and sound effects, or null for a silent film (held films are, and so is a page with its sound off). */
   readonly sound?: IntroSoundPort | null;
+  /** The voice that tells the film, or null for one with captions alone (held films have none, and nor does a page with its sound or its narration off). */
+  readonly narration?: IntroNarrationPort | null;
 }
 
 export interface IntroPlayback extends Cinematic {
@@ -119,6 +131,7 @@ export function createIntro(options: IntroOptions): IntroPlayback {
   let ended: IntroEnd | null = null;
   let wreckShown = false;
   let soundFailed = false;
+  let narrationFailed = false;
 
   site.showWreck(false);
   stage.setSkyOverride(() => {
@@ -145,6 +158,18 @@ export function createIntro(options: IntroOptions): IntroPlayback {
     }
   };
 
+  /** The same for the narrator: the captions tell the film without a voice, so a voice that fails is told once and the film goes on. */
+  const tellNarration = (tell: (narration: IntroNarrationPort) => void): void => {
+    if (!options.narration) return;
+    try {
+      tell(options.narration);
+    } catch (error) {
+      if (!narrationFailed)
+        console.error("The intro film's narration failed; the film goes on without it.", error);
+      narrationFailed = true;
+    }
+  };
+
   const subjectPoint: Point3 = subject;
 
   const intro: IntroPlayback = {
@@ -157,8 +182,9 @@ export function createIntro(options: IntroOptions): IntroPlayback {
     skip() {
       if (skipping) return;
       skipping = true;
-      // The sound fades with the picture.
+      // The sound fades with the picture, and the voice, which cannot fade, stops.
       tellSound((sound) => sound.fadeOut(SKIP_FADE));
+      tellNarration((narration) => narration.stop());
     },
     seek(seconds) {
       time = Math.min(INTRO_SECONDS, Math.max(0, seconds));
@@ -173,6 +199,9 @@ export function createIntro(options: IntroOptions): IntroPlayback {
       time = Math.min(INTRO_SECONDS, time + step);
       if (skipping) skipFade = Math.min(1, skipFade + dt / SKIP_FADE);
       if (!held && !skipping && !soundFailed) tellSound((sound) => sound.update(time));
+      if (!held && !skipping && !narrationFailed) {
+        tellNarration((narration) => narration.update(time));
+      }
 
       // What the crash made is not there until the wreck has come to rest in its crater.
       showWreck(time >= STOP_AT + 0.35);
@@ -219,8 +248,13 @@ export function createIntro(options: IntroOptions): IntroPlayback {
       site.showWreck(true);
       const how = ended ?? 'cut';
       // A film that ran out lets its last chord ring into the game, one that something cut fades at once, and a skipped one began to fade when it was skipped.
-      if (how === 'finished') tellSound((sound) => sound.finish());
-      else if (how === 'cut') tellSound((sound) => sound.fadeOut(CUT_FADE));
+      if (how === 'finished') {
+        tellSound((sound) => sound.finish());
+        tellNarration((narration) => narration.finish());
+      } else if (how === 'cut') {
+        tellSound((sound) => sound.fadeOut(CUT_FADE));
+        tellNarration((narration) => narration.stop());
+      }
       options.onEnd(how);
     },
   };

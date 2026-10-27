@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createIntro,
   type IntroEnd,
+  type IntroNarrationPort,
   type IntroSite,
   type IntroSoundPort,
 } from '../../src/engine/intro/director';
@@ -39,7 +40,12 @@ const pose = (overrides: Partial<CameraPose> = {}): CameraPose => ({
 /** Where the player's own camera would be at the start of a run: on the grass, looking at the lake. */
 const PLAYER_VIEW = pose({ x: 12, y: 13.7, z: 7, yaw: -1.6, pitch: -0.05, fov: 70 });
 
-function setup(holdAt: number | null = null, calm = false, sound: IntroSoundPort | null = null) {
+function setup(
+  holdAt: number | null = null,
+  calm = false,
+  sound: IntroSoundPort | null = null,
+  narration: IntroNarrationPort | null = null,
+) {
   const registry = createTestRegistry();
   const world = new Group();
   const skies: (null | (() => SkyState))[] = [];
@@ -65,6 +71,7 @@ function setup(holdAt: number | null = null, calm = false, sound: IntroSoundPort
     holdAt,
     calm,
     sound,
+    narration,
   });
   const materials = Reflect.get(registry, 'materials') as Set<unknown>;
   const out = pose();
@@ -410,6 +417,159 @@ describe('the intro film and its sound', () => {
 
   it('plays on without a word to say about sound when it has none', () => {
     const { playback, step } = setup(null, false, null);
+    for (let i = 0; i < 20; i++) expect(step(0.05)).toBe(true);
+    playback.skip();
+    while (step(0.05)) {
+      // Fades out.
+    }
+    expect(() => playback.end()).not.toThrow();
+  });
+});
+
+describe('the intro film and its narrator', () => {
+  const narratorOf = () => ({ update: vi.fn(), stop: vi.fn(), finish: vi.fn() });
+  const soundOf = () => ({ update: vi.fn(), fadeOut: vi.fn(), finish: vi.fn() });
+
+  it('tells the narrator where the film is on every frame it plays, with the clock that has just moved', () => {
+    const narrator = narratorOf();
+    const { step } = setup(null, false, null, narrator);
+    step(0.05);
+    step(0.05);
+    step(3);
+    expect(narrator.update.mock.calls.map(([time]) => time as number)).toEqual([
+      expect.closeTo(0.05, 9),
+      expect.closeTo(0.1, 9),
+      // A stall is no more of the film than the film’s cap, so no line comes early.
+      expect.closeTo(0.2, 9),
+    ]);
+  });
+
+  it('has no voice for a film that is held, until it is let go and plays on from where it is', () => {
+    const narrator = narratorOf();
+    const { playback, step } = setup(7, false, null, narrator);
+    step(0.1);
+    playback.seek(12);
+    step(0.1);
+    expect(narrator.update).not.toHaveBeenCalled();
+    playback.play();
+    step(0.1);
+    expect(narrator.update).toHaveBeenCalledTimes(1);
+    expect(narrator.update.mock.calls[0]?.[0]).toBeCloseTo(12.1, 9);
+  });
+
+  it('stops the voice when the film is skipped, once, and does not ask it to follow the clock as the picture fades', () => {
+    const narrator = narratorOf();
+    const { playback, step, ends } = setup(12, false, null, narrator);
+    playback.play();
+    step(0.1);
+    playback.skip();
+    playback.skip();
+    expect(narrator.stop).toHaveBeenCalledTimes(1);
+    while (step(0.05)) {
+      // The picture fades to black.
+    }
+    expect(narrator.update).toHaveBeenCalledTimes(1);
+    playback.end();
+    expect(ends).toEqual(['skipped']);
+    expect(narrator.stop).toHaveBeenCalledTimes(1);
+    expect(narrator.finish).not.toHaveBeenCalled();
+  });
+
+  it('lets the last line be finished when the film runs to its end', () => {
+    const narrator = narratorOf();
+    const { playback, step, ends } = setup(INTRO_SECONDS - 0.3, false, null, narrator);
+    playback.play();
+    while (step(0.05)) {
+      // Plays to the end.
+    }
+    expect(narrator.finish).not.toHaveBeenCalled();
+    playback.end();
+    expect(ends).toEqual(['finished']);
+    expect(narrator.finish).toHaveBeenCalledTimes(1);
+    expect(narrator.stop).not.toHaveBeenCalled();
+  });
+
+  it('stops the voice at once when something else takes the camera', () => {
+    const narrator = narratorOf();
+    const { playback, step, ends } = setup(5, false, null, narrator);
+    playback.play();
+    step(0.1);
+    playback.end();
+    expect(ends).toEqual(['cut']);
+    expect(narrator.stop).toHaveBeenCalledTimes(1);
+    expect(narrator.finish).not.toHaveBeenCalled();
+  });
+
+  it('follows the same clock as the sound, and each fails on its own', () => {
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const sound = soundOf();
+    const narrator = narratorOf();
+    narrator.update.mockImplementation(() => {
+      throw new Error('the voice is gone');
+    });
+    const { step } = setup(null, false, sound, narrator);
+    for (let i = 0; i < 5; i++) expect(step(0.05)).toBe(true);
+    // The voice failed at the first frame and is not asked again; the sound did not notice.
+    expect(narrator.update).toHaveBeenCalledTimes(1);
+    expect(sound.update).toHaveBeenCalledTimes(5);
+    expect(complaint).toHaveBeenCalledTimes(1);
+    complaint.mockRestore();
+
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const broken = soundOf();
+    broken.update.mockImplementation(() => {
+      throw new Error('the audio thread is gone');
+    });
+    const heard = narratorOf();
+    const again = setup(null, false, broken, heard);
+    for (let i = 0; i < 5; i++) expect(again.step(0.05)).toBe(true);
+    expect(broken.update).toHaveBeenCalledTimes(1);
+    expect(heard.update).toHaveBeenCalledTimes(5);
+    quiet.mockRestore();
+  });
+
+  it('still hands the game over, and says so once, when the narrator cannot be told the film has ended or been cut', () => {
+    const complaint = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const throws = () => {
+      throw new Error('the voice is gone');
+    };
+    const narrator = {
+      update: vi.fn(throws),
+      stop: vi.fn(throws),
+      finish: vi.fn(throws),
+    };
+    const { playback, step, ends } = setup(INTRO_SECONDS - 0.3, false, null, narrator);
+    playback.play();
+    while (step(0.05)) {
+      // Plays to the end.
+    }
+    expect(() => playback.end()).not.toThrow();
+    expect(ends).toEqual(['finished']);
+    expect(narrator.finish).toHaveBeenCalledTimes(1);
+    // One complaint for the voice, however many times it failed.
+    expect(complaint).toHaveBeenCalledTimes(1);
+    complaint.mockRestore();
+
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const skipped = setup(12, false, null, {
+      update: vi.fn(),
+      stop: vi.fn(throws),
+      finish: vi.fn(),
+    });
+    skipped.playback.play();
+    skipped.step(0.1);
+    expect(() => skipped.playback.skip()).not.toThrow();
+    let frames = 0;
+    while (skipped.step(0.05)) frames++;
+    // The picture took its time to go black all the same.
+    expect(frames).toBeGreaterThan(5);
+    expect(() => skipped.playback.end()).not.toThrow();
+    expect(skipped.ends).toEqual(['skipped']);
+    quiet.mockRestore();
+  });
+
+  it('plays on without a word to say about a voice when it has none', () => {
+    const { playback, step } = setup(null, false, soundOf(), null);
     for (let i = 0; i < 20; i++) expect(step(0.05)).toBe(true);
     playback.skip();
     while (step(0.05)) {
