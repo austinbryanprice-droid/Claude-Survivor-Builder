@@ -130,6 +130,7 @@ export function createBuildControls({ game, valley }: BuildControlsOptions): Bui
     },
     warmUp,
     economy: () => session?.economy ?? IDLE_ECONOMY,
+    power: (x, y, z) => valley()?.power.stateAt(x, y, z) ?? 'none',
   });
 
   // The player's eyes are where reach is measured from; the camera is where the cursor looks from.

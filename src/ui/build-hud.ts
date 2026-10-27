@@ -16,8 +16,9 @@ import {
 } from '../shared/blocks';
 import { AIM_REFUSAL } from '../shared/build-aim';
 import { needsResearch, pieceCost } from '../systems/economy/build-rules';
-import { VITALS } from '../systems/survival/balance';
-import type { HotbarSlot, HudInteract, HudPrompt } from './player-hud/player-hud';
+import { TURRET, VITALS } from '../systems/survival/balance';
+import type { PowerState } from '../systems/survival/power';
+import type { HotbarSlot, HudInteract, HudPowerTag, HudPrompt } from './player-hud/player-hud';
 import type { IconId } from './player-hud/icons';
 import { lockText, type HudLock } from './research-hud';
 
@@ -55,6 +56,10 @@ export interface BuildHudInput {
   readonly upgrade: CellState;
   /** Why the host would refuse that upgrade (its words), or null when it would go. Meaningful when `upgrade` is not 0. */
   readonly upgradeRefusal: string | null;
+  /** In Build Mode, what the turret or Power Node the cursor is on has of power; 'none' when it is on neither. */
+  readonly power: PowerState;
+  /** The module (`MODULE`) that `power` is the state of; 0 when `power` is 'none'. */
+  readonly powerModule: number;
 }
 
 export interface BuildHudSource {
@@ -87,6 +92,7 @@ const MODULE_ICONS: Readonly<Record<number, IconId>> = {
   [MODULE.terminal]: 'terminal',
   [MODULE.turret]: 'turret',
   [MODULE.generator]: 'generator',
+  [MODULE.node]: 'node',
 };
 
 /**
@@ -201,6 +207,30 @@ export function upgradePrompt(
     label,
     detail: closed ? lockText(lock) : refusalText(refusal),
     tone: 'warn',
+  };
+}
+
+/**
+ * What the tag under the crosshair says of a turret or Power Node the cursor is on in Build Mode: whether it has
+ * power and what that does for it. A turret works without power (it is a boost, never a need), and the words say so.
+ * Null for a cell that holds neither, which has no state.
+ */
+export function powerTag(power: PowerState, module: number): HudPowerTag | null {
+  if (power === 'none') return null;
+  const turret = module === MODULE.turret;
+  if (power === 'on') {
+    return {
+      state: 'on',
+      label: 'Powered',
+      detail: turret ? `Fires ${TURRET.poweredRate}× faster` : 'Passes power on',
+    };
+  }
+  return {
+    state: 'off',
+    label: 'No power',
+    detail: turret
+      ? 'A Generator or Node in reach boosts it'
+      : 'Needs a Generator or Node in reach',
   };
 }
 

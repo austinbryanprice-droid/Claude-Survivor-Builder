@@ -47,6 +47,7 @@ import {
   notEnough,
 } from '../../src/systems/economy/build-rules';
 import { BLASTER, POWER } from '../../src/systems/survival/balance';
+import type { PowerState } from '../../src/systems/survival/power';
 import { createTerrainGround } from '../../src/world/terrain/collision';
 import { createWorld, type VoxelWorld } from '../../src/world/voxels/world';
 import { TEST_SEED, terrain } from './helpers/valley';
@@ -72,6 +73,8 @@ interface Rig {
    * and `claimed` the points a Terminal has read (enough for every group of modules, unless a test says less).
    */
   readonly pool: { cap: number; stock: number[]; tier: number; research: number; claimed: number };
+  /** What the fake grid says of every module it is asked about, and the cells it was asked about. */
+  readonly power: { state: PowerState; asked: number[][] };
   /** The ground height at the spot. */
   readonly surface: number;
   /** A view from `height` above the ground at the spot, looking straight down. */
@@ -89,6 +92,7 @@ function rig(): Rig {
   const gun = { ready: true };
   const heaps: Rig['heaps'] = { nodes: [], left: {} };
   const pool: Rig['pool'] = { cap: 0, stock: [], tier: 4, research: 0, claimed: 9999 };
+  const power: Rig['power'] = { state: 'none', asked: [] };
   const ports: BuildPorts = {
     blocks: () => world,
     ground: () => ground,
@@ -125,6 +129,10 @@ function rig(): Rig {
       },
       debris: { nodes: heaps.nodes, leftOf: (index) => heaps.left[index] ?? 0 },
     }),
+    power(x, y, z) {
+      power.asked.push([x, y, z]);
+      return power.state;
+    },
   };
   const surface = world.terrain.grid.groundAt(SPOT.x + 0.5, SPOT.z + 0.5);
   return {
@@ -138,6 +146,7 @@ function rig(): Rig {
     gun,
     heaps,
     pool,
+    power,
     surface,
     lookDown(height) {
       const origin = { x: SPOT.x + 0.5, y: surface + height, z: SPOT.z + 0.5 };
@@ -1425,6 +1434,117 @@ describe('the ring on the ground that shows how far power reaches', () => {
     r.controller.update(0.016, r.lookDown(3));
     expect(r.controller.reach.cell).toEqual({ x: SPOT.x, y, z: SPOT.z });
     expect(r.controller.reach.radius).toBe(POWER.node.radius);
+  });
+});
+
+describe('whether the turret or Power Node under the cursor has power', () => {
+  const at = (module: number) => packState(moduleShape(module, 0), 1);
+
+  /**
+   * A rig in Build Mode with `state` standing a cell up from the hill at the spot (a turret is lower than a
+   * block, so the cursor would meet the hill first if it stood in it), the cursor looking down at it from `height`.
+   */
+  function looking(state: number, height = 3) {
+    const r = rig();
+    const y = Math.floor(r.surface) + 1;
+    r.world.setBlock(SPOT.x, y, SPOT.z, state);
+    r.controller.toggleBuildMode();
+    r.controller.update(0.016, r.lookDown(height));
+    return { ...r, y };
+  }
+
+  it('says what the grid says of a turret, in Build Mode, and which module it is', () => {
+    const r = looking(at(MODULE.turret));
+    expect(r.controller.target.on).toBe('block');
+    r.power.state = 'on';
+    expect(r.controller.hudState()).toMatchObject({ power: 'on', powerModule: MODULE.turret });
+    r.power.state = 'off';
+    expect(r.controller.hudState()).toMatchObject({ power: 'off', powerModule: MODULE.turret });
+  });
+
+  it('says it of a Power Node as well', () => {
+    const r = looking(at(MODULE.node));
+    r.power.state = 'off';
+    expect(r.controller.hudState()).toMatchObject({ power: 'off', powerModule: MODULE.node });
+    r.power.state = 'on';
+    expect(r.controller.hudState()).toMatchObject({ power: 'on', powerModule: MODULE.node });
+  });
+
+  it('asks about the cell the cursor is on', () => {
+    const r = looking(at(MODULE.turret));
+    r.power.state = 'on';
+    r.controller.hudState();
+    expect(r.power.asked).toEqual([[SPOT.x, r.y, SPOT.z]]);
+  });
+
+  it('says nothing outside Build Mode', () => {
+    const r = looking(at(MODULE.turret));
+    r.power.state = 'on';
+    r.controller.toggleBuildMode();
+    expect(r.controller.hudState()).toMatchObject({ power: 'none', powerModule: 0 });
+  });
+
+  it('tags a turret just out of reach as well, as the ring is drawn round one: a base is read from a little way off', () => {
+    const r = looking(at(MODULE.turret), BUILD_REACH + 2.5);
+    expect(r.controller.target.on).toBe('block');
+    expect(r.controller.target.breakRefusal).toBe(AIM_REFUSAL.outOfReach);
+    r.power.state = 'off';
+    expect(r.controller.hudState()).toMatchObject({ power: 'off', powerModule: MODULE.turret });
+  });
+
+  it.each([
+    ['a Generator', at(MODULE.generator)],
+    ['a Research Terminal', at(MODULE.terminal)],
+    ['a block', packState(SHAPE.cube, MATERIAL.scrap)],
+  ])('does not tag %s, which has no power to lack', (_name, state) => {
+    const r = looking(state);
+    r.power.state = 'on';
+    expect(r.controller.hudState()).toMatchObject({ power: 'none', powerModule: 0 });
+    expect(r.power.asked).toEqual([]);
+  });
+
+  it('says nothing while the cursor is on bare ground or nothing', () => {
+    const r = rig();
+    r.controller.toggleBuildMode();
+    r.power.state = 'on';
+    r.controller.update(0.016, r.lookDown(3));
+    expect(r.controller.hudState()).toMatchObject({ power: 'none', powerModule: 0 });
+    const origin = { x: SPOT.x + 0.5, y: r.surface + 3, z: SPOT.z + 0.5 };
+    r.controller.update(0.016, { origin, dir: { x: 0, y: 1, z: 0 }, eye: origin });
+    expect(r.controller.hudState()).toMatchObject({ power: 'none', powerModule: 0 });
+  });
+
+  it('says nothing for a player who is down, or when the grid knows nothing of the cell', () => {
+    const r = looking(at(MODULE.turret));
+    r.power.state = 'none';
+    expect(r.controller.hudState()).toMatchObject({ power: 'none', powerModule: 0 });
+    r.power.state = 'on';
+    r.controller.setDown(true);
+    expect(r.controller.hudState()).toMatchObject({ power: 'none', powerModule: 0 });
+  });
+
+  it('says nothing in a game without power, which gives the controller no grid to ask', () => {
+    const world = createWorld(TEST_SEED, terrain());
+    const ground = createTerrainGround(world.terrain.grid, 90);
+    const controller = new BuildController({
+      blocks: () => world,
+      ground: () => ground,
+      send: () => true,
+      bodies: () => [],
+      warmUp: () => undefined,
+      fire: () => true,
+      economy: () => ({
+        read: (out) => out,
+        debris: { nodes: [], leftOf: () => 0 },
+      }),
+    });
+    const surface = world.terrain.grid.groundAt(SPOT.x + 0.5, SPOT.z + 0.5);
+    world.setBlock(SPOT.x, Math.floor(surface) + 1, SPOT.z, at(MODULE.turret));
+    controller.toggleBuildMode();
+    const origin = { x: SPOT.x + 0.5, y: surface + 3, z: SPOT.z + 0.5 };
+    controller.update(0.016, { origin, dir: { x: 0, y: -1, z: 0 }, eye: origin });
+    expect(controller.target.on).toBe('block');
+    expect(controller.hudState()).toMatchObject({ power: 'none', powerModule: 0 });
   });
 });
 

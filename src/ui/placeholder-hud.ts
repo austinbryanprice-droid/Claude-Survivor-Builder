@@ -10,6 +10,7 @@ import {
   blockSlotsByKind,
   interactPrompt,
   moduleSlot,
+  powerTag,
   upgradePrompt,
   type BuildHudSource,
 } from './build-hud';
@@ -167,6 +168,7 @@ export function createPlaceholderHud(
                     hands.upgradeRefusal,
                     pool ? lockForPiece(hands.upgrade, pool) : null,
                   ))),
+        powerTag: powerTag(hands.power, hands.powerModule),
         ladder: hands.terminal === 'open' ? ladderForHud(pool ?? noPool) : null,
         crosshair: hands.crosshair,
         hitMarker: { count: hands.hits, kill: hands.kill },

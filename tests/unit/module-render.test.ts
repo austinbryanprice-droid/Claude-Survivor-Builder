@@ -1,4 +1,4 @@
-import { Euler, Group, Mesh, Vector3, type Color, type ShaderMaterial } from 'three';
+import { Color, Euler, Group, Mesh, Vector3, type Object3D, type ShaderMaterial } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import {
   MODULE,
@@ -10,8 +10,13 @@ import {
 } from '../../src/shared/blocks';
 import { TURRET_GUN, turretMuzzle } from '../../src/shared/turret';
 import { createWorld, type VoxelWorld } from '../../src/world/voxels/world';
-import { MODULE_LOOK_NAMES } from '../../src/world/render/module-models';
-import { ModuleRenderer } from '../../src/world/render/module-render';
+import {
+  MODULE_LOOKS,
+  MODULE_LOOK_NAMES,
+  modulePalette,
+  type ModuleLook,
+} from '../../src/world/render/module-models';
+import { DIM_GLOW, ModuleRenderer } from '../../src/world/render/module-render';
 import { createTestRegistry } from './helpers/registry';
 import { TEST_SEED, terrain } from './helpers/valley';
 
@@ -19,6 +24,7 @@ const terminal = (facing: number) => packState(moduleShape(MODULE.terminal, faci
 /** A turret's cell state: its level is the cell's material byte. */
 const turret = (facing: number, level = 1) => packState(moduleShape(MODULE.turret, facing), level);
 const generator = (facing: number) => packState(moduleShape(MODULE.generator, facing), 1);
+const node = (facing: number) => packState(moduleShape(MODULE.node, facing), 1);
 
 /** A world with the cell where the tests build, and a renderer drawing it. */
 function build() {
@@ -530,6 +536,166 @@ describe('the lights of a module', () => {
     expect(on).toBeGreaterThan(off * 3);
     renderer.update(2.3);
     expect(brightness(glowOf(beacon))).toBeCloseTo(on, 9);
+  });
+});
+
+/** Every mesh in a module's group, its head's among them, with the look it is of. */
+function lookedMeshes(group: Group): { mesh: Mesh; look: ModuleLook }[] {
+  const found: { mesh: Mesh; look: ModuleLook }[] = [];
+  group.traverse((object: Object3D) => {
+    const look = object.userData.look as ModuleLook | undefined;
+    if (object instanceof Mesh && look !== undefined) found.push({ mesh: object, look });
+  });
+  return found;
+}
+
+describe('a module without power', () => {
+  const glows = (look: ModuleLook) => MODULE_LOOKS[look].glow !== undefined;
+
+  it('burns its glowing looks low and leaves its plates and trim as they are', () => {
+    const { renderer, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, node(0));
+    const group = renderer.at(cell.x, cell.y, cell.z) as Group;
+    const lit = lookedMeshes(group).map(({ mesh }) => mesh.material);
+    expect(renderer.isPowered(cell.x, cell.y, cell.z)).toBe(true);
+    expect(renderer.setPowered(cell.x, cell.y, cell.z, false)).toBe(true);
+    expect(renderer.isPowered(cell.x, cell.y, cell.z)).toBe(false);
+    lookedMeshes(group).forEach(({ mesh, look }, i) => {
+      if (!glows(look)) {
+        expect(mesh.material, look).toBe(lit[i]);
+        return;
+      }
+      expect(mesh.material, look).not.toBe(lit[i]);
+      const spec = MODULE_LOOKS[look];
+      const want = new Color(spec.glow).multiplyScalar((spec.glowIntensity ?? 1) * DIM_GLOW);
+      expect(glowOf(mesh).toArray(), look).toEqual(want.toArray());
+    });
+  });
+
+  it('still reads as a module: dim is on standby, not out', () => {
+    expect(DIM_GLOW).toBeGreaterThan(0.05);
+    expect(DIM_GLOW).toBeLessThan(0.5);
+  });
+
+  it('gets its lights back with the very materials it had', () => {
+    const { renderer, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, node(1));
+    const group = renderer.at(cell.x, cell.y, cell.z) as Group;
+    const lit = lookedMeshes(group).map(({ mesh }) => mesh.material);
+    renderer.setPowered(cell.x, cell.y, cell.z, false);
+    expect(renderer.setPowered(cell.x, cell.y, cell.z, true)).toBe(true);
+    expect(renderer.isPowered(cell.x, cell.y, cell.z)).toBe(true);
+    expect(lookedMeshes(group).map(({ mesh }) => mesh.material)).toEqual(lit);
+  });
+
+  it('says whether anything changed: nothing does when the lights are as asked, or no module stands there', () => {
+    const { renderer, world, cell } = build();
+    expect(renderer.setPowered(cell.x, cell.y, cell.z, false)).toBe(false);
+    expect(renderer.isPowered(cell.x, cell.y, cell.z)).toBeNull();
+    world.setBlock(cell.x, cell.y, cell.z, node(0));
+    expect(renderer.setPowered(cell.x, cell.y, cell.z, true)).toBe(false);
+    expect(renderer.setPowered(cell.x, cell.y, cell.z, false)).toBe(true);
+    expect(renderer.setPowered(cell.x, cell.y, cell.z, false)).toBe(false);
+    world.setBlock(cell.x, cell.y, cell.z, 0);
+    expect(renderer.isPowered(cell.x, cell.y, cell.z)).toBeNull();
+  });
+
+  it('holds its dim lights still while the lit ones breathe', () => {
+    const { renderer, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, node(0));
+    world.setBlock(cell.x + 2, cell.y, cell.z, node(0));
+    renderer.setPowered(cell.x, cell.y, cell.z, false);
+    const dim = lookedMeshes(renderer.at(cell.x, cell.y, cell.z) as Group).filter(({ look }) =>
+      glows(look),
+    );
+    const lit = lookedMeshes(renderer.at(cell.x + 2, cell.y, cell.z) as Group).filter(({ look }) =>
+      glows(look),
+    );
+    renderer.update(0.3);
+    const dimAt = dim.map(({ mesh }) => glowOf(mesh).toArray());
+    const litAt = lit.map(({ mesh }) => glowOf(mesh).toArray());
+    renderer.update(1.9);
+    expect(dim.map(({ mesh }) => glowOf(mesh).toArray())).toEqual(dimAt);
+    expect(lit.map(({ mesh }) => glowOf(mesh).toArray())).not.toEqual(litAt);
+  });
+
+  it('is dimmer than the same module with power, in every look that glows', () => {
+    const { renderer, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, node(0));
+    world.setBlock(cell.x + 2, cell.y, cell.z, node(0));
+    renderer.setPowered(cell.x + 2, cell.y, cell.z, false);
+    renderer.update(0.1);
+    const lit = lookedMeshes(renderer.at(cell.x, cell.y, cell.z) as Group);
+    const dim = lookedMeshes(renderer.at(cell.x + 2, cell.y, cell.z) as Group);
+    lit.forEach(({ mesh, look }, i) => {
+      if (!glows(look)) return;
+      expect(brightness(glowOf(dim[i]?.mesh as Mesh)), look).toBeLessThan(brightness(glowOf(mesh)));
+    });
+  });
+
+  it('shares one set of dim materials between the modules of a paint, and keeps another for each grade', () => {
+    const { renderer, world, cell } = build();
+    for (const [dx, state] of [
+      [0, node(0)],
+      [2, node(3)],
+      [4, turret(0, 1)],
+      [6, turret(0, 2)],
+    ] as const) {
+      world.setBlock(cell.x + dx, cell.y, cell.z, state);
+      renderer.setPowered(cell.x + dx, cell.y, cell.z, false);
+    }
+    const dimOf = (dx: number, look: ModuleLook) =>
+      lookedMeshes(renderer.at(cell.x + dx, cell.y, cell.z) as Group).find((m) => m.look === look)
+        ?.mesh.material;
+    // The Node, the Scrap turret: the Core's paint, one dim material for a look.
+    expect(dimOf(0, 'screen')).toBe(dimOf(2, 'screen'));
+    expect(dimOf(0, 'lights')).toBe(dimOf(4, 'lights'));
+    // The Auto Turret is Composite, whose cyan is brighter: its own dim set.
+    expect(modulePalette(MATERIAL.composite).lights).not.toBe(MODULE_LOOKS.lights);
+    expect(dimOf(6, 'lights')).not.toBe(dimOf(0, 'lights'));
+  });
+
+  it('dims a turret’s head with the rest of it, and lights it again', () => {
+    const { renderer, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, turret(0, 1));
+    const group = renderer.at(cell.x, cell.y, cell.z) as Group;
+    const head = group.getObjectByName('head') as Group;
+    const lit = lookedMeshes(head).map(({ mesh }) => mesh.material);
+    renderer.setPowered(cell.x, cell.y, cell.z, false);
+    lookedMeshes(head).forEach(({ mesh, look }, i) => {
+      if (glows(look)) expect(mesh.material, look).not.toBe(lit[i]);
+      else expect(mesh.material, look).toBe(lit[i]);
+    });
+    expect(lookedMeshes(head).some(({ look }) => glows(look))).toBe(true);
+    renderer.setPowered(cell.x, cell.y, cell.z, true);
+    expect(lookedMeshes(head).map(({ mesh }) => mesh.material)).toEqual(lit);
+  });
+
+  it('starts with its lights up when it is drawn again, as a raised turret is', () => {
+    const { renderer, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, turret(0, 1));
+    renderer.setPowered(cell.x, cell.y, cell.z, false);
+    world.setBlock(cell.x + 2, cell.y, cell.z, turret(0, 2));
+    world.setBlock(cell.x, cell.y, cell.z, turret(0, 2));
+    expect(renderer.isPowered(cell.x, cell.y, cell.z)).toBe(true);
+    // Its materials are the Auto Turret's own lit ones, as a turret that was never dim has.
+    const redrawn = lookedMeshes(renderer.at(cell.x, cell.y, cell.z) as Group);
+    const never = lookedMeshes(renderer.at(cell.x + 2, cell.y, cell.z) as Group);
+    expect(redrawn.map(({ mesh }) => mesh.material)).toEqual(
+      never.map(({ mesh }) => mesh.material),
+    );
+    expect(renderer.setPowered(cell.x, cell.y, cell.z, false)).toBe(true);
+  });
+
+  it('is given back with the rest: the dim materials are freed with the lit ones', () => {
+    const { renderer, registry, world, cell } = build();
+    world.setBlock(cell.x, cell.y, cell.z, node(0));
+    renderer.setPowered(cell.x, cell.y, cell.z, false);
+    const release = vi.spyOn(registry, 'release');
+    renderer.dispose();
+    expect(release).toHaveBeenCalledTimes(
+      MODULE_LOOK_NAMES.length + MODULE_LOOK_NAMES.filter(glows).length,
+    );
   });
 });
 

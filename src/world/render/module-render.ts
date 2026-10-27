@@ -38,7 +38,10 @@ import {
  * of a shot and which stays pointing there until the next one.
  *
  * The screens breathe, the light strips beat slowly and the beacon blinks, all from the stage's
- * animation clock, so a frozen page shows the same module twice.
+ * animation clock, so a frozen page shows the same module twice. A module without power (5g2) keeps its
+ * shape and its plates but burns its lights low and still: `setPowered` swaps its glowing looks for dim
+ * copies, made the first time one is needed. Which modules have power is not known here (this layer
+ * imports nothing from the simulation); the app works it out and says.
  */
 
 /** How the lights move: a shimmer on the screens, a slow beat on the strips and a blink on the beacon. */
@@ -49,10 +52,22 @@ const BLINK_OFF_GLOW = 0.15;
 /** The name of the group a turning head hangs in, inside the group of the module it belongs to. */
 const HEAD = 'head';
 
+/** How much of its glow a look keeps in a module without power: the lights are on standby, not out, so the module still reads as one. */
+export const DIM_GLOW = 0.16;
+
 /** The materials of one paint, a lit material for each look, and the glow each is animated through. */
 interface Paint {
+  readonly palette: ModulePalette;
   readonly materials: Map<ModuleLook, ShaderMaterial>;
   readonly glows: Map<ModuleLook, { readonly now: Color; readonly base: Color }>;
+  /** The looks that glow, with their glow turned down and held still, made the first time a module without power is drawn in this paint. */
+  dim: Map<ModuleLook, ShaderMaterial> | null;
+}
+
+/** How a module's group is dressed now: the paint it was drawn in and whether its lights are up. */
+interface Dress {
+  readonly paint: Paint;
+  powered: boolean;
 }
 
 export class ModuleRenderer {
@@ -62,6 +77,8 @@ export class ModuleRenderer {
   private readonly placed = new Map<number, Group>();
   /** The materials of each paint that has been drawn in. */
   private readonly paints = new Map<ModulePalette, Paint>();
+  /** What each drawn module is dressed in, so that `setPowered` can swap its lights. */
+  private readonly dress = new WeakMap<Group, Dress>();
   /** The animation clock the lights were last moved to, so that a paint made later starts where the others are. */
   private time = 0;
   private readonly stop: () => void;
@@ -110,6 +127,32 @@ export class ModuleRenderer {
     return true;
   }
 
+  /**
+   * Turns the lights of the module in a cell down or back up: a module without power keeps its shape and
+   * its plates, and the cyan and amber it glows with burn low and still. A module drawn again (raised, say)
+   * starts with its lights up, so whoever knows which have power says again. True when the module's lights
+   * changed; false when none is drawn there or they were as asked already.
+   */
+  setPowered(x: number, y: number, z: number, powered: boolean): boolean {
+    const group = this.placed.get(cellKey(x, y, z));
+    const dress = group ? this.dress.get(group) : undefined;
+    if (!group || !dress || dress.powered === powered) return false;
+    dress.powered = powered;
+    const lit = powered ? dress.paint.materials : this.dimmed(dress.paint);
+    group.traverse((object) => {
+      const look = object.userData.look as ModuleLook | undefined;
+      if (!(object instanceof Mesh) || look === undefined) return;
+      object.material = lit.get(look) ?? dress.paint.materials.get(look) ?? object.material;
+    });
+    return true;
+  }
+
+  /** Whether the lights of the module in a cell are up, or null when none is drawn there. */
+  isPowered(x: number, y: number, z: number): boolean | null {
+    const group = this.placed.get(cellKey(x, y, z));
+    return (group ? this.dress.get(group)?.powered : undefined) ?? null;
+  }
+
   /** Moves the lights for the stage's animation clock, in seconds. */
   update(time: number): void {
     this.time = time;
@@ -129,6 +172,7 @@ export class ModuleRenderer {
     this.kits.clear();
     for (const paint of this.paints.values()) {
       paint.materials.forEach((material) => this.registry.release(material));
+      paint.dim?.forEach((material) => this.registry.release(material));
     }
     this.paints.clear();
   }
@@ -154,7 +198,7 @@ export class ModuleRenderer {
   private paint(palette: ModulePalette): Paint {
     let paint = this.paints.get(palette);
     if (!paint) {
-      paint = { materials: new Map(), glows: new Map() };
+      paint = { palette, materials: new Map(), glows: new Map(), dim: null };
       for (const look of MODULE_LOOK_NAMES) {
         const material = createLitMaterial(this.registry, palette[look]);
         paint.materials.set(look, material);
@@ -165,6 +209,20 @@ export class ModuleRenderer {
       this.light(paint);
     }
     return paint;
+  }
+
+  /** The glowing looks of a paint with their lights turned down, made the first time a module without power needs them. */
+  private dimmed(paint: Paint): Map<ModuleLook, ShaderMaterial> {
+    if (!paint.dim) {
+      paint.dim = new Map();
+      for (const look of MODULE_LOOK_NAMES) {
+        const spec = paint.palette[look];
+        if (spec.glow === undefined) continue;
+        const glowIntensity = (spec.glowIntensity ?? 1) * DIM_GLOW;
+        paint.dim.set(look, createLitMaterial(this.registry, { ...spec, glowIntensity }));
+      }
+    }
+    return paint.dim;
   }
 
   /** Draws the cell as it is now: the module in it, turned the way it faces, or nothing. */
@@ -186,6 +244,7 @@ export class ModuleRenderer {
     group.position.set(x + 0.5, y, z + 0.5);
     group.rotation.y = (-moduleFacing(shape) * Math.PI) / 2;
     const paint = this.paint(kit.palette);
+    this.dress.set(group, { paint, powered: true });
     this.mesh(group, kit.model, paint);
     if (kit.head) {
       // Yaw first, then the lift about the head's own side, then no roll: the order the turn is built in.
@@ -207,6 +266,7 @@ export class ModuleRenderer {
       const material = paint.materials.get(look);
       if (!geometry || !material) continue;
       const mesh = new Mesh(geometry, material);
+      mesh.userData.look = look;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       parent.add(mesh);
