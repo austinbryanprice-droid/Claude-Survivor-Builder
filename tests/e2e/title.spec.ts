@@ -141,12 +141,20 @@ test.describe('the title screen', () => {
     await waitForTheRun(page);
     await play(page).click();
 
-    // The words go at once and the camera flies to the player's own view.
-    await page.waitForFunction(() => window.__ashbound?.title?.phase === 'gliding', null, {
-      timeout: STATE_TIMEOUT,
-    });
+    // The words go at once and the camera flies to the player's own view. The glide lasts under two
+    // seconds, so the mouse is read in the page on the frame that finds it gliding: a round trip
+    // slowed by a busy page would otherwise read it after the glide had handed it over.
+    const gliding = await page.waitForFunction(
+      () => {
+        const app = window.__ashbound;
+        if (app?.title?.phase !== 'gliding') return false;
+        return { locked: app.game.input.locked, held: app.game.input.held };
+      },
+      null,
+      { timeout: STATE_TIMEOUT },
+    );
+    expect(await gliding.jsonValue()).toEqual({ locked: false, held: true });
     await expect(page.locator('.title-card')).toHaveCSS('opacity', '0');
-    expect(await mouse(page)).toMatchObject({ locked: false, held: true });
 
     await expect(page.locator('#hud')).toHaveAttribute('data-intro', 'off', {
       timeout: STATE_TIMEOUT,
