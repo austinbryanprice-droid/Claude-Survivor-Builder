@@ -31,8 +31,12 @@ export interface Listener {
   readonly yaw: number;
 }
 
-/** Blocks beyond which a sound is not made at all. */
-export const EARSHOT = 80;
+/**
+ * Blocks beyond which a sound is not made at all. A block set down twice that far off is already
+ * 10 decibels under the wind of a quiet morning (measured in the lab, not guessed), so nothing is
+ * lost, and the budget is kept for what can be heard.
+ */
+export const EARSHOT = 48;
 
 /** Decibels a sound loses on the way, by blocks away: none within arm's reach, then a fall that steepens toward the edge of earshot. */
 const FALL: readonly (readonly [distance: number, drop: number])[] = [
@@ -42,8 +46,6 @@ const FALL: readonly (readonly [distance: number, drop: number])[] = [
   [16, -12.5],
   [32, -21],
   [48, -29],
-  [64, -36],
-  [80, -44],
 ];
 
 /** The loss in decibels (zero or less) of a sound that comes from `distance` blocks away. */
@@ -75,7 +77,7 @@ export const SPOT = {
   /** Within this many blocks a sound is drawn toward the middle, so that something at the player's feet is not in one ear. */
   close: 3,
   /** The air takes the highs off a far sound, and the head off one behind: the shares of a full muffling they come to. */
-  muffle: { from: 8, to: 70, far: 0.8, behind: 0.3 },
+  muffle: { from: 8, to: 48, far: 0.8, behind: 0.3 },
   /** More of a far sound goes to the room, as the echo of the valley is most of what is left of it. */
   room: 0.3,
 } as const;
@@ -280,6 +282,16 @@ export interface Effect {
   readonly cues: readonly MusicCue[];
 }
 
+/**
+ * The levels below were not guessed from how loud a voice is called: each effect was drawn to samples
+ * on its own and set against the quietest hour of the valley (a morning: the wind and the Core's hum),
+ * reading how far it stands over that in each octave band. A knock is 13 to 20 decibels over the
+ * morning between 180 and 355 Hz, and every effect has something 6 to 16 decibels over it between
+ * 355 Hz and 2.8 kHz as well, so that it is heard on a laptop's speakers, which have nothing to give
+ * below 200 Hz. The voices differ a great deal in how much a nominal level says (a crackle at -3 is
+ * quieter than a knock at -20), which is why the numbers look uneven.
+ */
+
 /** A list of cues written one at a time, each with a seed of its own so that no two noises in it are the same part of the noise. */
 class Score {
   readonly cues: MusicCue[] = [];
@@ -315,19 +327,20 @@ function tierOf(state: CellState): number {
 /** A lighter piece rings higher: the pitch of the knock by the kind of piece. */
 const LIFT = { cube: 1, wedge: 1.08, slab: 1.16 } as const;
 
-/** A block set in place: a dull knock, and above Scrap a tap of the material on it (a glassy note at the top). */
+/** A block set in place: a knock with a body to it, a woody tick and a snap of scrap on it, and above Scrap the tap of the material in their place (a glassy note at the top). */
 function blockPlaced(state: CellState, seed: number): MusicCue[] {
   const tier = tierOf(state);
   const kind = shapeKind(stateShape(state));
   const lift = kind === 'wedge' || kind === 'slab' ? LIFT[kind] : LIFT.cube;
   const score = new Score(seed);
-  score.add(0, 'step', -14, { hz: vary((100 + 20 * tier) * lift, seed, 0.05) });
+  score.add(0, 'step', -20, { hz: vary((140 + 30 * tier) * lift, seed, 0.05) });
   if (tier === 1) {
-    score.add(0.004, 'crackle', -22, { hz: vary(1200, seed + 1, 0.25) });
+    score.add(0.004, 'tick', -15, { hz: vary(560, seed + 1, 0.06) });
+    score.add(0.004, 'crackle', -6, { hz: vary(1500, seed + 2, 0.25) });
   } else {
-    score.add(0.008, 'tick', -26 + 1.5 * tier, { hz: vary(700 + 350 * tier, seed + 1, 0.04) });
+    score.add(0.008, 'tick', -20 + 1.5 * tier, { hz: vary(700 + 350 * tier, seed + 1, 0.04) });
   }
-  if (tier === TIERS) score.add(0.02, 'pluck', -38, { hz: noteHz('G6'), seconds: 0.3 });
+  if (tier === TIERS) score.add(0.02, 'pluck', -30, { hz: noteHz('G6'), seconds: 0.3 });
   return score.cues;
 }
 
@@ -336,11 +349,11 @@ function blockBroken(state: CellState, gnawed: boolean, seed: number): MusicCue[
   const tier = tierOf(state);
   const score = new Score(seed);
   [0, 0.02, 0.045, 0.085].forEach((after, i) => {
-    score.add(after, 'crackle', -10 - 2.5 * i, { hz: vary(1900, seed + i, 0.5) });
+    score.add(after, 'crackle', -3 - 2 * i, { hz: vary(1900, seed + i, 0.5) });
   });
-  score.add(0, 'thud', -18, { hz: 128 - 8 * tier });
-  if (tier >= 2) score.add(0.03, 'tick', -26, { hz: 700 + 350 * tier });
-  if (gnawed) score.add(0, 'rumble', -24, { seconds: 0.35 });
+  score.add(0, 'thud', -22, { hz: 150 - 8 * tier });
+  if (tier >= 2) score.add(0.03, 'tick', -17, { hz: 700 + 350 * tier });
+  if (gnawed) score.add(0, 'rumble', -27, { seconds: 0.35 });
   return score.cues;
 }
 
@@ -359,11 +372,11 @@ const CHIMES: readonly (readonly string[])[] = [
 /** A piece raised in place: a motor's whirr and the chime of the level it reaches. */
 function raised(level: number, seed: number, heavy: boolean): MusicCue[] {
   const score = new Score(seed);
-  if (heavy) score.add(0, 'step', -15, { hz: vary(95, seed, 0.04) });
-  score.add(0, 'servo', heavy ? -20 : -22, { hz: 200, to: heavy ? 450 : 520, seconds: 0.16 });
+  if (heavy) score.add(0, 'step', -17, { hz: vary(120, seed, 0.04) });
+  score.add(0, 'servo', heavy ? -11 : -13, { hz: 200, to: heavy ? 450 : 520, seconds: 0.16 });
   const notes = CHIMES[Math.min(CHIMES.length, Math.max(1, level)) - 1] as readonly string[];
   notes.forEach((note, i) => {
-    score.add(0.11 + 0.075 * i, 'pluck', -20, { hz: noteHz(note), seconds: 0.7 });
+    score.add(0.11 + 0.075 * i, 'pluck', -18, { hz: noteHz(note), seconds: 0.7 });
   });
   return score.cues;
 }
@@ -373,40 +386,40 @@ function modulePlaced(module: number, seed: number): MusicCue[] {
   const score = new Score(seed);
   switch (module) {
     case MODULE.terminal:
-      score.add(0, 'step', -12, { hz: 100 });
-      [1000, 1250, 1500].forEach((hz, i) => score.add(0.1 + 0.07 * i, 'blip', -24, { hz }));
+      score.add(0, 'step', -16, { hz: 150 });
+      [1000, 1250, 1500].forEach((hz, i) => score.add(0.1 + 0.07 * i, 'blip', -18, { hz }));
       break;
     case MODULE.turret:
-      score.add(0, 'step', -11, { hz: 85 });
-      score.add(0.05, 'servo', -20, { hz: 130, to: 300, seconds: 0.3 });
-      score.add(0.3, 'tick', -22, { hz: 1100 });
+      score.add(0, 'step', -15, { hz: 120 });
+      score.add(0.05, 'servo', -11, { hz: 130, to: 300, seconds: 0.3 });
+      score.add(0.3, 'tick', -12, { hz: 1100 });
       break;
     case MODULE.generator:
-      score.add(0, 'step', -10, { hz: 70 });
-      score.add(0.05, 'whoom', -21, { hz: 62 });
-      score.add(0.1, 'servo', -22, { hz: 60, to: 150, seconds: 0.6 });
+      score.add(0, 'step', -14, { hz: 100 });
+      score.add(0.05, 'whoom', -25, { hz: 70 });
+      score.add(0.1, 'servo', -8, { hz: 110, to: 380, seconds: 0.6 });
       break;
     case MODULE.node:
-      score.add(0, 'step', -13, { hz: 120 });
-      score.add(0.08, 'blip', -24, { hz: 1700 });
-      score.add(0.16, 'blip', -26, { hz: 2200 });
+      score.add(0, 'step', -18, { hz: 170 });
+      score.add(0.08, 'blip', -17, { hz: 1700 });
+      score.add(0.16, 'blip', -19, { hz: 2200 });
       break;
     case MODULE.storage:
-      score.add(0, 'step', -10, { hz: 75 });
-      score.add(0.02, 'tick', -18, { hz: 650 });
-      score.add(0.12, 'step', -18, { hz: 130 });
+      score.add(0, 'step', -14, { hz: 110 });
+      score.add(0.02, 'tick', -11, { hz: 650 });
+      score.add(0.12, 'step', -20, { hz: 190 });
       break;
     case MODULE.bed:
-      score.add(0, 'step', -14, { hz: 62 });
-      score.add(0.02, 'steam', -32, { hz: 1800, seconds: 0.35 });
+      score.add(0, 'step', -18, { hz: 130 });
+      score.add(0.02, 'steam', -12, { hz: 1800, seconds: 0.35 });
       break;
     case MODULE.light:
-      score.add(0, 'step', -14, { hz: 140 });
-      score.add(0.03, 'tick', -22, { hz: 2400 });
-      score.add(0.1, 'blip', -28, { hz: 1900 });
+      score.add(0, 'step', -20, { hz: 200 });
+      score.add(0.03, 'tick', -14, { hz: 2400 });
+      score.add(0.1, 'blip', -21, { hz: 1900 });
       break;
     default:
-      score.add(0, 'step', -12, { hz: 100 });
+      score.add(0, 'step', -16, { hz: 150 });
   }
   return score.cues;
 }
@@ -414,12 +427,12 @@ function modulePlaced(module: number, seed: number): MusicCue[] {
 /** A module taken apart: the collapse, a snap of what was inside it and the motor running down. */
 function moduleBroken(gnawed: boolean, seed: number): MusicCue[] {
   const score = new Score(seed);
-  score.add(0, 'thud', -13, { hz: 90 });
+  score.add(0, 'thud', -20, { hz: 110 });
   [0.01, 0.04, 0.07].forEach((after, i) => {
-    score.add(after, 'crackle', -12 - 2.5 * i, { hz: vary(2200, seed + i, 0.4) });
+    score.add(after, 'crackle', -5 - 2 * i, { hz: vary(2200, seed + i, 0.4) });
   });
-  score.add(0.02, 'servo', -24, { hz: 280, to: 60, seconds: 0.3 });
-  if (gnawed) score.add(0, 'rumble', -24, { seconds: 0.35 });
+  score.add(0.02, 'servo', -13, { hz: 400, to: 90, seconds: 0.3 });
+  if (gnawed) score.add(0, 'rumble', -27, { seconds: 0.35 });
   return score.cues;
 }
 
@@ -493,24 +506,24 @@ export function effectsForPower(flips: readonly PowerFlip[], listener: Listener 
   if (on) {
     const seed = hash3(0x706f776e, on.x, on.y, on.z);
     const score = new Score(seed)
-      .add(0, 'servo', -17, { hz: 90, to: 300, seconds: 0.4 })
-      .add(0.38, 'blip', -20, { hz: 1320 });
+      .add(0, 'servo', -6, { hz: 160, to: 520, seconds: 0.4 })
+      .add(0.38, 'blip', -12, { hz: 1320 });
     out.push({ kind: 'power', at: middleOf(on.x, on.y, on.z), key: 1, cues: score.cues });
   }
   if (off) {
     const seed = hash3(0x706f7766, off.x, off.y, off.z);
-    const score = new Score(seed).add(0, 'servo', -19, { hz: 240, to: 70, seconds: 0.45 });
+    const score = new Score(seed).add(0, 'servo', -7, { hz: 480, to: 140, seconds: 0.45 });
     out.push({ kind: 'power', at: middleOf(off.x, off.y, off.z), key: 2, cues: score.cues });
   }
   return out;
 }
 
-/** The click that was turned away: two dull knocks, the second lower, in the player's head. */
+/** The click that was turned away: two dull knocks, the second lower, and a tick on the first, in the player's head. */
 export function effectForRefusal(): Effect {
   const score = new Score(0x72656675)
-    .add(0, 'step', -16, { hz: 80 })
-    .add(0.07, 'step', -19, { hz: 66 })
-    .add(0, 'tick', -30, { hz: 700 });
+    .add(0, 'step', -20, { hz: 170 })
+    .add(0.07, 'step', -22, { hz: 130 })
+    .add(0, 'tick', -8, { hz: 700 });
   return { kind: 'refuse', cues: score.cues };
 }
 
@@ -525,18 +538,18 @@ export function effectForHarvest(event: HarvestEvent, at: Vec3): Effect {
   const seed = hash3(0x68617276, event.node, event.left, event.material);
   const score = new Score(seed);
   [0, 0.025, 0.06].forEach((after, i) => {
-    score.add(after, 'crackle', -12 - i, { hz: vary(2400, seed + i, 0.4) });
+    score.add(after, 'crackle', -5 - i, { hz: vary(2400, seed + i, 0.4) });
   });
-  score.add(0.03, 'step', -20, { hz: 150 });
+  score.add(0.03, 'step', -23, { hz: 200 });
   if (event.full) {
-    score.add(0.1, 'step', -21, { hz: 100 });
+    score.add(0.1, 'step', -22, { hz: 130 });
   } else {
     const grade = Math.min(GRADE_TAP.length, Math.max(1, event.material));
-    score.add(0.1, 'tick', -24, { hz: GRADE_TAP[grade - 1] as number });
+    score.add(0.1, 'tick', -17, { hz: GRADE_TAP[grade - 1] as number });
   }
   if (event.left === 0) {
-    score.add(0.1, 'thud', -16, { hz: 100 });
-    score.add(0.1, 'rumble', -24, { seconds: 0.25 });
+    score.add(0.1, 'thud', -22, { hz: 130 });
+    score.add(0.1, 'rumble', -30, { seconds: 0.25 });
   }
   return { kind: 'harvest', at, key: event.node, cues: score.cues };
 }

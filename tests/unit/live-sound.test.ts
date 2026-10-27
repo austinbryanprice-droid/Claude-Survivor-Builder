@@ -424,7 +424,7 @@ describe('the sound of what people do, in Web Audio', () => {
         );
     };
     const near = lowpasses(2);
-    const far = lowpasses(70);
+    const far = lowpasses(44);
     expect(far).toHaveLength(near.length + 1);
   });
 

@@ -52,8 +52,8 @@ describe('how far a sound carries', () => {
     expect(dropFor(3)).toBe(0);
     expect(dropFor(8)).toBe(-6);
     expect(dropFor(16)).toBe(-12.5);
-    expect(dropFor(80)).toBe(-44);
-    expect(dropFor(500)).toBe(-44);
+    expect(dropFor(48)).toBe(-29);
+    expect(dropFor(500)).toBe(-29);
     // Between two points of the table it is a straight line.
     expect(dropFor(12)).toBeCloseTo(-9.25, 6);
     expect(dropFor(5.5)).toBeCloseTo(-3, 6);
@@ -118,8 +118,8 @@ describe('where a sound is heard from', () => {
       return { ...heard };
     };
     const near = at(2);
-    const middle = at(30);
-    const far = at(70);
+    const middle = at(24);
+    const far = at(46);
     expect(near.drop).toBe(0);
     expect(near.muffle).toBe(0);
     expect(near.room).toBeLessThan(middle.room);
@@ -253,10 +253,10 @@ describe('the governor', () => {
 });
 
 describe('what building sounds like', () => {
-  it('sets a block down with a knock, and a crackle of scrap or a tap of a better material', () => {
+  it('sets a block down with a knock, a tick and a crackle of scrap, or a tap of a better material', () => {
     const scrap = effectForEdit(edit(SCRAP), 0);
     expect(scrap).toMatchObject({ kind: 'place', at: { x: 5.5, y: 3.5, z: -6.5 } });
-    expect(voices(scrap)).toEqual(['step', 'crackle']);
+    expect(voices(scrap)).toEqual(['step', 'tick', 'crackle']);
     expect(voices(effectForEdit(edit(COMPOSITE), 0))).toEqual(['step', 'tick']);
     expect(voices(effectForEdit(edit(ALLOY), 0))).toEqual(['step', 'tick']);
     // The best material has a glassy note on top.
@@ -269,16 +269,16 @@ describe('what building sounds like', () => {
       return effect?.cues[0]?.cue.hz ?? 0;
     };
     // Each is within the 5% a seed moves it by.
-    expect(knock(SCRAP)).toBeGreaterThan(120 * 0.95);
-    expect(knock(SCRAP)).toBeLessThan(120 * 1.05);
-    expect(knock(ENERGY)).toBeGreaterThan(180 * 0.95);
-    expect(knock(ENERGY)).toBeLessThan(180 * 1.05);
+    expect(knock(SCRAP)).toBeGreaterThan(170 * 0.95);
+    expect(knock(SCRAP)).toBeLessThan(170 * 1.05);
+    expect(knock(ENERGY)).toBeGreaterThan(260 * 0.95);
+    expect(knock(ENERGY)).toBeLessThan(260 * 1.05);
     const slab = knock(packState(slabShape(false), MATERIAL.scrap));
     const wedge = knock(packState(wedgeShape(0), MATERIAL.scrap));
-    expect(slab).toBeGreaterThan(120 * 1.16 * 0.95);
-    expect(slab).toBeLessThan(120 * 1.16 * 1.05);
-    expect(wedge).toBeGreaterThan(120 * 1.08 * 0.95);
-    expect(wedge).toBeLessThan(120 * 1.08 * 1.05);
+    expect(slab).toBeGreaterThan(170 * 1.16 * 0.95);
+    expect(slab).toBeLessThan(170 * 1.16 * 1.05);
+    expect(wedge).toBeGreaterThan(170 * 1.08 * 0.95);
+    expect(wedge).toBeLessThan(170 * 1.08 * 1.05);
   });
 
   it('breaks a block with a snap of debris and a collapse, and a machine’s bite adds the earth', () => {
