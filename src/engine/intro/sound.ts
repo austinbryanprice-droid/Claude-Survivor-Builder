@@ -64,7 +64,7 @@ export interface IntroSound {
   update(filmTime: number): void;
   /** Hands over everything from `filmTime` to `until` at once, laid out on the audio clock as the film's clock was at `filmTime`: a file is rendered this way. */
   advance(filmTime: number, until: number): void;
-  /** The film was skipped or cut: the sound fades out over `seconds` and is taken apart. */
+  /** The film was skipped or cut, or a new film begins over this one's ringing tail: the sound fades out over `seconds` and is taken apart. */
   fadeOut(seconds: number): void;
   /** The film ran to its end: what is left is handed over and left to ring out into the first moments of play. */
   finish(): void;
@@ -238,7 +238,8 @@ export function createIntroSound(
     },
     advance,
     fadeOut(seconds) {
-      if (over) return;
+      // A tail that still rings can be cut short; a sound that is fading or gone has been dealt with.
+      if (over && stats.state !== 'ringing') return;
       over = true;
       stats.state = 'fading';
       const now = ctx.currentTime;

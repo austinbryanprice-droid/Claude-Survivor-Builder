@@ -35,6 +35,8 @@ const CAPTURE_WAIT_MS = 2500;
 const CAPTURE_WAIT_FRAMES = 3;
 /** Seconds the screen takes to clear from black after a skip. */
 const SKIP_CLEAR_SECONDS = 0.6;
+/** Seconds the last chord of a film that ended on its own takes to fade when another film begins while it still rings. */
+const TAIL_FADE = 0.25;
 
 export interface IntroControllerOptions {
   readonly game: Game;
@@ -134,12 +136,22 @@ export function createIntroController({
     }
   };
 
+  /** A film that ended on its own leaves its last chord ringing into the run for a few seconds: a film begun over it cuts it short, so that two scores never play at once. */
+  const hushTail = (): void => {
+    try {
+      sound?.fadeOut(TAIL_FADE);
+    } catch (error) {
+      console.error("The last intro film's sound could not be faded; the new film goes on.", error);
+    }
+  };
+
   const begin = (heldAt: number | null): IntroPlayback | null => {
     const where = site();
     if (!where || playback || disposed) return null;
     holding = heldAt !== null;
     startedAt = performance.now();
     captured = input.captured;
+    hushTail();
     // A film held at a moment, for a picture or a test, has no time passing for a sound to follow.
     sound = holding ? null : startSound();
     const film = createIntro({

@@ -323,6 +323,51 @@ test.describe('the intro film’s sound', () => {
     expect(problems).toEqual([]);
   });
 
+  test('cuts off the last chord of a film that has ended when the next film begins over it, so that two scores never play at once', async ({
+    page,
+  }) => {
+    const problems = await open(page, '?debug&intro=on&quality=low');
+    await waitForTheFilm(page);
+    await page.getByRole('button', { name: 'Play' }).click();
+    await expect(page.locator('#hud')).toHaveAttribute('data-intro', 'on', {
+      timeout: STATE_TIMEOUT,
+    });
+    await filmPast(page, 1);
+
+    // Run the film out to its end, and begin it again the moment its last chord is ringing: a
+    // player on the pause card within a few seconds of the end can do the same.
+    const over = await page.evaluate(
+      (end) =>
+        new Promise<{ first: string; same: boolean; second: string | null }>((resolve, reject) => {
+          const intro = window.__ashbound?.intro;
+          const first = intro?.sound;
+          if (!intro?.playback || !first) {
+            reject(new Error('The film has no sound to follow; is ?debug on?'));
+            return;
+          }
+          intro.playback.seek(end - 0.3);
+          intro.playback.play();
+          const watch = window.setInterval(() => {
+            if (first.stats.state !== 'ringing') return;
+            window.clearInterval(watch);
+            intro.play();
+            resolve({
+              first: first.stats.state,
+              same: intro.sound === first,
+              second: intro.sound?.stats.state ?? null,
+            });
+          }, 10);
+        }),
+      INTRO_SECONDS,
+    );
+    // The first film's chord is on its way out, and the second film has a sound of its own.
+    expect(over).toEqual({ first: 'fading', same: false, second: 'playing' });
+    await filmPast(page, 1);
+    expect(await soundState(page)).toBe('playing');
+    expect((await heard(page)).stats?.failed).toBe(0);
+    expect(problems).toEqual([]);
+  });
+
   test('stays silent for a page that is told to be, and makes no audio context', async ({
     page,
   }) => {

@@ -272,6 +272,35 @@ describe('the film’s sound director', () => {
     expect(rig.sound.stats.state).toBe('stopped');
   });
 
+  it('cuts a ringing tail short when a new film begins over it, and takes it apart on its own time', () => {
+    const rig = setup();
+    playThrough(rig);
+    rig.ctx.currentTime = INTRO_SECONDS;
+    rig.sound.finish();
+    expect(rig.sound.stats.state).toBe('ringing');
+
+    // A second into the tail the player starts the film again.
+    const now = INTRO_SECONDS + 1;
+    rig.ctx.currentTime = now;
+    rig.sound.fadeOut(0.25);
+    expect(rig.sound.stats.state).toBe('fading');
+    const written = rig.bus.gain.events;
+    expect(written[written.length - 1]).toMatchObject({ type: 'linear', value: 0 });
+    expect(written[written.length - 1]?.time).toBeCloseTo(now + 0.25, 9);
+    // The fade that was set for the end of the tail is taken back, so nothing rings on after the cut.
+    expect(written.every((event) => event.time <= now + 0.25 + 1e-9)).toBe(true);
+
+    vi.advanceTimersByTime(500);
+    expect(rig.sound.stats.state).toBe('stopped');
+    expect(rig.bus.disconnected).toBe(true);
+    // The tail's own end comes later and finds nothing left to do.
+    vi.advanceTimersByTime(5000);
+    expect(rig.sound.stats.state).toBe('stopped');
+    const count = written.length;
+    rig.sound.fadeOut(0.25);
+    expect(rig.bus.gain.events).toHaveLength(count);
+  });
+
   it('plays nothing while the browser has not let the page make sound, and joins in as soon as it does', () => {
     const { ctx, sound, events } = setup();
     ctx.state = 'suspended';
