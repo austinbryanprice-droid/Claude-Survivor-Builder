@@ -9,13 +9,15 @@ import { SHOT_FLAG, createShotTrace, muzzleOf, traceShot, type ShotEvent } from 
 import { turretMuzzle } from '../shared/turret';
 import { BLASTER, hitboxOf } from '../systems/survival/balance';
 import { turretLevel } from '../systems/survival/turrets';
+import { wildHitboxOf } from '../systems/wildlife/balance';
 import type { LocalPlayer } from './player-sync';
 
 /**
  * Decides what the pulse blaster's shots look like on this screen. The player's own shot is drawn
- * the moment they click, from what their screen shows (the machines where they are drawn, the
- * blocks and ground of their world), so the gun answers at once whatever the network is doing; the
- * host's word on it arrives later and adds only what the click could not know, that a machine fell.
+ * the moment they click, from what their screen shows (the machines and creatures where they are
+ * drawn, the blocks and ground of their world), so the gun answers at once whatever the network is
+ * doing; the host's word on it arrives later and adds only what the click could not know, that a
+ * machine or a creature fell.
  * Everyone else's shots are drawn when the host reports them: from the shooter's gun, as it is drawn
  * on this screen, to the place the host says the bolt ended.
  */
@@ -23,7 +25,7 @@ import type { LocalPlayer } from './player-sync';
 /** The part of a session that the effects use. */
 export type ShotSession = Pick<
   GameSession,
-  'localId' | 'players' | 'sampleRemotes' | 'sampleEnemies'
+  'localId' | 'players' | 'sampleRemotes' | 'sampleEnemies' | 'sampleWildlife'
 >;
 
 export interface ShotEffectsOptions {
@@ -93,6 +95,7 @@ export function createShotEffects({
   const mark: Vec3 = { x: 0, y: 0, z: 0 };
   const way: Vec3 = { x: 0, y: 0, z: 0 };
   const trace = createShotTrace();
+  const creatureTrace = createShotTrace();
   const shots: ShotLogEntry[] = [];
   /** The light's own clock, in seconds, so that the host's word can wait for a bolt that is still on its way. */
   let now = 0;
@@ -150,6 +153,7 @@ export function createShotEffects({
       aimAlong(aim ?? DOWN);
     }
     if (flags & SHOT_FLAG.enemy) fx.impact(mark, way, FX_COLOR.hit, arrives);
+    else if (flags & SHOT_FLAG.wild) fx.impact(mark, way, FX_COLOR.wild, arrives);
     else if (flags & SHOT_FLAG.world) fx.impact(mark, way, color, arrives);
     return arrives;
   };
@@ -175,6 +179,12 @@ export function createShotEffects({
     turretMuzzle(cell[0], cell[1], cell[2], mark.x, mark.y, mark.z, gun);
     aimTurret?.(cell[0], cell[1], cell[2], mark.x, mark.y, mark.z);
     return draw(FX_COLOR.turret, flags, null, true, heft);
+  };
+
+  /** A machine falls apart in a burst of fire at the mark; a creature falls in a puff of dust. */
+  const falls = (flags: number, delay: number): void => {
+    if (flags & SHOT_FLAG.wild) fx.puff(mark, delay);
+    else fx.burst(mark, delay);
   };
 
   const remember = (
@@ -209,11 +219,32 @@ export function createShotEffects({
         null,
         trace,
       );
-      mark.x = origin.x + dir.x * trace.distance;
-      mark.y = origin.y + dir.y * trace.distance;
-      mark.z = origin.z + dir.z * trace.distance;
-      landing = now + fly(session.localId, trace.flags, dir);
-      remember(session.localId, trace.flags, true);
+      let flags = trace.flags;
+      let distance = trace.distance;
+      // A creature nearer than whatever the bolt would have stopped at takes it, as the host will judge.
+      const creatures = session.sampleWildlife();
+      if (creatures.length > 0) {
+        traceShot(
+          null,
+          origin,
+          dir,
+          distance,
+          creatures,
+          creatures.length,
+          wildHitboxOf,
+          null,
+          creatureTrace,
+        );
+        if (creatureTrace.flags & SHOT_FLAG.enemy) {
+          flags = SHOT_FLAG.wild;
+          distance = creatureTrace.distance;
+        }
+      }
+      mark.x = origin.x + dir.x * distance;
+      mark.y = origin.y + dir.y * distance;
+      mark.z = origin.z + dir.z * distance;
+      landing = now + fly(session.localId, flags, dir);
+      remember(session.localId, flags, true);
     },
 
     hear(shot) {
@@ -228,13 +259,13 @@ export function createShotEffects({
         return;
       }
       if (shot.by === session.localId) {
-        // The click drew this bolt already. What the host adds is the end of a machine, which falls
-        // when the bolt that felled it lands: on a fast link the word can come back before that.
+        // The click drew this bolt already. What the host adds is the end of a machine or a creature,
+        // which falls when the bolt that felled it lands: on a fast link the word can come back before that.
         if (shot.flags & SHOT_FLAG.kill)
-          fx.burst(mark, Math.min(Math.max(0, landing - now), LONGEST_WAIT));
+          falls(shot.flags, Math.min(Math.max(0, landing - now), LONGEST_WAIT));
       } else {
         const arrives = fly(shot.by, shot.flags, null);
-        if (shot.flags & SHOT_FLAG.kill) fx.burst(mark, arrives);
+        if (shot.flags & SHOT_FLAG.kill) falls(shot.flags, arrives);
       }
       remember(shot.by, shot.flags, false);
     },

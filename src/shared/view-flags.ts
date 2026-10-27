@@ -53,6 +53,8 @@ export interface ViewFlags {
   readonly title: TitleMode;
   /** False (`?sound=off`) keeps the page silent: no audio context is made, whatever the volume setting says. */
   readonly sound: boolean;
+  /** `?wildlife=on` fills the valley with creatures whatever else the URL asks for, `?wildlife=off` (or 0) never does; by default a person's game has them and a scripted browser's does not. */
+  readonly wildlife: TitleMode;
 }
 
 /** The latest night `?night=` can ask for. */
@@ -138,5 +140,17 @@ export function readViewFlags(search: string): ViewFlags {
     introAt: readIntroAt(p.get('introAt')),
     title: readSwitch(p.get('title')),
     sound: readSwitch(p.get('sound')) !== 'off',
+    wildlife: readSwitch(p.get('wildlife')),
   };
+}
+
+/**
+ * Whether the run has the valley's wildlife: every game a person plays does, and one that a script
+ * or a test drives does not unless the URL asks (`?wildlife=on`), because creatures wandering through
+ * a test's shots and cameras would only slow it down and make its pictures differ.
+ */
+export function wildlifeWanted(mode: TitleMode, automated: boolean): boolean {
+  if (mode === 'on') return true;
+  if (mode === 'off') return false;
+  return !automated;
 }

@@ -15,7 +15,9 @@ import { NET } from '../shared/net-config';
  * on one timeline (the host's clock), in milliseconds.
  *
  * A guest fills it from the host's packets. The host fills it from its own simulation after every
- * step, so the host's screen and a guest's go through the same code.
+ * step, so the host's screen and a guest's go through the same code. The valley's wildlife is
+ * reported the same way and has a mirror of its own (the record of a creature is a machine's, its
+ * species in `kind`), which holds `NET.maxWildlife` instead of `NET.maxEnemies`.
  */
 
 interface Snapshot {
@@ -31,6 +33,9 @@ function lerp(a: number, b: number, u: number): number {
 }
 
 export class EnemyMirror {
+  /** @param capacity The most entries a report holds: the packet's cap. */
+  constructor(private readonly capacity: number = NET.maxEnemies) {}
+
   /** Oldest first. */
   private readonly history: Snapshot[] = [];
   private readonly spare: Snapshot[] = [];
@@ -55,7 +60,7 @@ export class EnemyMirror {
     snapshot.time = time;
     snapshot.count = 0;
     snapshot.index.clear();
-    const n = Math.min(count, states.length, NET.maxEnemies);
+    const n = Math.min(count, states.length, this.capacity);
     for (let i = 0; i < n; i++) {
       const state = states[i] as EnemyState;
       // A machine named twice is the host's mistake; the first word stands.

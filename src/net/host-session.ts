@@ -2,6 +2,7 @@ import type { BlockWorld, CellState } from '../shared/block-world';
 import { ClockSync } from '../shared/clock-sync';
 import type { EconomyView } from '../shared/economy';
 import { createEnemyState, type EnemyPose, type EnemyState } from '../shared/enemy-state';
+import { createWildState, type WildPose, type WildState } from '../shared/wildlife-state';
 import { RemoteTrack, createPoseOut } from '../shared/interpolation';
 import type { Vec3 } from '../shared/look';
 import { MoveGuard } from '../shared/move-guard';
@@ -40,6 +41,7 @@ import {
   encodeEnemies,
   encodeFrame,
   encodeRelay,
+  encodeWildlife,
   roundTo,
   seqNewer,
   type RelayEntry,
@@ -259,6 +261,15 @@ export class HostSession implements GameSession {
   private lastEnemySend = -Infinity;
   /** How many machines the guests were last told about; a list that has just emptied still has to be sent. */
   private enemiesSent = 0;
+  /** The same for the valley's wildlife: its own mirror, packet numbers and clock, drawn from by the host's screen and the shot judge. */
+  private readonly wildMirror = new EnemyMirror(NET.maxWildlife);
+  private readonly wildStates: WildState[] = Array.from(
+    { length: NET.maxWildlife },
+    createWildState,
+  );
+  private wildSeq = 0;
+  private lastWildSend = -Infinity;
+  private wildSent = 0;
   /** The blocks the machines chewed through, between the simulation and the world. */
   private readonly gnawed: NavCell[] = [];
   private readonly turretShots: TurretShot[] = [];
@@ -452,6 +463,10 @@ export class HostSession implements GameSession {
 
   sampleEnemies(): readonly EnemyPose[] {
     return this.enemyMirror.sample(this.scheduler.now() - NET.enemyHostDelayMs);
+  }
+
+  sampleWildlife(): readonly WildPose[] {
+    return this.wildMirror.sample(this.scheduler.now() - NET.enemyHostDelayMs);
   }
 
   close(): void {
@@ -879,6 +894,9 @@ export class HostSession implements GameSession {
     this.enemyMirror.clear();
     this.enemiesSent = 0;
     this.lastEnemySend = -Infinity;
+    this.wildMirror.clear();
+    this.wildSent = 0;
+    this.lastWildSend = -Infinity;
     this.departed.clear();
     for (const member of this.members.values()) {
       sim.addPlayer(member.id);
@@ -1146,9 +1164,15 @@ export class HostSession implements GameSession {
     }
 
     const now = this.scheduler.now();
-    const bodies = this.enemyMirror.sample(Math.min(now, Math.max(now - NET.maxRewindMs, at)));
+    const then = Math.min(now, Math.max(now - NET.maxRewindMs, at));
+    const bodies = this.enemyMirror.sample(then);
+    const creatures = this.wildMirror.sample(then);
     const out = this.outcome;
-    if (!sim.fire(member.id, muzzle, aim, bodies, bodies.length, out)) return;
+    if (
+      !sim.fire(member.id, muzzle, aim, bodies, bodies.length, out, creatures, creatures.length)
+    ) {
+      return;
+    }
 
     this.announceShot({
       by: member.id,
@@ -1339,6 +1363,7 @@ export class HostSession implements GameSession {
       this.reportTurrets(sim);
     }
     this.reportEnemies(sim, now, guests);
+    this.reportWildlife(sim, now, guests);
 
     sim.drainEvents(this.survivalQueue);
     for (const event of this.survivalQueue) {
@@ -1396,6 +1421,26 @@ export class HostSession implements GameSession {
     this.lastEnemySend = now;
     this.enemiesSent = count;
     const packet = encodeEnemies(this.enemySeq++, now, this.enemyStates, count);
+    for (const member of this.members.values()) member.link?.sendState(packet);
+  }
+
+  /**
+   * The same for the valley's wildlife: notes where the creatures are for the host's own screen and the
+   * shot judge, and tells the guests ten times a second, all of them in one packet. A valley with no
+   * wildlife (it is off, or the run has no ground) sends nothing.
+   */
+  private reportWildlife(sim: SurvivalSim, now: number, guests: boolean): void {
+    const wild = sim.wildlife;
+    if (!wild) return;
+    const count = wild.write(this.wildStates);
+    this.wildMirror.push(now, this.wildStates, count);
+    if (!guests || now - this.lastWildSend < NET.wildlifeIntervalMs) return;
+    if (count === 0 && this.wildSent === 0 && now - this.lastWildSend < NET.wildlifeKeepAliveMs) {
+      return;
+    }
+    this.lastWildSend = now;
+    this.wildSent = count;
+    const packet = encodeWildlife(this.wildSeq++, now, this.wildStates, count);
     for (const member of this.members.values()) member.link?.sendState(packet);
   }
 

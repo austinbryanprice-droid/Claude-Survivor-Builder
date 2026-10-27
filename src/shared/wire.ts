@@ -23,6 +23,7 @@ import type {
 import { createPlayerSample } from './protocol';
 import { SHOT_FLAGS_MASK } from './shot';
 import { SURVIVAL_EVENT_KINDS, type OverrunCause, type SurvivalEvent } from './survival-state';
+import { WILD_FLAGS_MASK, WILD_SPECIES_COUNT } from './wildlife-state';
 
 /**
  * Turns the protocol into bytes and back. Control frames are JSON text on the ordered channel;
@@ -700,12 +701,13 @@ export function decodeRelay(bytes: Uint8Array): RelayPacket | null {
 }
 
 // ----------------------------------------------------------------------------------------------
-// The machines: every one of them in a single packet, on the fast channel.
+// The machines and the wildlife: every one of them in a single packet each, on the fast channel.
 // ----------------------------------------------------------------------------------------------
 
 export const KIND_ENEMIES = 3;
+export const KIND_WILDLIFE = 4;
 
-/** Enemy positions are fixed point with 1/16 of a block of resolution, in a signed 16-bit field. */
+/** Positions are fixed point with 1/16 of a block of resolution, in a signed 16-bit field. */
 const ENEMY_POS_SCALE = 16;
 const ENEMY_HEADER = 8;
 const ENEMY_BYTES = 12;
@@ -719,20 +721,48 @@ export interface EnemiesPacket {
   entries: EnemyState[];
 }
 
+/** What the host says about the wildlife: all of it, as of one moment. A creature is a record like a machine's, its species in `kind`. */
+export type WildlifePacket = EnemiesPacket;
+
 /** The most bytes an enemy packet has. */
 export const ENEMIES_PACKET_MAX = ENEMY_HEADER + NET.maxEnemies * ENEMY_BYTES;
 
-/** Packs the first `count` of `states`, which is all of the machines, into a packet. */
-export function encodeEnemies(
+/** The most bytes a wildlife packet has. */
+export const WILDLIFE_PACKET_MAX = ENEMY_HEADER + NET.maxWildlife * ENEMY_BYTES;
+
+/** What tells one list of creatures from another: its packet kind, how many it holds, which flags and kinds it knows. */
+interface CreatureList {
+  readonly packet: number;
+  readonly most: number;
+  readonly flags: number;
+  readonly kinds: number;
+}
+
+const ENEMY_LIST: CreatureList = {
+  packet: KIND_ENEMIES,
+  most: NET.maxEnemies,
+  flags: ENEMY_FLAGS_MASK,
+  kinds: ENEMY_KIND_COUNT,
+};
+
+const WILDLIFE_LIST: CreatureList = {
+  packet: KIND_WILDLIFE,
+  most: NET.maxWildlife,
+  flags: WILD_FLAGS_MASK,
+  kinds: WILD_SPECIES_COUNT,
+};
+
+function encodeCreatures(
+  list: CreatureList,
   seq: number,
   hostTime: number,
   states: readonly EnemyState[],
   count: number,
 ): Uint8Array {
-  const n = Math.min(count, states.length, NET.maxEnemies);
+  const n = Math.min(count, states.length, list.most);
   const bytes = new Uint8Array(ENEMY_HEADER + n * ENEMY_BYTES);
   const view = new DataView(bytes.buffer);
-  view.setUint8(0, KIND_ENEMIES);
+  view.setUint8(0, list.packet);
   view.setUint8(1, n);
   view.setUint16(2, seq & MAX_U16, true);
   view.setUint32(4, Math.max(0, Math.round(hostTime)) >>> 0, true);
@@ -741,7 +771,7 @@ export function encodeEnemies(
     const at = ENEMY_HEADER + i * ENEMY_BYTES;
     view.setUint16(at, state.id & MAX_U16, true);
     view.setUint8(at + 2, state.kind & 0xff);
-    view.setUint8(at + 3, state.flags & ENEMY_FLAGS_MASK);
+    view.setUint8(at + 3, state.flags & list.flags);
     view.setInt16(at + 4, clampInt(state.x * ENEMY_POS_SCALE, -32768, 32767), true);
     view.setInt16(at + 6, clampInt(state.y * ENEMY_POS_SCALE, -32768, 32767), true);
     view.setInt16(at + 8, clampInt(state.z * ENEMY_POS_SCALE, -32768, 32767), true);
@@ -752,29 +782,57 @@ export function encodeEnemies(
   return bytes;
 }
 
-export function decodeEnemies(bytes: Uint8Array): EnemiesPacket | null {
+function decodeCreatures(list: CreatureList, bytes: Uint8Array): EnemiesPacket | null {
   if (bytes.length < ENEMY_HEADER) return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (view.getUint8(0) !== KIND_ENEMIES) return null;
+  if (view.getUint8(0) !== list.packet) return null;
   const count = view.getUint8(1);
-  if (count > NET.maxEnemies || bytes.length !== ENEMY_HEADER + count * ENEMY_BYTES) return null;
+  if (count > list.most || bytes.length !== ENEMY_HEADER + count * ENEMY_BYTES) return null;
   const entries: EnemyState[] = [];
   for (let i = 0; i < count; i++) {
     const at = ENEMY_HEADER + i * ENEMY_BYTES;
     const state = createEnemyState();
     state.id = view.getUint16(at, true);
     state.kind = view.getUint8(at + 2);
-    state.flags = view.getUint8(at + 3) & ENEMY_FLAGS_MASK;
+    state.flags = view.getUint8(at + 3) & list.flags;
     state.x = view.getInt16(at + 4, true) / ENEMY_POS_SCALE;
     state.y = view.getInt16(at + 6, true) / ENEMY_POS_SCALE;
     state.z = view.getInt16(at + 8, true) / ENEMY_POS_SCALE;
     state.yaw = (view.getUint8(at + 10) / 256) * TWO_PI - Math.PI;
     state.health = view.getUint8(at + 11);
-    // An enemy with no id, of a kind this build does not know, or with no health left is not one the host sent.
-    if (state.id === 0 || state.kind >= ENEMY_KIND_COUNT || state.health === 0) return null;
+    // A creature with no id, of a kind this build does not know, or with no health left is not one the host sent.
+    if (state.id === 0 || state.kind >= list.kinds || state.health === 0) return null;
     entries.push(state);
   }
   return { seq: view.getUint16(2, true), hostTime: view.getUint32(4, true), entries };
+}
+
+/** Packs the first `count` of `states`, which is all of the machines, into a packet. */
+export function encodeEnemies(
+  seq: number,
+  hostTime: number,
+  states: readonly EnemyState[],
+  count: number,
+): Uint8Array {
+  return encodeCreatures(ENEMY_LIST, seq, hostTime, states, count);
+}
+
+export function decodeEnemies(bytes: Uint8Array): EnemiesPacket | null {
+  return decodeCreatures(ENEMY_LIST, bytes);
+}
+
+/** Packs the first `count` of `states`, which is all of the wildlife, into a packet. */
+export function encodeWildlife(
+  seq: number,
+  hostTime: number,
+  states: readonly EnemyState[],
+  count: number,
+): Uint8Array {
+  return encodeCreatures(WILDLIFE_LIST, seq, hostTime, states, count);
+}
+
+export function decodeWildlife(bytes: Uint8Array): WildlifePacket | null {
+  return decodeCreatures(WILDLIFE_LIST, bytes);
 }
 
 /** Which kind of fast-channel packet this is, or 0 for an empty or unknown one. */

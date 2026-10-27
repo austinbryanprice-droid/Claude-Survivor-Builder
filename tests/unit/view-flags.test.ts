@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SEED, readViewFlags } from '../../src/shared/view-flags';
+import { DEFAULT_SEED, readViewFlags, wildlifeWanted } from '../../src/shared/view-flags';
 
 describe('view URL switches', () => {
   it('opens the hero view with everything on by default', () => {
@@ -20,6 +20,7 @@ describe('view URL switches', () => {
     expect(v.introAt).toBeNull();
     expect(v.title).toBe('auto');
     expect(v.sound).toBe(true);
+    expect(v.wildlife).toBe('auto');
     expect(v.freeze).toBe(false);
     expect(v.terrain).toBe('surface-nets');
     expect(v.scale).toBeNull();
@@ -139,6 +140,27 @@ describe('view URL switches', () => {
       expect(readViewFlags(other).sound, other).toBe(true);
     }
     expect(readViewFlags('?sound=off&intro=on')).toMatchObject({ sound: false, intro: 'on' });
+  });
+
+  it('asks for the wildlife, or for none, and otherwise leaves it to the page', () => {
+    for (const on of ['?wildlife', '?wildlife=', '?wildlife=on', '?wildlife=1', '?wildlife=ON']) {
+      expect(readViewFlags(on).wildlife, on).toBe('on');
+    }
+    for (const off of ['?wildlife=off', '?wildlife=0', '?wildlife=false', '?wildlife=OFF']) {
+      expect(readViewFlags(off).wildlife, off).toBe('off');
+    }
+    for (const other of ['', '?wildlife=maybe', '?wildlife=2', '?waves=0']) {
+      expect(readViewFlags(other).wildlife, other).toBe('auto');
+    }
+  });
+
+  it('gives a person’s game its wildlife, and a scripted browser’s only when the address asks', () => {
+    expect(wildlifeWanted('auto', false)).toBe(true);
+    expect(wildlifeWanted('auto', true)).toBe(false);
+    expect(wildlifeWanted('on', true)).toBe(true);
+    expect(wildlifeWanted('on', false)).toBe(true);
+    expect(wildlifeWanted('off', false)).toBe(false);
+    expect(wildlifeWanted('off', true)).toBe(false);
   });
 
   it('holds the film at the second it is asked for, for pictures and tests', () => {
