@@ -12,6 +12,7 @@ import {
 } from '../../src/systems/economy/build-rules';
 import { Economy, cellKey, evenStock, stripYield } from '../../src/systems/economy/economy';
 import { RESEARCH_STEPS } from '../../src/systems/economy/research';
+import { blockPrice } from './helpers/prices';
 
 function heap(index: number, overrides: Partial<DebrisNode> = {}): DebrisNode {
   return {
@@ -195,8 +196,8 @@ describe('the economy paying for blocks', () => {
     economy.pool.set(MATERIAL.scrap, POOL.cap);
     expect(economy.refund(scrapBlock)).toBe(0);
     expect(scrap(economy)).toBe(POOL.cap);
-    expect(economy.refund(compositeBlock)).toBe(1);
-    expect(economy.pool.amount(MATERIAL.composite)).toBe(1);
+    expect(economy.refund(compositeBlock)).toBe(blockPrice(MATERIAL.composite));
+    expect(economy.pool.amount(MATERIAL.composite)).toBe(blockPrice(MATERIAL.composite));
   });
 
   it('gives back nothing for a cell that held no piece the tables know', () => {
@@ -315,7 +316,12 @@ describe('the economy upgrading a piece in place', () => {
     economy.research.set(RESEARCH_STEPS[0]!.points);
     const step = upgradeStep(scrapBlock)!;
     expect(economy.pay(step.to)).toBe(true);
-    expect(economy.read(createEconomyReading()).stock).toEqual([5, 4, 5, 5]);
+    expect(economy.read(createEconomyReading()).stock).toEqual([
+      5,
+      5 - blockPrice(MATERIAL.composite),
+      5,
+      5,
+    ]);
   });
 });
 

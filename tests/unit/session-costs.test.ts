@@ -11,6 +11,7 @@ import { RESEARCH_STEPS } from '../../src/systems/economy/research';
 import { VITALS } from '../../src/systems/survival/balance';
 import { FLOOR, arena, sim, type Room } from './helpers/arena';
 import { at, helloText, makeRoom, rawGuest } from './helpers/net';
+import { blockPrice } from './helpers/prices';
 
 const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
 const COMPOSITE = packState(SHAPE.cube, MATERIAL.composite);
@@ -95,9 +96,10 @@ describe('the host placing and breaking blocks', () => {
     room.host.sendCommand(place(0, COMPOSITE));
     room.host.sendCommand(place(1, packState(SHAPE.slab, MATERIAL.composite)));
     room.host.sendCommand(place(2, SCRAP));
-    expect(stock(room.host.economy)).toEqual([9, 8, 10, 10]);
+    const composite = blockPrice(MATERIAL.composite);
+    expect(stock(room.host.economy)).toEqual([9, 10 - 2 * composite, 10, 10]);
     room.host.sendCommand(breakAt(0));
-    expect(stock(room.host.economy)).toEqual([9, 9, 10, 10]);
+    expect(stock(room.host.economy)).toEqual([9, 10 - composite, 10, 10]);
   });
 
   it('charges a module its own price, whichever way it faces, and gives it back when it is broken', () => {
@@ -165,7 +167,12 @@ describe('the host placing and breaking blocks', () => {
     room.host.sendCommand(place(1, packState(SHAPE.cube, MATERIAL.alloy)));
     expect(seen).toHaveLength(1);
     expect(hostWorld.cells.size).toBe(2);
-    expect(stock(room.host.economy)).toEqual([10, 9, 9, 10]);
+    expect(stock(room.host.economy)).toEqual([
+      10,
+      10 - blockPrice(MATERIAL.composite),
+      10 - blockPrice(MATERIAL.alloy),
+      10,
+    ]);
   });
 
   it('runs the pool down to nothing and then refuses', () => {

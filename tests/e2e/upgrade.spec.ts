@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { MATERIAL, SHAPE, packState } from '../../src/shared/blocks';
 import { PLAYER } from '../../src/shared/movement';
 import { RESEARCH } from '../../src/systems/economy/balance';
+import { pieceCost } from '../../src/systems/economy/build-rules';
 
 // Software WebGL is slow, so these tests wait on game state rather than on time, and use a small
 // window and the Low preset to go faster.
@@ -29,6 +30,10 @@ const SCRAP = cube(MATERIAL.scrap);
 const COMPOSITE = cube(MATERIAL.composite);
 const ALLOY = cube(MATERIAL.alloy);
 const ENERGY = cube(MATERIAL.energy);
+/** How much Composite the pool is given when a test wants a little of it. */
+const COMPOSITE_STOCK = 5;
+/** What one block of a material costs the pool, as the tables have it. */
+const priceOf = (state: number): number => pieceCost(state)!.amount;
 
 /** The pool's slot of a material, counting from 0 in the order of the materials. */
 const slot = (material: number): number => material - 1;
@@ -222,7 +227,9 @@ test.describe('upgrading a block in place', () => {
     await test.step('once the research is read the card shows the price, and E swaps the block for the next material, charging the better one and giving nothing back for the old', async () => {
       await setResearch(page, COMPOSITE_AT);
       await poll(async () => (await pool(page)).tier).toBe(2);
-      await wait(page.locator('.ph-interact-detail')).toHaveText('Cost 1 Reinforced Composite');
+      await wait(page.locator('.ph-interact-detail')).toHaveText(
+        `Cost ${priceOf(COMPOSITE)} Reinforced Composite`,
+      );
       await expect(page.locator('.ph-interact')).toHaveAttribute('data-tone', 'info');
       await page.screenshot({ path: testInfo.outputPath('upgrade-card.png') });
 
@@ -230,7 +237,7 @@ test.describe('upgrading a block in place', () => {
       await poll(() => blockAt(page, wall)).toBe(COMPOSITE);
       const after = await pool(page);
       expect(after.stock[slot(MATERIAL.composite)]).toBe(
-        (start.stock[slot(MATERIAL.composite)] ?? 0) - 1,
+        (start.stock[slot(MATERIAL.composite)] ?? 0) - priceOf(COMPOSITE),
       );
       // The block that was used up is not paid back, and the Scrap is as it was.
       expect(after.stock[slot(MATERIAL.scrap)]).toBe(start.stock[slot(MATERIAL.scrap)]);
@@ -245,11 +252,15 @@ test.describe('upgrading a block in place', () => {
 
     await test.step('each press climbs one material, up to Energy-Infused, and then there is nothing better: no card, and E says so', async () => {
       await setResearch(page, ALLOY_AT);
-      await wait(page.locator('.ph-interact-detail')).toHaveText('Cost 1 Advanced Alloy');
+      await wait(page.locator('.ph-interact-detail')).toHaveText(
+        `Cost ${priceOf(ALLOY)} Advanced Alloy`,
+      );
       await page.keyboard.press('KeyE');
       await poll(() => blockAt(page, wall)).toBe(ALLOY);
       await setResearch(page, ENERGY_AT);
-      await wait(page.locator('.ph-interact-detail')).toHaveText('Cost 1 Energy-Infused');
+      await wait(page.locator('.ph-interact-detail')).toHaveText(
+        `Cost ${priceOf(ENERGY)} Energy-Infused`,
+      );
       await page.keyboard.press('KeyE');
       await poll(() => blockAt(page, wall)).toBe(ENERGY);
       await poll(() => upgraded(page)).toBe(3);
@@ -286,13 +297,17 @@ test.describe('upgrading a block in place', () => {
       // Nothing to spend: no card, no nagging.
       await frames(page, 3);
       await expect(page.locator('.ph-interact')).toBeHidden();
-      await setPool(page, MATERIAL.composite, 5);
+      await setPool(page, MATERIAL.composite, COMPOSITE_STOCK);
       await wait(page.locator('.ph-interact-label')).toHaveText('Upgrade to Reinforced Composite');
-      await expect(page.locator('.ph-interact-detail')).toHaveText('Cost 1 Reinforced Composite');
+      await expect(page.locator('.ph-interact-detail')).toHaveText(
+        `Cost ${priceOf(COMPOSITE)} Reinforced Composite`,
+      );
       await page.keyboard.press('KeyE');
       await poll(() => blockAt(page, second)).toBe(COMPOSITE);
       await poll(() => upgraded(page)).toBe(4);
-      expect((await pool(page)).stock[slot(MATERIAL.composite)]).toBe(4);
+      expect((await pool(page)).stock[slot(MATERIAL.composite)]).toBe(
+        COMPOSITE_STOCK - priceOf(COMPOSITE),
+      );
     });
 
     await test.step('the host turns away an upgrade of a block that is not the one the player saw', async () => {

@@ -44,6 +44,7 @@ npm ci            # install exactly what package-lock.json says
 npm run dev       # dev server on http://localhost:5173
 npm run check     # typecheck, lint, format check, unit tests and a production build
 npm run test:e2e  # builds, then runs the Playwright browser tests
+npm run balance   # prints the balance report: income against cost a day, upgrades a day, nights between unlocks
 ```
 
 The browser tests need a Chromium that Playwright can find. On a fresh machine run `npx playwright install chromium` first. Headless runs use software WebGL (SwiftShader), so they prove correctness but say nothing about frame rate. The multiplayer tests start a local PeerJS server (`tests/e2e/support/peer-server.mjs`) so they need no internet.

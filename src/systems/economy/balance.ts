@@ -136,3 +136,48 @@ export const RESEARCH = {
   /** The most points the `?research=` switch or the debug page can set. */
   max: 9999,
 } as const;
+
+/**
+ * What the spec asks of the pacing, as numbers the balance report and its tests are held to
+ * (SPEC section 9): enough materials in a day for one or two meaningful upgrades "if the group is
+ * reasonably efficient", and "meaningful progress every 2-3 nights" for a coordinated group.
+ */
+export const TARGETS = {
+  upgradesPerDay: { min: 1, max: 2 },
+  /** Nights from one unlock of the research ladder to the next, on average. */
+  nightsPerUnlock: { min: 2, max: 3 },
+} as const;
+
+/** How a crew plays, as far as the balance simulator (Phase 5j) cares: a few numbers, not a player. */
+export interface CrewProfile {
+  /**
+   * The share of the strips left in the heaps that the crew gets to each day, the nearest heaps first;
+   * the rest of the day goes to building, repairs and keeping an eye on the sky.
+   */
+  readonly efficiency: number;
+  /** Whether the Core comes through every night untouched, which earns the clean-night bonus. */
+  readonly clean: boolean;
+  /** The share of the special machines the crew fells before they do their work, so of the cells they leave. */
+  readonly specialsFelled: number;
+}
+
+/**
+ * The two crews the simulator plays. The spec asks for enough materials for one or two meaningful
+ * upgrades a day "if the group is reasonably efficient" and for progress every two or three nights for
+ * "a coordinated group" (SPEC section 9), so there is one of each.
+ */
+export const CREWS = {
+  reasonable: { efficiency: 0.6, clean: false, specialsFelled: 0.5 },
+  coordinated: { efficiency: 0.9, clean: true, specialsFelled: 0.9 },
+} as const satisfies Record<string, CrewProfile>;
+
+/** What the simulator assumes about the base the crew builds and the upgrades it counts. */
+export const SIMULATION = {
+  /** Days played: every dawn that uncovers heaps, and the day after the last. */
+  days: DEBRIS.dawns,
+  /** Blocks in the stretch of wall whose raising to a better material counts as one upgrade (6 across, 2 high). */
+  sectionBlocks: 12,
+  /** What the crew builds in Scrap on the first day and then on each day: turrets and sections of wall. */
+  firstDay: { turrets: 3, sections: 4 },
+  perDay: { turrets: 1, sections: 1 },
+} as const;

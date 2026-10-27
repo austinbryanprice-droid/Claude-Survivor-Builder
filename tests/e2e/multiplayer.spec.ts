@@ -46,6 +46,9 @@ const NETWORK = `broker=${BROKER}&ice=none&waves=0`;
 const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
 const ALLOY = packState(SHAPE.cube, MATERIAL.alloy);
 const COMPOSITE = packState(SHAPE.cube, MATERIAL.composite);
+/** What one block of each costs the pool, as the tables have it. */
+const COMPOSITE_PRICE = pieceCost(COMPOSITE)!.amount;
+const ALLOY_PRICE = pieceCost(ALLOY)!.amount;
 const TERMINAL = packState(moduleShape(MODULE.terminal, 0), 1);
 const TERMINAL_PRICE = MODULES.find((module) => module.id === MODULE.terminal)!.cost.amount;
 const TURRET_STATE = packState(moduleShape(MODULE.turret, 0), 1);
@@ -2058,7 +2061,7 @@ test.describe('multiplayer', () => {
       for (const p of everyone) {
         await expect
           .poll(async () => (await poolOf(p)).stock[1], { ...slow, message: p.name })
-          .toBe(4);
+          .toBe(5 - COMPOSITE_PRICE);
       }
 
       // Ada's own screen knows before she clicks: her aim with the Alloy in hand is read from her copy
@@ -2243,7 +2246,7 @@ test.describe('multiplayer', () => {
       // Ada upgrades it: the same cell holds Composite in every world, the better piece comes out of
       // the pool and nothing goes back for the old one, and every card counts the upgrade.
       await upgrade(ada, cell);
-      await expectEverywhere(cell, COMPOSITE, [MATERIAL.composite, 199], 1);
+      await expectEverywhere(cell, COMPOSITE, [MATERIAL.composite, 200 - COMPOSITE_PRICE], 1);
       for (const p of everyone) expect(await stockOf(p, MATERIAL.scrap), p.name).toBe(199);
       await expectSameWorld(everyone, 1);
       expect(await rejectionsOf(ada)).toEqual([]);
@@ -2255,7 +2258,7 @@ test.describe('multiplayer', () => {
         .poll(() => rejectionsOf(ada), { ...slow, message: 'the host turns Ada down' })
         .toEqual([needsResearch('Advanced Alloy')]);
       expect(await rejectionsOf(host)).toEqual([]);
-      await expectEverywhere(cell, COMPOSITE, [MATERIAL.composite, 199], 1);
+      await expectEverywhere(cell, COMPOSITE, [MATERIAL.composite, 200 - COMPOSITE_PRICE], 1);
 
       // The points are there and the Alloy is not: the pool is what Ada is turned away for.
       await host.page.evaluate((n) => window.__ashbound!.mp!.setResearch(n), alloyAt);
@@ -2266,7 +2269,7 @@ test.describe('multiplayer', () => {
       await expect
         .poll(() => rejectionsOf(ada), { ...slow, message: 'the host turns Ada down again' })
         .toEqual([needsResearch('Advanced Alloy'), notEnough('Advanced Alloy')]);
-      await expectEverywhere(cell, COMPOSITE, [MATERIAL.composite, 199], 1);
+      await expectEverywhere(cell, COMPOSITE, [MATERIAL.composite, 200 - COMPOSITE_PRICE], 1);
 
       // Her screen believed the block was Scrap and asks for Composite: it is Composite now, and the
       // host will not swap a block for the one she did not see.
@@ -2278,21 +2281,21 @@ test.describe('multiplayer', () => {
           notEnough('Advanced Alloy'),
           'that block has changed',
         ]);
-      await expectEverywhere(cell, COMPOSITE, [MATERIAL.composite, 199], 1);
+      await expectEverywhere(cell, COMPOSITE, [MATERIAL.composite, 200 - COMPOSITE_PRICE], 1);
 
       // The host puts Alloy back, and the same press goes through.
       await host.page.evaluate(([material]) => window.__ashbound!.mp!.setPool(material!, 5), [
         MATERIAL.alloy,
       ] as const);
       await upgrade(ada, cell);
-      await expectEverywhere(cell, ALLOY, [MATERIAL.alloy, 4], 2);
+      await expectEverywhere(cell, ALLOY, [MATERIAL.alloy, 5 - ALLOY_PRICE], 2);
 
       // A player who joins now is shown the better block with the rest of the world, and the count.
       const bo = await openPlayer(browser, baseURL, 'Bo');
       everyone.push(bo);
       await joinRoom(bo, code);
       await expectSameWorld(everyone, 1);
-      await expectEverywhere(cell, ALLOY, [MATERIAL.alloy, 4], 2);
+      await expectEverywhere(cell, ALLOY, [MATERIAL.alloy, 5 - ALLOY_PRICE], 2);
       expect(await rejectionsOf(host)).toEqual([]);
       expect(await rejectionsOf(bo)).toEqual([]);
       expectNoProblems(everyone);

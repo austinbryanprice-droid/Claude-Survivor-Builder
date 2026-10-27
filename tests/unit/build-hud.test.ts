@@ -43,6 +43,7 @@ import {
 } from '../../src/systems/economy/build-rules';
 import { TURRET, VITALS } from '../../src/systems/survival/balance';
 import { ICON_IDS, ICON_SPRITE } from '../../src/ui/player-hud/icons';
+import { blockPrice } from './helpers/prices';
 
 const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
 const ALLOY = packState(SHAPE.cube, MATERIAL.alloy);
@@ -117,8 +118,10 @@ describe('the hotbar blocks', () => {
   });
 
   it('say what a piece costs from the material table', () => {
-    expect(costText(SCRAP)).toBe('1 Scrap');
-    expect(costText(packState(SHAPE.cube, MATERIAL.energy))).toBe('1 Energy-Infused');
+    expect(costText(SCRAP)).toBe(`${blockPrice(MATERIAL.scrap)} Scrap`);
+    expect(costText(packState(SHAPE.cube, MATERIAL.energy))).toBe(
+      `${blockPrice(MATERIAL.energy)} Energy-Infused`,
+    );
     expect(costText(0)).toBe('');
   });
 });
@@ -612,7 +615,7 @@ describe('the caption of a material that is not researched', () => {
     const tracker = new BuildPromptTracker();
     expect(tracker.update(0.016, hands({ ...inHand, buildMode: true }), null)).toEqual({
       title: 'Reinforced Composite Block',
-      detail: 'Cost 1 Reinforced Composite',
+      detail: `Cost ${blockPrice(MATERIAL.composite)} Reinforced Composite`,
       tone: 'info',
     });
   });

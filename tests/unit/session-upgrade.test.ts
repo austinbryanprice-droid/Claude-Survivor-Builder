@@ -26,6 +26,7 @@ import { RESEARCH_STEPS } from '../../src/systems/economy/research';
 import { VITALS } from '../../src/systems/survival/balance';
 import { FLOOR, arena, sim, type Room } from './helpers/arena';
 import { at, makeRoom } from './helpers/net';
+import { blockPrice, turretStepPrice } from './helpers/prices';
 
 const SCRAP = packState(SHAPE.cube, MATERIAL.scrap);
 const COMPOSITE = packState(SHAPE.cube, MATERIAL.composite);
@@ -76,7 +77,7 @@ describe('the host upgrading a piece in place', () => {
     room.host.sendCommand(upgrade(0, COMPOSITE));
     expect(hostWorld.getBlock(SPOT.x, SPOT.y, SPOT.z)).toBe(COMPOSITE);
     expect(hostWorld.cells.size).toBe(1);
-    expect(stock(room.host.economy)).toEqual([19, 19, 20, 20]);
+    expect(stock(room.host.economy)).toEqual([19, 20 - blockPrice(MATERIAL.composite), 20, 20]);
   });
 
   it('climbs one tier a command, to Energy-Infused and no further', () => {
@@ -90,7 +91,12 @@ describe('the host upgrading a piece in place', () => {
     }
     expect(climbed).toEqual([MATERIAL.scrap, MATERIAL.composite, MATERIAL.alloy, MATERIAL.energy]);
     expect(seen).toEqual([]);
-    expect(stock(room.host.economy)).toEqual([19, 19, 19, 19]);
+    expect(stock(room.host.economy)).toEqual([
+      19,
+      20 - blockPrice(MATERIAL.composite),
+      20 - blockPrice(MATERIAL.alloy),
+      20 - blockPrice(MATERIAL.energy),
+    ]);
     room.host.sendCommand(upgrade(0, packState(SHAPE.cube, 5)));
     expect(seen).toEqual([FULLY_UPGRADED]);
   });
@@ -134,8 +140,9 @@ describe('the host upgrading a piece in place', () => {
     ada.session.sendCommand(upgrade(0, COMPOSITE));
     await room.settle(300);
     expect(hostWorld.getBlock(SPOT.x, SPOT.y, SPOT.z)).toBe(COMPOSITE);
-    expect(stock(room.host.economy)).toEqual([19, 19, 20, 20]);
-    expect(stock(ada.session.economy)).toEqual([19, 19, 20, 20]);
+    const afterwards = [19, 20 - blockPrice(MATERIAL.composite), 20, 20];
+    expect(stock(room.host.economy)).toEqual(afterwards);
+    expect(stock(ada.session.economy)).toEqual(afterwards);
   });
 
   it('counts it for the results screen and for the guests, once for each upgrade', async () => {
@@ -203,10 +210,15 @@ describe('the host raising a turret', () => {
     const seen = reasons(room.host);
     room.host.sendCommand(upgrade(0, AUTO));
     expect(hostWorld.getBlock(SPOT.x, SPOT.y, SPOT.z)).toBe(AUTO);
-    expect(stock(room.host.economy)).toEqual([30, 20, 30, 30]);
+    expect(stock(room.host.economy)).toEqual([30, 30 - turretStepPrice(2), 30, 30]);
     room.host.sendCommand(upgrade(0, HEAVY));
     expect(hostWorld.getBlock(SPOT.x, SPOT.y, SPOT.z)).toBe(HEAVY);
-    expect(stock(room.host.economy)).toEqual([30, 20, 20, 30]);
+    expect(stock(room.host.economy)).toEqual([
+      30,
+      30 - turretStepPrice(2),
+      30 - turretStepPrice(3),
+      30,
+    ]);
     expect(seen).toEqual([]);
     expect(hostWorld.cells.size).toBe(1);
     expect(upgraded(room)).toBe(2);
@@ -245,11 +257,12 @@ describe('the host raising a turret', () => {
   it('says the pool is short of the better material, naming it, and takes nothing', () => {
     const { room, hostWorld } = turretRoom();
     const seen = reasons(room.host);
-    sim(room).economy!.pool.set(MATERIAL.composite, 9);
+    const oneShort = turretStepPrice(2) - 1;
+    sim(room).economy!.pool.set(MATERIAL.composite, oneShort);
     room.host.sendCommand(upgrade(0, AUTO));
     expect(seen).toEqual([notEnough('Reinforced Composite')]);
     expect(hostWorld.getBlock(SPOT.x, SPOT.y, SPOT.z)).toBe(BASIC);
-    expect(stock(room.host.economy)).toEqual([30, 9, 30, 30]);
+    expect(stock(room.host.economy)).toEqual([30, oneShort, 30, 30]);
     expect(upgraded(room)).toBe(0);
   });
 
@@ -263,7 +276,12 @@ describe('the host raising a turret', () => {
     room.host.sendCommand(upgrade(0, HEAVY));
     room.host.sendCommand(upgrade(0, withMaterial(BASIC, 4)));
     expect(seen).toEqual([REFUSAL.changed, FULLY_UPGRADED]);
-    expect(stock(room.host.economy)).toEqual([30, 20, 20, 30]);
+    expect(stock(room.host.economy)).toEqual([
+      30,
+      30 - turretStepPrice(2),
+      30 - turretStepPrice(3),
+      30,
+    ]);
   });
 
   it('is done for a guest who stands by it, and every screen shows the better turret', async () => {
@@ -278,8 +296,9 @@ describe('the host raising a turret', () => {
     for (const guest of [ada, bob]) {
       expect(guest.world().getBlock(SPOT.x, SPOT.y, SPOT.z)).toBe(AUTO);
     }
-    expect(stock(room.host.economy)).toEqual([30, 20, 30, 30]);
-    expect(stock(ada.session.economy)).toEqual([30, 20, 30, 30]);
+    const afterwards = [30, 30 - turretStepPrice(2), 30, 30];
+    expect(stock(room.host.economy)).toEqual(afterwards);
+    expect(stock(ada.session.economy)).toEqual(afterwards);
   });
 
   it('gives back the price of the level the turret is at when it is broken, and nothing for the ones it left behind', () => {
@@ -287,10 +306,10 @@ describe('the host raising a turret', () => {
     room.host.sendCommand(place(0, BASIC));
     expect(stock(room.host.economy)).toEqual([5, 30, 30, 30]);
     room.host.sendCommand(upgrade(0, AUTO));
-    expect(stock(room.host.economy)).toEqual([5, 20, 30, 30]);
+    expect(stock(room.host.economy)).toEqual([5, 30 - turretStepPrice(2), 30, 30]);
     room.host.sendCommand({ type: 'break', x: SPOT.x, y: SPOT.y, z: SPOT.z });
     expect(hostWorld.getBlock(SPOT.x, SPOT.y, SPOT.z)).toBe(0);
-    // The ten Composite the step took come back. The twenty-five Scrap the Basic Turret cost do not.
+    // The Composite the step took comes back. The twenty-five Scrap the Basic Turret cost do not.
     expect(stock(room.host.economy)).toEqual([5, 30, 30, 30]);
   });
 });
@@ -354,7 +373,7 @@ describe('the host turning an upgrade away', () => {
     room.host.sendCommand(upgrade(0, COMPOSITE));
     expect(seen).toEqual([REFUSAL.changed]);
     expect(hostWorld.getBlock(SPOT.x, SPOT.y, SPOT.z)).toBe(COMPOSITE);
-    expect(stock(room.host.economy)).toEqual([19, 19, 20, 20]);
+    expect(stock(room.host.economy)).toEqual([19, 20 - blockPrice(MATERIAL.composite), 20, 20]);
     expect(upgraded(room)).toBe(1);
   });
 
