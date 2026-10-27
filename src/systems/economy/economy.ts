@@ -203,6 +203,16 @@ export class Economy {
     return upgradeRefusal(this.research.tier, (material) => this.pool.amount(material), state);
   }
 
+  /**
+   * A machine the crew felled leaves `amount` cells of a material in the pool (Phase 5i1), as many as
+   * the pool has room for. They count with what the crew has gathered. Returns what went in.
+   */
+  drop(material: number, amount: number): number {
+    const gained = this.pool.add(material, amount);
+    this.gatheredTotal += gained;
+    return gained;
+  }
+
   /** The crew pays for a piece it has placed. False, and nothing taken, when the pool cannot pay. */
   pay(state: CellState): boolean {
     const cost = pieceCost(state);

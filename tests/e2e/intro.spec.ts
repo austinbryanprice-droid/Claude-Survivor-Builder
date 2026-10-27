@@ -259,7 +259,8 @@ test.describe('the intro film', () => {
     await expect(page.locator('#hud')).toHaveAttribute('data-intro', 'on', {
       timeout: STATE_TIMEOUT,
     });
-    await expect(page.locator('.intro')).toBeVisible();
+    // The overlay shows with the film's first frame, which compiles the film's shaders: a slow runner takes more than the default five seconds for it.
+    await expect(page.locator('.intro')).toBeVisible({ timeout: STATE_TIMEOUT });
     await expect(page.locator('.title')).toBeHidden({ timeout: STATE_TIMEOUT });
     await expect(page.locator('.pause')).toBeHidden();
     await expect(page.locator('.intro-flash')).toHaveCSS('filter', 'opacity(0.35)');

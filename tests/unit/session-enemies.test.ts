@@ -3,11 +3,14 @@ import { HostSession } from '../../src/net/host-session';
 import { SessionHub } from '../../src/net/hub';
 import { ManualScheduler } from '../../src/net/scheduler';
 import { fixedWorld } from '../../src/net/session';
+import { MATERIAL } from '../../src/shared/blocks';
 import { DAY_SECONDS } from '../../src/shared/daycycle';
+import { ENEMY_KIND } from '../../src/shared/enemy-state';
+import { createEconomyReading, poolSlot } from '../../src/shared/economy';
 import { createRng } from '../../src/shared/hash';
 import { NET } from '../../src/shared/net-config';
 import { NO_PLAYER, type WorldEvent } from '../../src/shared/protocol';
-import { createReading } from '../../src/shared/survival-state';
+import { createReading, type SurvivalEvent } from '../../src/shared/survival-state';
 import { createVitalsReading } from '../../src/shared/vitals-state';
 import { KIND_ENEMIES, decodeEnemies, packetKind } from '../../src/shared/wire';
 import { ENEMIES } from '../../src/systems/survival/balance';
@@ -312,6 +315,79 @@ describe('the machines on a guest', () => {
       await play(room, 20);
       expect(guest.session.sampleEnemies()).toEqual([]);
     }
+  });
+});
+
+describe('the armored machines', () => {
+  const FELLING = ENEMIES.armored.health / ENEMIES.armored.takes;
+  const CELLS = ENEMIES.armored.drop?.amount ?? 0;
+  const energy = (view: {
+    read(into: ReturnType<typeof createEconomyReading>): unknown;
+  }): number => {
+    const reading = createEconomyReading();
+    view.read(reading);
+    return reading.stock[poolSlot(MATERIAL.energy)] as number;
+  };
+
+  it('are drawn as armored on every screen, whole until they are hit', async () => {
+    const { room, machines } = arena();
+    room.host.setLocalActive(true);
+    const code = await room.openRoom();
+    const guest = await room.join(code, 'Ada');
+    const plain = machines().spawnAt(26.5, -3.5);
+    const plated = machines().spawnAt(26.5, 3.5, 1, ENEMY_KIND.armored);
+    await play(room, 1);
+    for (const seen of [room.host.sampleEnemies(), guest.session.sampleEnemies()]) {
+      expect(seen).toHaveLength(2);
+      expect(seen.find((pose) => pose.id === plain)?.kind).toBe(ENEMY_KIND.crawler);
+      expect(seen.find((pose) => pose.id === plated)?.kind).toBe(ENEMY_KIND.armored);
+      expect(seen.every((pose) => pose.health === 1)).toBe(true);
+    }
+  });
+
+  it('leave their cells in the pool when they fall, and every screen hears of it', async () => {
+    const { room, machines } = arena();
+    room.host.setLocalActive(true);
+    const code = await room.openRoom();
+    const ada = await room.join(code, 'Ada');
+    const bob = await room.join(code, 'Bob');
+    const views = [room.host, ada.session, bob.session];
+    const heard = views.map((view) => {
+      const seen: SurvivalEvent[] = [];
+      view.survival.onEvent((event) => seen.push(event));
+      return seen;
+    });
+    const armored = machines().spawnAt(26.5, -3.5, 1, ENEMY_KIND.armored);
+    await play(room, 1);
+    for (const view of views) expect(energy(view.economy)).toBe(0);
+
+    machines().hurt(armored!, FELLING - 1);
+    await play(room, 1);
+    for (const view of views) expect(energy(view.economy)).toBe(0);
+    for (const seen of heard) expect(seen.filter((event) => event.k === 'drop')).toEqual([]);
+
+    machines().hurt(armored!, 2);
+    await play(room, 1);
+    const drop = { k: 'drop', n: 1, m: MATERIAL.energy, c: CELLS };
+    for (const view of views) expect(energy(view.economy)).toBe(CELLS);
+    for (const seen of heard) expect(seen.filter((event) => event.k === 'drop')).toEqual([drop]);
+    // The cells count with what the crew has gathered, on every screen.
+    for (const view of views) expect(view.survival.read(createReading()).gathered).toBe(CELLS);
+  });
+
+  it('leave nothing for a plain crawler, and the crew is told nothing', async () => {
+    const { room, machines } = arena();
+    room.host.setLocalActive(true);
+    const code = await room.openRoom();
+    const guest = await room.join(code, 'Ada');
+    const seen: SurvivalEvent[] = [];
+    guest.session.survival.onEvent((event) => seen.push(event));
+    const plain = machines().spawnAt(26.5, -3.5);
+    await play(room, 1);
+    expect(machines().hurt(plain!, ENEMIES.crawler.health)).toBe(true);
+    await play(room, 1);
+    expect(energy(guest.session.economy)).toBe(0);
+    expect(seen.filter((event) => event.k === 'drop')).toEqual([]);
   });
 });
 

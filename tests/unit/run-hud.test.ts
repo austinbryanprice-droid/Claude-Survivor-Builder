@@ -387,6 +387,15 @@ describe('the messages about a player going down and coming back', () => {
     expect(messageFor({ k: 'overrun', n: 3, why: 'core' })).toBe('The Outpost Core has fallen');
   });
 
+  it('say what a felled machine left in the pool, in the material’s own name', () => {
+    expect(messageFor({ k: 'drop', n: 4, m: MATERIAL.energy, c: 3 })).toBe(
+      'A machine left 3 Energy-Infused in the pool',
+    );
+    expect(messageFor({ k: 'drop', n: 7, m: MATERIAL.alloy, c: 1 })).toBe(
+      'A machine left 1 Advanced Alloy in the pool',
+    );
+  });
+
   it('have words for every kind of event', () => {
     const events: SurvivalEvent[] = [
       { k: 'nightfall', n: 1 },
@@ -395,6 +404,7 @@ describe('the messages about a player going down and coming back', () => {
       { k: 'overrun', n: 1, why: 'core' },
       { k: 'down', n: 1, p: 2 },
       { k: 'back', n: 1, p: 2, c: 1 },
+      { k: 'drop', n: 4, m: MATERIAL.energy, c: 3 },
     ];
     for (const event of events) expect(messageFor(event, nameOf).length).toBeGreaterThan(5);
   });

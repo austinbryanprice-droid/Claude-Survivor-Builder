@@ -8,10 +8,12 @@
 /** The kinds of machine. A kind is a number on the wire; the table of what each one is lives with the simulation. */
 export const ENEMY_KIND = {
   crawler: 0,
+  /** The crawler's plated cousin: bigger, slower, takes less of every hit, and leaves Tier 4 cells (Phase 5i1). */
+  armored: 1,
 } as const;
 
 /** How many kinds the wire accepts: a packet naming one past this is refused. */
-export const ENEMY_KIND_COUNT = 1;
+export const ENEMY_KIND_COUNT = 2;
 
 /** The bits of an enemy's `flags`. */
 export const ENEMY_FLAG = {
