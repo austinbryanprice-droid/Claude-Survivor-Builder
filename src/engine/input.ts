@@ -132,6 +132,13 @@ export function createInput(canvas: HTMLCanvasElement): Input {
 
   /** Requests the browser has not answered yet. */
   let asking = 0;
+  /**
+   * Error events still to come for requests whose rejection has been dealt with already. A browser
+   * reports a failed request twice, as a rejected promise and as a `pointerlockerror` event, and
+   * the event is a task of its own: it can arrive after the request that followed has been
+   * answered and before the page can see that the pointer is locked.
+   */
+  let owed = 0;
 
   const refused = (): void => {
     // A browser that cannot give raw movement says no to that request and yes to the plain one that
@@ -143,6 +150,14 @@ export function createInput(canvas: HTMLCanvasElement): Input {
     emitChange();
   };
 
+  const onLockError = (): void => {
+    if (owed > 0) {
+      owed--;
+      return;
+    }
+    refused();
+  };
+
   /**
    * Asks for raw (unaccelerated) mouse movement first, which keeps aim consistent on systems
    * with pointer acceleration, and falls back to a plain lock where that is not supported.
@@ -151,6 +166,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
     lockRequestListeners.forEach((listener) => listener());
     // A refusal is news about the request that follows, not the one before.
     blocked = false;
+    owed = 0;
     const attempt = (unadjusted: boolean): void => {
       let pending: Promise<void> | undefined;
       try {
@@ -170,6 +186,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
           },
           (error: unknown) => {
             asking--;
+            owed++;
             const unsupported = error instanceof DOMException && error.name === 'NotSupportedError';
             if (unadjusted && unsupported) attempt(false);
             else refused();
@@ -295,7 +312,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
   };
 
   document.addEventListener('pointerlockchange', onLockChange);
-  document.addEventListener('pointerlockerror', refused);
+  document.addEventListener('pointerlockerror', onLockError);
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
@@ -371,7 +388,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
     },
     dispose() {
       document.removeEventListener('pointerlockchange', onLockChange);
-      document.removeEventListener('pointerlockerror', refused);
+      document.removeEventListener('pointerlockerror', onLockError);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
