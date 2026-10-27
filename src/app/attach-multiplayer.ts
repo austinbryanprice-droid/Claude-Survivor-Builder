@@ -9,6 +9,7 @@ import type { NavWorld } from '../systems/survival/nav';
 import { SurvivalSim } from '../systems/survival/sim';
 import type { ModuleSource } from '../systems/survival/turrets';
 import type { Outpost } from '../world/outpost';
+import { bedSpawn } from './bed-spawn';
 import { createMultiplayer, type Multiplayer } from './multiplayer';
 import { seatSpawn } from './seat-spawn';
 
@@ -109,7 +110,10 @@ export function attachMultiplayer({
         }
         return Promise.resolve(voxels());
       },
-      spawnPoint: (slot) => seatSpawn(game.world, voxels(), slot),
+      // A player the Core brings back goes to the nearest Bed that has room, and the seat is for the rest.
+      spawnPoint: (slot, near) =>
+        (near ? bedSpawn(forEachModule, game.world, voxels(), near) : null) ??
+        seatSpawn(game.world, voxels(), slot),
       survival: () =>
         new SurvivalSim({
           startAt: night === null ? 0 : nightStart(night),

@@ -89,8 +89,11 @@ export interface HostSessionOptions {
   name: string;
   /** The host's own token (kept by the browser). */
   token: string;
-  /** Where a player in this slot starts. */
-  spawnFor?: (slot: number) => { x: number; y: number; z: number };
+  /**
+   * Where a player in this slot starts. Given the place a player fell when the Core brings them back,
+   * it may choose a spawn near it (a Bed) instead of the slot's seat.
+   */
+  spawnFor?: (slot: number, near?: Vec3) => { x: number; y: number; z: number };
   /** The survival simulation this host runs. Absent where only the world is under test. */
   survival?: SurvivalSim;
   /**
@@ -212,7 +215,7 @@ const SHOT_GRID = 100;
 export class HostSession implements GameSession {
   private readonly scheduler: Scheduler;
   private readonly binding: WorldBinding;
-  private readonly spawnFor: (slot: number) => { x: number; y: number; z: number };
+  private readonly spawnFor: (slot: number, near?: Vec3) => { x: number; y: number; z: number };
 
   private readonly members = new Map<PlayerId, Member>();
   private readonly departed = new Map<string, Departed>();
@@ -783,10 +786,10 @@ export class HostSession implements GameSession {
    * Puts a player on their seat's spawn point as far as the host is concerned: the movement check,
    * the avatar everyone draws and the machines' idea of where their prey is all go there at once,
    * so nothing still sees them where they were. Returns the spot. Telling the player is the
-   * caller's part.
+   * caller's part. `near` is where a player fell, for a spawn that goes by it.
    */
-  private seat(member: Member, now: number): Vec3 {
-    const to = this.spawnFor(member.slot);
+  private seat(member: Member, now: number, near?: Vec3): Vec3 {
+    const to = this.spawnFor(member.slot, near);
     member.guard.place(to.x, to.y, to.z, now);
     const sample = member.sample;
     if (sample) {
@@ -805,14 +808,16 @@ export class HostSession implements GameSession {
   }
 
   /**
-   * The Core has brought a player back: they stand at the base, on their seat's spawn point. A
-   * guest is told with a correction; the host's own player is moved by the same word to its screen.
+   * The Core has brought a player back: they stand at the Bed nearest to where they fell, or at the
+   * base on their seat's spawn point where no Bed has room. A guest is told with a correction; the
+   * host's own player is moved by the same word to its screen.
    */
   private placeAtBase(id: PlayerId): void {
     const member = this.members.get(id);
     if (!member) return;
     const now = this.scheduler.now();
-    const to = this.seat(member, now);
+    const fell = member.sample;
+    const to = this.seat(member, now, fell ? { x: fell.x, y: fell.y, z: fell.z } : undefined);
     if (!member.link) {
       this.corrections.emit({ x: to.x, y: to.y, z: to.z });
       return;
