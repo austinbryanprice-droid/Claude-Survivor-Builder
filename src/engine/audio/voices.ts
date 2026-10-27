@@ -1,4 +1,4 @@
-import { dbToGain } from '../../shared/audio';
+import { dbToGain, lerpLog } from '../../shared/audio';
 import { hash32, unitFloat } from '../../shared/hash';
 import type { Cue, VoiceName } from '../../shared/intro-sound';
 import type { NoiseBank, NoiseColor } from './noise';
@@ -42,24 +42,33 @@ function chance(seed: number, slot: number): number {
   return unitFloat(hash32(seed + Math.imul(slot, 0x9e3779b1)));
 }
 
+/** The cutoff of the lowpass that dulls a far sound: wide open (above what a laptop's speakers make) to nearly shut. */
+const MUFFLE_HZ = { open: 16000, shut: 600 } as const;
+
 /**
- * The last stage of a voice, which its sounds are connected to: it sets the cue's level, its place
- * between the speakers and how much of it goes to the reverb (`habit` unless the cue says), and
- * hands back the node to connect into.
+ * The last stage of a voice, which its sounds are connected to: it sets the cue's level, how dull it
+ * is, its place between the speakers and how much of it goes to the reverb (`habit` unless the cue
+ * says, and more where the cue asks for room), and hands back the node to connect into.
  */
 function output(env: VoiceEnv, cue: Cue, habit: number): GainNode {
   const { ctx } = env;
   const gain = ctx.createGain();
   gain.gain.value = dbToGain(cue.level);
   let tail: AudioNode = gain;
+  const muffle = Math.max(0, Math.min(1, cue.muffle ?? 0));
+  if (muffle > 0) {
+    const dull = filter(ctx, 'lowpass', lerpLog(MUFFLE_HZ.open, MUFFLE_HZ.shut, muffle), 0.5);
+    tail.connect(dull);
+    tail = dull;
+  }
   if (cue.pan) {
     const panner = ctx.createStereoPanner();
     panner.pan.value = Math.max(-1, Math.min(1, cue.pan));
-    gain.connect(panner);
+    tail.connect(panner);
     tail = panner;
   }
   tail.connect(env.dry);
-  const send = cue.send ?? habit;
+  const send = Math.min(1, (cue.send ?? habit) + (cue.room ?? 0));
   if (send > 0) {
     const share = ctx.createGain();
     share.gain.value = send;

@@ -161,6 +161,8 @@ export interface BuildPorts {
    * player's world is replaced. Absent for a game without power, where nothing is tagged.
    */
   power?(x: number, y: number, z: number): PowerState;
+  /** A click or a key was turned away, by a rule this screen could see or by the host's word: the moment to answer it with a sound. */
+  refused?(): void;
 }
 
 export class BuildController {
@@ -732,5 +734,6 @@ export class BuildController {
   private setNotice(text: string): void {
     this.notice = text;
     this.noticeUntil = this.clock + NOTICE_SECONDS;
+    this.ports.refused?.();
   }
 }

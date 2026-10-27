@@ -76,6 +76,8 @@ interface Rig {
   readonly pool: { cap: number; stock: number[]; tier: number; research: number; claimed: number };
   /** What the fake grid says of every module it is asked about, and the cells it was asked about. */
   readonly power: { state: PowerState; asked: number[][] };
+  /** How many times the hands told the sound that a click was turned away. */
+  readonly refused: { count: number };
   /** The ground height at the spot. */
   readonly surface: number;
   /** A view from `height` above the ground at the spot, looking straight down. */
@@ -94,6 +96,7 @@ function rig(): Rig {
   const heaps: Rig['heaps'] = { nodes: [], left: {} };
   const pool: Rig['pool'] = { cap: 0, stock: [], tier: 4, research: 0, claimed: 9999 };
   const power: Rig['power'] = { state: 'none', asked: [] };
+  const refused = { count: 0 };
   const ports: BuildPorts = {
     blocks: () => world,
     ground: () => ground,
@@ -134,6 +137,9 @@ function rig(): Rig {
       power.asked.push([x, y, z]);
       return power.state;
     },
+    refused() {
+      refused.count++;
+    },
   };
   const surface = world.terrain.grid.groundAt(SPOT.x + 0.5, SPOT.z + 0.5);
   return {
@@ -148,6 +154,7 @@ function rig(): Rig {
     heaps,
     pool,
     power,
+    refused,
     surface,
     lookDown(height) {
       const origin = { x: SPOT.x + 0.5, y: surface + height, z: SPOT.z + 0.5 };
@@ -283,6 +290,26 @@ describe('placing and breaking', () => {
     expect(r.controller.hudState().refusal).toBe('a player is in the way');
     r.controller.update(NOTICE_SECONDS + 0.1, r.lookDown(3));
     expect(r.controller.hudState().refusal).toBeNull();
+  });
+
+  it('tells the sound each time a click is turned away, and not when one goes', () => {
+    const r = rig();
+    r.controller.update(0.016, r.lookDown(3));
+    r.controller.press('secondary');
+    r.controller.release('secondary');
+    expect(r.sent).toHaveLength(1);
+    expect(r.refused.count).toBe(0);
+    // The host's word, a rule this screen could see, and nobody to send to.
+    r.controller.noteRejection('a player is in the way');
+    expect(r.refused.count).toBe(1);
+    r.controller.update(0.1, r.lookDown(BUILD_REACH + 1));
+    r.controller.press('secondary');
+    r.controller.release('secondary');
+    expect(r.refused.count).toBe(2);
+    r.session.open = false;
+    r.controller.update(RESEND_GUARD, r.lookDown(3));
+    r.controller.press('secondary');
+    expect(r.refused.count).toBe(3);
   });
 
   it('does not send the same command twice before an answer could have come back', () => {

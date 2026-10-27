@@ -1,3 +1,4 @@
+import type { CellState } from '../shared/block-world';
 import type {
   DebrisNode,
   DebrisView,
@@ -75,7 +76,7 @@ export class SessionHub implements GameSession {
   private unbind: Unsubscribe[] = [];
   private localActive = false;
 
-  private readonly events = new Emitter<WorldEvent>();
+  private readonly events = new Emitter<WorldEvent, [previous: CellState]>();
   private readonly rejections = new Emitter<Rejection>();
   private readonly shots = new Emitter<ShotEvent>();
   private readonly playerChanges = new Emitter<void>();
@@ -132,7 +133,7 @@ export class SessionHub implements GameSession {
   private bind(): void {
     const session = this.session;
     this.unbind = [
-      session.onEvent((event) => this.events.emit(event)),
+      session.onEvent((event, previous) => this.events.emit(event, previous)),
       session.onRejected((rejection) => this.rejections.emit(rejection)),
       session.onShot((shot) => this.shots.emit(shot)),
       session.onPlayers(() => this.playerChanges.emit()),
@@ -211,7 +212,7 @@ export class SessionHub implements GameSession {
     this.session.close();
   }
 
-  onEvent(listener: (event: WorldEvent) => void): Unsubscribe {
+  onEvent(listener: (event: WorldEvent, previous: CellState) => void): Unsubscribe {
     return this.events.on(listener);
   }
   onRejected(listener: (rejection: Rejection) => void): Unsubscribe {

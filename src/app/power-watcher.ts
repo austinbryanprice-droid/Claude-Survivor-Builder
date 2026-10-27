@@ -1,6 +1,10 @@
 import type { LampSource } from '../engine/lamps';
+import { Emitter } from '../net/emitter';
+import type { Unsubscribe } from '../net/session';
 import { MODULE, moduleFacing, moduleOfShape, stateShape } from '../shared/blocks';
+import type { PowerFlip } from '../shared/effect-sound';
 import { PowerGrid, type PowerState } from '../systems/survival/power';
+import { PowerFlips } from '../systems/survival/power-flips';
 import { lampSource } from '../world/render/lamp-source';
 import type { ModuleRenderer } from '../world/render/module-render';
 import type { VoxelWorld } from '../world/voxels/world';
@@ -22,6 +26,8 @@ export interface LampSink {
 export class PowerWatcher {
   private readonly grid: PowerGrid;
   private readonly stop: () => void;
+  private readonly flips = new PowerFlips();
+  private readonly flipped = new Emitter<readonly PowerFlip[]>();
 
   constructor(
     private readonly voxels: VoxelWorld,
@@ -36,6 +42,15 @@ export class PowerWatcher {
   /** What the module in a cell has of power; 'none' for a cell that holds no module that takes part. */
   stateAt(x: number, y: number, z: number): PowerState {
     return this.grid.stateAt(x, y, z);
+  }
+
+  /**
+   * Calls `listener` with the modules that came on or went dark, each time a change to the world's
+   * modules made some do. A module just set down or just broken did not change its power, so it is not
+   * among them. The list is the watcher's own and is used again.
+   */
+  onFlips(listener: (flips: readonly PowerFlip[]) => void): Unsubscribe {
+    return this.flipped.on(listener);
   }
 
   /**
@@ -55,10 +70,13 @@ export class PowerWatcher {
       }
     });
     this.lamps?.set(burning);
+    const changed = this.flips.look((visit) => this.grid.forEach(visit));
+    if (changed.length > 0) this.flipped.emit(changed);
   }
 
   dispose(): void {
     this.stop();
+    this.flipped.clear();
     this.lamps?.set([]);
   }
 }
