@@ -23,8 +23,10 @@ import { createIntroOverlay } from '../ui/intro-overlay';
 
 /** Skip keys and clicks are ignored this long after the film starts: the click that began it can come twice. */
 const SKIP_GRACE_MS = 800;
-/** If the mouse has not arrived by now the browser is not going to hand it over. */
+/** If the mouse has not arrived by now the browser is not going to hand it over... */
 const CAPTURE_WAIT_MS = 2500;
+/** ...unless the page itself was too busy to read the answer, which waits behind the timer: it gets this many frames more to read it. */
+const CAPTURE_WAIT_FRAMES = 3;
 /** Seconds the screen takes to clear from black after a skip. */
 const SKIP_CLEAR_SECONDS = 0.6;
 
@@ -78,6 +80,7 @@ export function createIntroController({
   let captured = false;
   let holding = false;
   let waitTimer = 0;
+  let stopWaiting: (() => void) | null = null;
   let disposed = false;
 
   const skip = (event: Event): void => {
@@ -94,6 +97,8 @@ export function createIntroController({
     window.removeEventListener('keydown', onKey, true);
     window.removeEventListener('mousedown', onMouse, true);
     window.clearTimeout(waitTimer);
+    stopWaiting?.();
+    stopWaiting = null;
   };
 
   const onEnd = (how: IntroEnd): void => {
@@ -128,7 +133,15 @@ export function createIntroController({
     game.setCinematic(film);
     if (!holding) {
       waitTimer = window.setTimeout(() => {
-        if (playback === film && !input.captured) abort(true);
+        if (playback !== film || input.captured) return;
+        // A page that stalled (the film's shaders compile in its first frame) reaches this timer before it has read what the browser said meanwhile: the frames it draws read it.
+        let left = CAPTURE_WAIT_FRAMES;
+        stopWaiting = game.onFrame(() => {
+          if (--left > 0) return;
+          stopWaiting?.();
+          stopWaiting = null;
+          if (playback === film && !input.captured) abort(true);
+        });
       }, CAPTURE_WAIT_MS);
     }
     return film;

@@ -174,6 +174,43 @@ test.describe('the intro film', () => {
     expect(problems).toEqual([]);
   });
 
+  test('keeps the film when the page is too busy to read the browser’s answer about the mouse in time', async ({
+    page,
+  }) => {
+    // The film gives up on the mouse after two and a half seconds. A page that is stalled for longer
+    // than that right after asking (the film's shaders compiling in its first frame, a slow machine)
+    // comes to that timer before it has read the answer the browser sent meanwhile, and must not
+    // take its own silence for a refusal.
+    await page.addInitScript(() => {
+      const request = HTMLCanvasElement.prototype.requestPointerLock;
+      HTMLCanvasElement.prototype.requestPointerLock = function (
+        ...args: Parameters<typeof request>
+      ) {
+        const result = request.apply(this, args);
+        const until = performance.now() + 3500;
+        while (performance.now() < until) {
+          // busy: nothing the browser says is read until this returns
+        }
+        return result;
+      };
+    });
+    const problems = await open(page, '?debug&intro=on&quality=low');
+    await waitForTheFilm(page);
+    await page.getByRole('button', { name: 'Play' }).click();
+    await expect(page.locator('#hud')).toHaveAttribute('data-intro', 'on', {
+      timeout: STATE_TIMEOUT,
+    });
+    await page.waitForFunction(() => (window.__ashbound?.intro?.playback?.time ?? 0) > 1.5, null, {
+      timeout: STATE_TIMEOUT,
+    });
+    const mouse = await page.evaluate(() => {
+      const input = window.__ashbound?.game.input;
+      return { captured: input?.captured, held: input?.held };
+    });
+    expect(mouse).toEqual({ captured: true, held: true });
+    expect(problems).toEqual([]);
+  });
+
   test('stays out of the way of a run that is not fresh, of the plain page under automation, and of an off switch', async ({
     page,
   }) => {
