@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { LoopbackLink } from '../../src/net/loopback';
 import type { GameSession } from '../../src/net/session';
+import type { Vec3 } from '../../src/shared/look';
 import { createReading, type SurvivalView } from '../../src/shared/survival-state';
 import { HOST_PLAYER_ID, type HostFrame } from '../../src/shared/protocol';
 import { createVitalsReading } from '../../src/shared/vitals-state';
@@ -182,6 +183,25 @@ describe('a host starting a lost run over', () => {
     const feet = { x: 0, y: 0, z: 0 };
     expect(room.host.survivalSim?.playerVitals(HOST_PLAYER_ID)?.position(feet)).toBe(true);
     expect(feet).toEqual({ x: 20, y: 1, z: 20 });
+  });
+
+  it('seats everyone at their seats, not at a Bed: the spawn rule is asked for no place', async () => {
+    const asked: (Vec3 | undefined)[] = [];
+    const room = makeRoom({
+      survival: true,
+      restartable: true,
+      spawnFor: (slot, near) => {
+        asked.push(near);
+        return { x: 20 + slot, y: 1, z: 20 };
+      },
+    });
+    room.host.publishState(at(5, 0, 5));
+    room.scheduler.advance(100);
+    lose(room);
+    room.host.restartRun('retry');
+    await room.settle(100);
+    expect(asked.length).toBeGreaterThanOrEqual(2);
+    expect(asked.every((near) => near === undefined)).toBe(true);
   });
 
   it('holds the new clock until someone plays, and does not replay the wait', async () => {

@@ -36,8 +36,14 @@ export interface LobbyGame {
    * played. Resolves with the new world once it is playable.
    */
   loadWorld(seed: number): Promise<BlockWorld>;
-  /** Where the player in this seat starts, standing on the ground. */
-  spawnPoint(slot: number): { x: number; y: number; z: number };
+  /**
+   * Where the player in this seat starts, standing on the ground. Given the place a player fell when
+   * the Core brings them back, it may be the spot at a Bed near there instead of the seat's own.
+   */
+  spawnPoint(
+    slot: number,
+    near?: { x: number; y: number; z: number },
+  ): { x: number; y: number; z: number };
   /**
    * A new survival run to host: the clock at the start of day 1 (or wherever the page was told to
    * begin). Called each time the player is on their own again. Games that play without one leave
@@ -332,7 +338,7 @@ export class Lobby {
       world: this.binding,
       name: this.nameValue,
       token: this.token,
-      spawnFor: (slot) => game.spawnPoint(slot),
+      spawnFor: (slot, near) => game.spawnPoint(slot, near),
       survival: survival?.(),
       // A lost run starts over from a new simulation, built once the world has been rebuilt for it.
       newRun: survival,

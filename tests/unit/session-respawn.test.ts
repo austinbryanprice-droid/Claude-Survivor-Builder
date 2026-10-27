@@ -7,6 +7,7 @@ import {
   type SurvivalEvent,
   type SurvivalView,
 } from '../../src/shared/survival-state';
+import type { Vec3 } from '../../src/shared/look';
 import { HOST_PLAYER_ID, type HostFrame } from '../../src/shared/protocol';
 import { RESPAWN, VITALS } from '../../src/systems/survival/balance';
 import { at, helloText, makeRoom, rawGuest, type TestWorld } from './helpers/net';
@@ -209,6 +210,82 @@ describe('the host’s own player down', () => {
     expect(feet).toEqual({ x: 20, y: 1, z: 20 });
     // It is not a movement check: the count of guests moved back stays where it was.
     expect(room.host.stats.corrections).toBe(0);
+  });
+});
+
+describe('a player the Core brings back where the spawn rule goes by where they fell', () => {
+  /** The spot a Bed would give. */
+  const BED_SPOT = { x: 30.5, y: 1, z: 30.5 };
+
+  /** A spawn rule that puts anyone who fell on the Bed's spot and everyone else on their seat, noting each ask. */
+  function ruleWithBed() {
+    const asked: { slot: number; near: Vec3 | undefined }[] = [];
+    const spawnFor = (slot: number, near?: Vec3) => {
+      asked.push({ slot, near });
+      return near ? BED_SPOT : { x: 20 + slot, y: 1, z: 20 };
+    };
+    return { asked, spawnFor, fallen: () => asked.filter((call) => call.near !== undefined) };
+  }
+
+  it('carries a guest to the spot the rule gives for where they fell, and the host believes it from then on', async () => {
+    const { spawnFor, fallen } = ruleWithBed();
+    const room = makeRoom({ survival: true, spawnFor });
+    const code = await room.openRoom();
+    const guest = await room.join(code, 'Ada');
+    const id = guest.session.localId;
+    // A few blocks from the seat the host put them on, which is as far as a first step may go.
+    guest.session.publishState(at(26, 1.25, 22));
+    await room.settle(100);
+    const fixes: { x: number; y: number; z: number }[] = [];
+    guest.session.onCorrection((fix) => fixes.push(fix));
+    fell(room, id);
+    await room.settle(DELAY_MS + 500);
+    expect(fixes).toEqual([BED_SPOT]);
+    // It is asked once, as the Core brings them back, for the seat they sit in and the place they fell.
+    expect(fallen()).toEqual([{ slot: 1, near: { x: 26, y: 1.25, z: 22 } }]);
+    const feet = { x: 0, y: 0, z: 0 };
+    expect(room.host.survivalSim?.playerVitals(id)?.position(feet)).toBe(true);
+    expect(feet).toEqual(BED_SPOT);
+    const seen = room.host.sampleRemotes().find((pose) => pose.id === id);
+    expect(seen?.x).toBeCloseTo(BED_SPOT.x, 6);
+  });
+
+  it('moves the host’s own player by the same word', () => {
+    const { spawnFor, fallen } = ruleWithBed();
+    const room = makeRoom({ survival: true, spawnFor });
+    room.host.setLocalActive(true);
+    room.host.publishState(at(5, 0, 5));
+    room.scheduler.advance(100);
+    const fixes: { x: number; y: number; z: number }[] = [];
+    room.host.onCorrection((fix) => fixes.push(fix));
+    fell(room, HOST_PLAYER_ID);
+    room.scheduler.advance(DELAY_MS + 500);
+    expect(fixes).toEqual([BED_SPOT]);
+    expect(fallen()).toEqual([{ slot: 0, near: { x: 5, y: 0, z: 5 } }]);
+  });
+
+  it('asks about no place for a guest the host has not heard from, so the seat is where they go', async () => {
+    const { asked, spawnFor } = ruleWithBed();
+    const room = makeRoom({ survival: true, spawnFor });
+    const code = await room.openRoom();
+    const raw = await rawGuest(room, code);
+    raw.link.sendControl(helloText());
+    await room.settle(100);
+    const id = (raw.frames.find((frame) => frame.t === 'welcome') as { id: number }).id;
+    fell(room, id);
+    await room.settle(DELAY_MS + 800);
+    expect(asked.at(-1)).toEqual({ slot: 1, near: undefined });
+    expect(raw.frames.filter((frame) => frame.t === 'fix')).toMatchObject([{ x: 21, y: 1, z: 20 }]);
+  });
+
+  it('is not asked when a player joins, so a Bed never changes where a newcomer starts', async () => {
+    const { asked, spawnFor, fallen } = ruleWithBed();
+    const room = makeRoom({ survival: true, spawnFor });
+    const code = await room.openRoom();
+    await room.join(code, 'Ada');
+    await room.settle(300);
+    expect(asked.length).toBeGreaterThan(0);
+    expect(fallen()).toEqual([]);
   });
 });
 

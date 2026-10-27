@@ -86,10 +86,10 @@ describe('the groups of modules the points open', () => {
     expect(RESEARCH.perNight).toBeGreaterThanOrEqual(power.points);
   });
 
-  it('has the Camp group at 40 points, the fourth night survived, holding Storage', () => {
+  it('has the Camp group at 40 points, the fourth night survived, holding Storage and the Bed', () => {
     const camp = RESEARCH_GROUPS[1]!;
     expect(camp).toMatchObject({ id: 'camp', name: 'Camp', points: 40 });
-    expect(camp.modules).toEqual([MODULE.storage]);
+    expect(camp.modules).toEqual([MODULE.storage, MODULE.bed]);
     // Three nights, however clean, fall short of it and four reach it: the base's comforts wait for night 4.
     expect(3 * (RESEARCH.perNight + RESEARCH.cleanNight)).toBeLessThan(camp.points);
     expect(4 * RESEARCH.perNight).toBeGreaterThanOrEqual(camp.points);
@@ -113,6 +113,7 @@ describe('the groups of modules the points open', () => {
     expect(groupOfModule(MODULE.generator)?.id).toBe('power');
     expect(groupOfModule(MODULE.node)?.id).toBe('power');
     expect(groupOfModule(MODULE.storage)?.id).toBe('camp');
+    expect(groupOfModule(MODULE.bed)?.id).toBe('camp');
     expect(groupOfModule(MODULE.terminal)).toBeUndefined();
     expect(groupOfModule(MODULE.turret)).toBeUndefined();
     expect(groupOfModule(99)).toBeUndefined();
@@ -126,6 +127,9 @@ describe('the groups of modules the points open', () => {
     expect(moduleLock(MODULE.storage, 10)).toEqual({ have: 10, need: 40 });
     expect(moduleLock(MODULE.storage, 39)).toEqual({ have: 39, need: 40 });
     expect(moduleLock(MODULE.storage, 40)).toBeNull();
+    // The Bed is held by the same row, so it opens with Storage and not before.
+    expect(moduleLock(MODULE.bed, 39)).toEqual({ have: 39, need: 40 });
+    expect(moduleLock(MODULE.bed, 40)).toBeNull();
     expect(moduleLock(MODULE.terminal, 0)).toBeNull();
     expect(moduleLock(MODULE.turret, 0)).toBeNull();
   });

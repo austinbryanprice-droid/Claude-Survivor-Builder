@@ -126,6 +126,7 @@ describe('modules', () => {
     expect(MODULE.generator).toBe(3);
     expect(MODULE.node).toBe(4);
     expect(MODULE.storage).toBe(5);
+    expect(MODULE.bed).toBe(6);
     expect(MODULE_FACINGS).toBe(4);
     expect([0, 1, 2, 3].map((facing) => moduleShape(MODULE.terminal, facing))).toEqual([
       32, 33, 34, 35,
@@ -142,6 +143,7 @@ describe('modules', () => {
     expect([0, 1, 2, 3].map((facing) => moduleShape(MODULE.storage, facing))).toEqual([
       48, 49, 50, 51,
     ]);
+    expect([0, 1, 2, 3].map((facing) => moduleShape(MODULE.bed, facing))).toEqual([52, 53, 54, 55]);
     const ids = MODULES.flatMap((def) =>
       Array.from({ length: MODULE_FACINGS }, (_, facing) => moduleShape(def.id, facing)),
     );
@@ -162,7 +164,7 @@ describe('modules', () => {
   });
 
   it('are not found in a shape that is not a module', () => {
-    for (const shape of [0, SHAPE.cube, SHAPE.slab, SHAPE.slab + 1, SHAPE.wedge + 7, 52, 255]) {
+    for (const shape of [0, SHAPE.cube, SHAPE.slab, SHAPE.slab + 1, SHAPE.wedge + 7, 56, 255]) {
       expect(moduleOfShape(shape), `shape ${shape}`).toBeUndefined();
       expect(moduleFacing(shape), `shape ${shape}`).toBe(-1);
     }
