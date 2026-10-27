@@ -1184,6 +1184,11 @@
   opacity: 0.55;
 }
 
+/* A pool that holds all it can of the material: the count turns amber, and a Storage makes room. */
+.ph-count[data-full] {
+  color: #ffb347;
+}
+
 /* A material the crew has not researched: the slot is dim and has no grid, behind a padlock. */
 
 .ph-slot[data-locked] {

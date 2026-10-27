@@ -21,6 +21,8 @@ export interface HotbarSlot {
   readonly count?: number;
   /** How much of this slot's material the crew's pool holds, shown bottom right even at 0 or 1 (a stack that is out is dimmed). */
   readonly stock?: number;
+  /** The pool holds as much of this slot's material as it can, so its count is drawn in amber. */
+  readonly full?: boolean;
   /** 0 to 1, drawn as the green bar along the bottom. */
   readonly durability?: number;
   /** A small status glyph in the top right corner. */
@@ -764,7 +766,9 @@ export class PlayerHud {
       const locked = slot.locked === true;
       const key = `${slot.icon ?? ''}|${slot.count ?? ''}|${slot.stock ?? ''}|${slot.badge ?? ''}|${
         slot.blueprint ? 1 : 0
-      }|${locked ? 1 : 0}|${slot.durability === undefined ? '' : slot.durability.toFixed(2)}`;
+      }|${locked ? 1 : 0}|${slot.full ? 1 : 0}|${
+        slot.durability === undefined ? '' : slot.durability.toFixed(2)
+      }`;
       if (key === this.lastSlots[i]) return;
       this.lastSlots[i] = key;
       refs.icon.innerHTML = slot.icon ? iconMarkup(slot.icon) : '';
@@ -779,6 +783,7 @@ export class PlayerHud {
             ? String(slot.count)
             : '';
       refs.count.toggleAttribute('data-none', !locked && slot.stock === 0);
+      refs.count.toggleAttribute('data-full', !locked && slot.full === true);
       refs.lock.hidden = !locked;
       refs.root.toggleAttribute('data-locked', locked);
       refs.durability.hidden = slot.durability === undefined;

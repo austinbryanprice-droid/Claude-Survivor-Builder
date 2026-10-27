@@ -12,6 +12,7 @@ import { createFrameOverlay } from './frame-overlay';
 import { createPausePanel } from './pause-panel';
 import { createPlaceholderHud } from './placeholder-hud';
 import { harvestMessage, messageFor, resultsForHud, runLine, type Namer } from './run-hud';
+import { PoolWatcher } from './pool-hud';
 import { ResearchWatcher } from './research-hud';
 import { createRunResults } from './run-results';
 import { saveSettings } from './settings-store';
@@ -107,6 +108,7 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
   let run: SurvivalView | null = null;
   let economy: EconomyView | null = null;
   let researchWatch = new ResearchWatcher();
+  let poolWatch = new PoolWatcher();
   let stopRunEvents: (() => void) | null = null;
   let stopStrips: (() => void) | null = null;
   const runReading = createReading();
@@ -184,9 +186,11 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
     const dt = Math.min(MAX_HUD_STEP_SECONDS, (now - lastFrame) / 1000);
     lastFrame = now;
     playerHud.update(dt);
-    // The points that arrived and the materials they opened are told in the order they come.
+    // The points that arrived and the materials they opened are told in the order they come, then the room a Storage made.
     if (economy) {
-      for (const message of researchWatch.update(economy.read(poolReading))) toast.queue(message);
+      const pool = economy.read(poolReading);
+      for (const message of researchWatch.update(pool)) toast.queue(message);
+      for (const message of poolWatch.update(pool)) toast.queue(message);
     }
     const building = build.hudState().buildMode;
     if (building !== buildMode) {
@@ -239,6 +243,7 @@ export function createHud(game: Game, { flags, view, buildId, build }: HudOption
       stopStrips = null;
       economy = view;
       researchWatch = new ResearchWatcher();
+      poolWatch = new PoolWatcher();
       playerHud.setEconomy(view);
       // The player's own strips are answered with what they brought in; the others' are seen in the pool.
       if (view && localId) {

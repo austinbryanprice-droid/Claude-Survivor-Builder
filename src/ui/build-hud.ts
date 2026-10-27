@@ -93,6 +93,7 @@ const MODULE_ICONS: Readonly<Record<number, IconId>> = {
   [MODULE.turret]: 'turret',
   [MODULE.generator]: 'generator',
   [MODULE.node]: 'node',
+  [MODULE.storage]: 'storage',
 };
 
 /**

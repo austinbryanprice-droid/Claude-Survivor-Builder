@@ -11,8 +11,13 @@ import { MATERIAL, MODULE } from '../../shared/blocks';
 export const POOL = {
   /** What the pool holds when a run begins, by material id; a material that is not listed starts at 0. */
   start: { [MATERIAL.scrap]: 30 } as Readonly<Record<number, number>>,
-  /** The most the pool holds of any one material, until Storage (Phase 5h) raises it. */
+  /** The most the pool holds of any one material, before the crew builds a Storage. */
   cap: 400,
+  /**
+   * What each Storage standing in the world adds to that ceiling, for every material at once (the
+   * approved default: "Storage raises the shared pool cap"). A first guess for the balance pass (5j) to judge.
+   */
+  perStorage: 100,
 } as const;
 
 /**
@@ -112,10 +117,7 @@ export const RESEARCH = {
   perNight: 10,
   /** Extra for a night in which the Core took no damage at all (the spec's small bonus for low base damage). */
   cleanNight: 2,
-  /**
-   * What the points open, by total points in rising order: the material tier they unlock. The module
-   * upgrades (40) join with the modules that use them.
-   */
+  /** What the points open, by total points in rising order: the material tier they unlock. */
   steps: [
     { points: 20, tier: 2 },
     { points: 55, tier: 3 },
@@ -123,10 +125,14 @@ export const RESEARCH = {
   ],
   /**
    * What the points open besides a material: a group of modules, by the total points that open it (the
-   * notes: a 10-point research row opens the Generator and the Power Node). The first night survived
-   * pays for it.
+   * notes: a 10-point research row opens the Generator and the Power Node, and the 40-point row, which
+   * the turret's levels left free, holds the base's comforts). The first night survived pays for the
+   * first; the fourth for the second.
    */
-  groups: [{ id: 'power', name: 'Power', points: 10, modules: [MODULE.generator, MODULE.node] }],
+  groups: [
+    { id: 'power', name: 'Power', points: 10, modules: [MODULE.generator, MODULE.node] },
+    { id: 'camp', name: 'Camp', points: 40, modules: [MODULE.storage] },
+  ],
   /** The most points the `?research=` switch or the debug page can set. */
   max: 9999,
 } as const;

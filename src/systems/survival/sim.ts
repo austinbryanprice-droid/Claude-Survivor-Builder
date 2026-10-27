@@ -22,6 +22,7 @@ import { BLASTER, RESPAWN, SURVIVAL, VITALS, hitboxOf } from './balance';
 import { EnemySim, type Target } from './enemies';
 import { NavGrid, type NavCell, type NavWorld } from './nav';
 import { PowerGrid } from './power';
+import { Storehouse } from './storehouse';
 import { Turrets, type ModuleSource, type TurretShot } from './turrets';
 import { PlayerVitals } from './vitals';
 import { WaveDirector } from './waves';
@@ -74,10 +75,11 @@ export interface SurvivalOptions {
    */
   standing?: ((module: number) => boolean) | null;
   /**
-   * Walks the modules standing in the world, which is how the turrets, the Generators and the Power
-   * Nodes among them are found: each step, every turret that is ready shoots the nearest machine it
-   * has a clear line to (faster while it has power), and a player within reach of a Generator gets
-   * Energy back. Without it no turret shoots and no Generator gives.
+   * Walks the modules standing in the world, which is how the turrets, the Generators, the Power
+   * Nodes and the Storages among them are found: each step, every turret that is ready shoots the
+   * nearest machine it has a clear line to (faster while it has power), a player within reach of a
+   * Generator gets Energy back, and the pool holds more for each Storage that stands. Without it no
+   * turret shoots, no Generator gives and no Storage stores.
    */
   modules?: ModuleSource | null;
 }
@@ -144,6 +146,8 @@ export class SurvivalSim {
   private readonly standing: ((module: number) => boolean) | null;
   private readonly turrets: Turrets | null;
   private readonly power: PowerGrid | null;
+  /** The Storages that stand raise the pool's ceiling. */
+  private readonly storehouse: Storehouse | null;
   /** What the turrets have shot since the host last asked. */
   private readonly turretShots: TurretShot[] = [];
   /** The players the machines can go after in this step, kept between steps so a step allocates nothing. */
@@ -181,6 +185,8 @@ export class SurvivalSim {
         : null;
     this.standing = options.standing ?? null;
     this.power = options.modules ? new PowerGrid(options.modules) : null;
+    this.storehouse =
+      options.modules && this.wealth ? new Storehouse(options.modules, this.wealth.pool) : null;
     this.turrets =
       this.machines && options.modules ? new Turrets(options.modules, this.power) : null;
     // A run that starts at a later night has had the dawns before it: their research, read as the
@@ -506,8 +512,10 @@ export class SurvivalSim {
       this.health = Math.min(SURVIVAL.core.maxHealth, this.health + MEND_PER_STEP);
     }
     // The Generators that stand now are the ones that charge the players this step, and the ones that
-    // have power are the ones whose turrets shoot faster.
+    // have power are the ones whose turrets shoot faster; the Storages that stand now are the ones that
+    // set how much the pool can hold.
     this.power?.refresh();
+    this.storehouse?.refresh();
     for (const [id, vitals] of this.players) {
       vitals.step(SIM_STEP_SECONDS, this.core, this.power);
       if (!vitals.alive && !this.fallen.includes(id)) this.goDown(id);
