@@ -158,6 +158,10 @@ function readSurvivalEvent(raw: unknown): SurvivalEvent | null {
     case 'back':
       if (!isInt(raw.p, 1, MAX_U16) || !isInt(raw.c, 0, MAX_U16)) return null;
       return { k: 'back', n: raw.n, p: raw.p, c: raw.c };
+    case 'drop':
+      // A drop says which material went into the pool and how many cells of it.
+      if (!isInt(raw.m, 1, POOL_SLOTS) || !isInt(raw.c, 1, MAX_U16)) return null;
+      return { k: 'drop', n: raw.n, m: raw.m, c: raw.c };
   }
 }
 

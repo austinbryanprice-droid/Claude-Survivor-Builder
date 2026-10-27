@@ -18,7 +18,7 @@ import type { Outpost } from '../../world/outpost';
 import { builtOver } from '../economy/build-rules';
 import { Economy, evenStock } from '../economy/economy';
 import { debrisField } from '../economy/field';
-import { BLASTER, RESPAWN, SURVIVAL, VITALS, hitboxOf } from './balance';
+import { BLASTER, RESPAWN, SURVIVAL, VITALS, bodyOf, hitboxOf } from './balance';
 import { EnemySim, type Target } from './enemies';
 import { NavGrid, type NavCell, type NavWorld } from './nav';
 import { PowerGrid } from './power';
@@ -189,6 +189,8 @@ export class SurvivalSim {
       options.modules && this.wealth ? new Storehouse(options.modules, this.wealth.pool) : null;
     this.turrets =
       this.machines && options.modules ? new Turrets(options.modules, this.power) : null;
+    // The special kinds leave Tier 4 cells in the pool when the crew fells one, by blaster or by turret.
+    if (this.machines) this.machines.onFelled = (kind) => this.leaveDrop(kind);
     // A run that starts at a later night has had the dawns before it: their research, read as the
     // run goes on from there (which the `?research=` switch then replaces) and the heaps they
     // uncovered, the better grades included.
@@ -484,6 +486,14 @@ export class SurvivalSim {
   private builtOverHeap(node: DebrisNode): boolean {
     const blocks = this.ray?.blocks;
     return blocks ? builtOver(node, (x, y, z) => blocks.getBlock(x, y, z)) : false;
+  }
+
+  /** A machine the crew felled falls: a special kind leaves its cells in the pool, and the crew is told. */
+  private leaveDrop(kind: number): void {
+    const drop = bodyOf(kind)?.drop;
+    if (!drop || !this.wealth || this.over) return;
+    const gained = this.wealth.drop(drop.material, drop.amount);
+    if (gained > 0) this.pending.push({ k: 'drop', n: this.cycle, m: drop.material, c: gained });
   }
 
   /** The number of the day or night the run is in: 1 for the first day and the night after it. */

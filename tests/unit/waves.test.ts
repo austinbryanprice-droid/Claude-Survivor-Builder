@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../src/shared/daycycle';
-import { createEnemyState, type EnemyState } from '../../src/shared/enemy-state';
+import { ENEMY_KIND, createEnemyState, type EnemyState } from '../../src/shared/enemy-state';
 import { angleDelta } from '../../src/shared/look';
 import { nightStart, SIM_HZ, type SurvivalEvent } from '../../src/shared/survival-state';
 import { ENEMIES, WAVES } from '../../src/systems/survival/balance';
@@ -246,20 +246,32 @@ describe('the waves of a run', () => {
     expect(third.enemies!.hurt(tougher!.id, 32.9)).toBe(false);
     expect(third.enemies!.hurt(tougher!.id, 0.2)).toBe(true);
 
-    // The armored one of the fourth night comes last, with twice that.
+    // The armored one of the fourth night comes last, with two and a half times that (82.5 points), and
+    // its plating lets only 60 percent of every blow through: it takes 137.5 points of blows to fell.
     const fourth = run({ startAt: nightStart(4) });
     playClearingUntilLast(fourth, 4);
     const armored = machinesOf(fourth).at(-1)!;
-    expect(fourth.enemies!.hurt(armored.id, 66 - 0.1)).toBe(false);
+    expect(armored.kind).toBe(ENEMY_KIND.armored);
+    expect(fourth.enemies!.hurt(armored.id, 137.5 - 0.1)).toBe(false);
     expect(fourth.enemies!.hurt(armored.id, 0.2)).toBe(true);
   });
 
-  it('bring all of them as crawlers, because that is all the field knows until Phase 5', () => {
+  it('bring the armored ones as armored crawlers, and the flyers and breachers as crawlers until their parts are built', () => {
     const sim = run({ startAt: nightStart(9) });
-    sim.warp(70);
-    const seen = machinesOf(sim);
-    expect(seen.length).toBeGreaterThan(0);
-    expect(new Set(seen.map((machine) => machine.kind))).toEqual(new Set([0]));
+    // Every machine of the night, once, with the kind it came as.
+    const kinds = new Map<number, number>();
+    for (let t = 0; t < 200; t++) {
+      sim.warp(1);
+      for (const machine of machinesOf(sim)) kinds.set(machine.id, machine.kind);
+      sim.enemies!.clear();
+    }
+    const plan = kindsOnNight(9);
+    expect(kinds.size).toBe(plan.length);
+    const count = (kind: number): number => [...kinds.values()].filter((k) => k === kind).length;
+    expect(count(ENEMY_KIND.armored)).toBe(plan.filter((kind) => kind === 'armored').length);
+    expect(count(ENEMY_KIND.armored)).toBe(2);
+    // The plain ones, the two flyers and the breacher all walk as crawlers.
+    expect(count(ENEMY_KIND.crawler)).toBe(plan.length - 2);
   });
 
   it('bring a wave in from one side of the ring, and the next from another', () => {

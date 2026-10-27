@@ -7,7 +7,7 @@ import {
 import { createRng, hash32 } from '../../shared/hash';
 import { angleDelta, wrapAngle } from '../../shared/look';
 import { CORE_FOOTPRINT, type Outpost } from '../../world/outpost';
-import { ENEMIES } from './balance';
+import { ENEMIES, bodyOf, type EnemyBody } from './balance';
 import { NAV_WALLED, type NavCell, type NavGrid } from './nav';
 
 /**
@@ -25,7 +25,8 @@ import { NAV_WALLED, type NavCell, type NavGrid } from './nav';
  *
  * The map (`NavGrid`) knows the ground and what players have built on it; this class only moves
  * bodies over it. Every enemy is a point with a radius: it never leaves the columns the map calls
- * open, so it cannot walk into water, up a cliff or through a wall.
+ * open, so it cannot walk into water, up a cliff or through a wall. What an enemy is, its speed,
+ * its bite and how much of a hit it takes, is the body of its kind (`bodyOf`).
  */
 
 /** What a bite is aimed at: nothing, the Core, or (a positive number) the player with that id. */
@@ -83,6 +84,8 @@ export interface SpawnPlan {
 interface Enemy {
   readonly id: number;
   readonly kind: number;
+  /** What its kind is: read from the table once, when it comes. */
+  readonly body: EnemyBody;
   x: number;
   y: number;
   z: number;
@@ -115,6 +118,12 @@ export class EnemySim {
   private nextId = 1;
   private changes = 0;
 
+  /**
+   * Called with the kind of every machine that a blow fells, once, as it falls (and not for machines that
+   * fall back at dawn). The survival simulation hangs the drops of the special kinds on it.
+   */
+  onFelled: ((kind: number) => void) | null = null;
+
   /** How far each wall block has been chewed, from 0 to 1, keyed by cell. */
   private readonly chewed = new Map<number, number>();
   private readonly touched = new Set<number>();
@@ -144,24 +153,29 @@ export class EnemySim {
   }
 
   /**
-   * Brings `count` crawlers in from the ring round the Core, or as many as fit under the cap and
-   * find a place. Returns how many came.
+   * Brings `count` machines of a kind (crawlers unless it says otherwise) in from the ring round the
+   * Core, or as many as fit under the cap and find a place. Returns how many came.
    */
-  spawn(count: number, healthScale = 1, plan?: SpawnPlan): number {
+  spawn(
+    count: number,
+    healthScale = 1,
+    plan?: SpawnPlan,
+    kind: number = ENEMY_KIND.crawler,
+  ): number {
     let made = 0;
     while (made < count && this.list.length < ENEMIES.maxAlive) {
-      if (!this.spawnOne(healthScale, plan)) break;
+      if (!this.spawnOne(healthScale, plan, kind)) break;
       made++;
     }
     return made;
   }
 
-  /** Puts a crawler at a spot, for tests and the debug page. Null where there is no room for it. */
-  spawnAt(x: number, z: number, healthScale = 1): number | null {
+  /** Puts a machine at a spot, for tests and the debug page. Null where there is no room for it. */
+  spawnAt(x: number, z: number, healthScale = 1, kind: number = ENEMY_KIND.crawler): number | null {
     if (this.list.length >= ENEMIES.maxAlive) return null;
     if (!this.nav.pointClear(x, z)) return null;
     const core = this.options.core;
-    return this.add(x, z, Math.atan2(core.x - x, core.z - z), healthScale).id;
+    return this.add(x, z, Math.atan2(core.x - x, core.z - z), healthScale, kind).id;
   }
 
   /** True while the enemy with this id is alive. */
@@ -180,15 +194,19 @@ export class EnemySim {
     }
   }
 
-  /** Wounds an enemy; true when this blow killed it. Nothing happens for an enemy that is not here. */
+  /**
+   * Wounds an enemy by a blow of `amount` points, of which it takes the share its body takes (plating
+   * turns some away); true when this blow killed it. Nothing happens for an enemy that is not here.
+   */
   hurt(id: number, amount: number): boolean {
     const enemy = this.byId.get(id);
     if (!enemy || !(amount > 0)) return false;
-    enemy.health -= amount;
+    enemy.health -= amount * enemy.body.takes;
     enemy.hurt = ENEMIES.hurtFlashSeconds;
     this.changes++;
     if (enemy.health > 0) return false;
     this.remove(enemy);
+    this.onFelled?.(enemy.kind);
     return true;
   }
 
@@ -304,7 +322,7 @@ export class EnemySim {
    * the Core is, else nothing. Leaves the spot it faces in `goalX` and `goalZ`.
    */
   private victimOf(e: Enemy, targets: readonly Target[], count: number): number {
-    const body = ENEMIES.crawler;
+    const body = e.body;
     let best = BITE_NOTHING;
     let bestSquared = body.reach.player * body.reach.player;
     for (let i = 0; i < count; i++) {
@@ -335,7 +353,7 @@ export class EnemySim {
   }
 
   private bite(e: Enemy, victim: number, dt: number, strikes: Strikes): void {
-    const body = ENEMIES.crawler;
+    const body = e.body;
     this.turn(e, this.goalX, this.goalZ, dt);
     // A different victim starts the wind-up again.
     if (e.biting !== victim) {
@@ -399,7 +417,7 @@ export class EnemySim {
    * it does not flicker between two choices at the edge.
    */
   private chaseOf(e: Enemy, targets: readonly Target[], count: number): boolean {
-    const body = ENEMIES.crawler;
+    const body = e.body;
     let best = 0;
     let bestSquared = Infinity;
     for (let i = 0; i < count; i++) {
@@ -430,14 +448,14 @@ export class EnemySim {
     const dz = tz - e.z;
     if (dx * dx + dz * dz < 1e-8) return 0;
     const delta = angleDelta(e.yaw, Math.atan2(dx, dz));
-    const most = ENEMIES.crawler.turnRate * dt;
+    const most = e.body.turnRate * dt;
     const applied = Math.max(-most, Math.min(most, delta));
     e.yaw = wrapAngle(e.yaw + applied);
     return delta - applied;
   }
 
   private walk(e: Enemy, gx: number, gz: number, dt: number): void {
-    const body = ENEMIES.crawler;
+    const body = e.body;
     const dx = gx - e.x;
     const dz = gz - e.z;
     const distance = Math.hypot(dx, dz);
@@ -478,12 +496,13 @@ export class EnemySim {
   /** Pushes enemies that overlap apart, so a crowd spreads out round the Core instead of standing in one spot. */
   private crowd(): void {
     const list = this.list;
-    const need = ENEMIES.crawler.radius * 2;
-    const needSquared = need * need;
     for (let i = 0; i < list.length; i++) {
       const a = list[i] as Enemy;
       for (let j = i + 1; j < list.length; j++) {
         const b = list[j] as Enemy;
+        // Two machines part when their bodies touch: the sum of their radii.
+        const need = a.body.radius + b.body.radius;
+        const needSquared = need * need;
         const dx = b.x - a.x;
         if (dx > need || dx < -need) continue;
         const dz = b.z - a.z;
@@ -521,7 +540,7 @@ export class EnemySim {
   // Coming and going.
   // --------------------------------------------------------------------------------------------
 
-  private spawnOne(healthScale: number, plan?: SpawnPlan): boolean {
+  private spawnOne(healthScale: number, plan: SpawnPlan | undefined, kind: number): boolean {
     const core = this.options.core;
     const rng = plan?.rng ?? this.rng;
     const bearing = plan?.bearing;
@@ -538,17 +557,21 @@ export class EnemySim {
       const column = this.nav.indexAt(x, z);
       if (column < 0 || !Number.isFinite(this.nav.costOf(column))) continue;
       if (!this.nav.pointClear(x, z)) continue;
-      this.add(x, z, Math.atan2(core.x - x, core.z - z), healthScale);
+      this.add(x, z, Math.atan2(core.x - x, core.z - z), healthScale, kind);
       return true;
     }
     return false;
   }
 
-  private add(x: number, z: number, yaw: number, healthScale: number): Enemy {
-    const maxHealth = ENEMIES.crawler.health * healthScale;
+  private add(x: number, z: number, yaw: number, healthScale: number, kind: number): Enemy {
+    // A kind this table does not know is a crawler, so a machine always has a body.
+    const known = bodyOf(kind);
+    const body = known ?? ENEMIES.crawler;
+    const maxHealth = body.health * healthScale;
     const enemy: Enemy = {
       id: this.takeId(),
-      kind: ENEMY_KIND.crawler,
+      kind: known ? kind : ENEMY_KIND.crawler,
+      body,
       x,
       y: this.nav.heightAt(x, z),
       z,

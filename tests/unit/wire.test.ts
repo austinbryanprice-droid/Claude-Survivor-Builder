@@ -260,6 +260,7 @@ describe('host control frames', () => {
     { t: 'se', e: { k: 'down', n: 2, p: 3 } },
     { t: 'se', e: { k: 'back', n: 2, p: 3, c: 0 } },
     { t: 'se', e: { k: 'back', n: 9, p: 1, c: 11 } },
+    { t: 'se', e: { k: 'drop', n: 4, m: 4, c: 3 } },
     { t: 'vt', hp: [100, 100], en: [100, 100], chg: false, rt: 0, sk: 0 },
     { t: 'vt', hp: [37, 100], en: [0, 100], chg: true, rt: 0, sk: 31 },
     { t: 'vt', hp: [0, 100], en: [25, 100], chg: false, rt: 5, sk: 0 },
@@ -375,6 +376,27 @@ describe('host control frames', () => {
     }
     // An empty wave is odd but harmless; it says nothing the crew can be hurt by.
     expect(decodeHostFrame(JSON.stringify({ t: 'se', e: { ...base, c: 0 } }))).not.toBeNull();
+  });
+
+  it('refuses a drop that does not say which material went into the pool or how many cells', () => {
+    const base = { k: 'drop', n: 4, m: 4, c: 3 };
+    expect(decodeHostFrame(JSON.stringify({ t: 'se', e: base }))).toEqual({ t: 'se', e: base });
+    for (const bad of [
+      { m: undefined },
+      { m: 0 },
+      { m: 5 },
+      { m: 1.5 },
+      { m: '4' },
+      { c: undefined },
+      { c: 0 },
+      { c: -2 },
+      { c: 1.5 },
+      { c: 70000 },
+      { c: null },
+    ]) {
+      const text = JSON.stringify({ t: 'se', e: { ...base, ...bad } });
+      expect(decodeHostFrame(text), text).toBeNull();
+    }
   });
 
   it('refuses a survival frame whose Core is missing, malformed or more than whole', () => {
