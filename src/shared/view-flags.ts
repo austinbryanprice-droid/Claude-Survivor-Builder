@@ -51,6 +51,8 @@ export interface ViewFlags {
   readonly introAt: number | null;
   /** `?title=on` opens on the title screen whatever else the URL asks for, `?title=off` never does; by default every plain start opens on it. */
   readonly title: TitleMode;
+  /** False (`?sound=off`) keeps the page silent: no audio context is made, whatever the volume setting says. */
+  readonly sound: boolean;
 }
 
 /** The latest night `?night=` can ask for. */
@@ -135,5 +137,6 @@ export function readViewFlags(search: string): ViewFlags {
     intro: readSwitch(p.get('intro')),
     introAt: readIntroAt(p.get('introAt')),
     title: readSwitch(p.get('title')),
+    sound: readSwitch(p.get('sound')) !== 'off',
   };
 }

@@ -165,8 +165,11 @@ test.describe('the title screen', () => {
     await expect(page.locator('body')).not.toHaveClass(/title-showing/);
     expect(await phase(page)).toBe('done');
     expect(await mouse(page)).toEqual({ captured: true, locked: true, held: false });
-    // No film was asked for, so none was even loaded.
+    // No film was asked for, so none was even loaded, and with no sound to make the click made no audio context.
     expect(await page.evaluate(() => window.__ashbound?.intro ?? null)).toBeNull();
+    expect(
+      await page.evaluate(() => window.__ashbound?.audio?.hub.context?.state ?? null),
+    ).toBeNull();
     await page.waitForFunction(() => window.__ashbound?.mp?.clock().running === true, null, {
       timeout: STATE_TIMEOUT,
     });

@@ -9,7 +9,8 @@ import { createTitleRoute } from '../world/terrain/viewpoints';
  * player presses Play, which asks for the mouse, fades the picture to black and starts the intro
  * film (or, for a player who has turned the film off, glides the camera into the run). Nothing of
  * the run is touched: the screen is a camera and some words, the run's clock stays stopped, and
- * the mouse is held deaf until the film or the glide has handed it over.
+ * the mouse is held deaf until the film or the glide has handed it over. When a film follows, Play
+ * also unlocks the game's audio, which the browser allows only inside a click, so that it has its sound.
  */
 
 /** Said under Play when the browser would not hand over the mouse. */
@@ -142,6 +143,8 @@ export function createTitle({
     phase = 'leaving';
     hadMouse = input.captured;
     const withFilm = film();
+    // The browser only lets a page make sound from inside a click or a key press, and the film's sound starts later than this one. A glide has none.
+    if (withFilm) game.audio.unlock();
     const press = ++presses;
     screen.setHint(null);
     screen.leave(withFilm, TITLE.leadSeconds);

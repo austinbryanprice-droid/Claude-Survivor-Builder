@@ -106,7 +106,7 @@ export function createPausePanel(
   const settingsBlock = el('div', 'settings');
   const slider = (
     label: string,
-    key: 'mouseSensitivity' | 'fov',
+    key: 'mouseSensitivity' | 'fov' | 'volume',
     format: (value: number) => string,
   ): void => {
     const { min, max, step } = SETTINGS_LIMITS[key];
@@ -121,6 +121,7 @@ export function createPausePanel(
     input.addEventListener('input', () => {
       const next = Number(input.value);
       game.settings[key] = next;
+      if (key === 'volume') game.audio.setVolume(next);
       value.textContent = format(next);
       saveSettings(game.settings);
     });
@@ -129,6 +130,7 @@ export function createPausePanel(
   };
   slider('Mouse sensitivity', 'mouseSensitivity', (v) => `${v.toFixed(2)}x`);
   slider('Field of view', 'fov', (v) => `${Math.round(v)}°`);
+  slider('Volume', 'volume', (v) => `${Math.round(v * 100)}%`);
 
   const invert = el('label', 'setting toggle');
   const invertBox = el('input');
