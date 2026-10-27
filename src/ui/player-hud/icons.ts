@@ -32,6 +32,7 @@ export type IconId =
   | 'turret'
   | 'generator'
   | 'node'
+  | 'storage'
   | 'block-scrap'
   | 'block-composite'
   | 'block-alloy'
@@ -70,6 +71,7 @@ export const ICON_IDS: readonly IconId[] = [
   'turret',
   'generator',
   'node',
+  'storage',
   'block-scrap',
   'block-composite',
   'block-alloy',
@@ -491,6 +493,19 @@ const SPRITE_BODY = /* html */ `
   <path d="M24 2.4 L29.2 8.4 L24 14.4 L18.8 8.4 Z" fill="url(#ph-core)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
   <path d="M21.8 7.8 L24 5.2" stroke="#ffffff" stroke-opacity="0.85" stroke-width="1.4" stroke-linecap="round"/>
   <path d="M15.6 31.6 H20.4" stroke="#f6faff" stroke-opacity="0.6" stroke-width="1" stroke-linecap="round"/>
+</symbol>
+
+<symbol id="ph-i-storage" viewBox="0 0 48 48">
+  <path d="M8.4 43.2 H39.6 Q41.4 43.2 41 41.6 L40.2 38.2 H7.8 L7 41.6 Q6.6 43.2 8.4 43.2 Z" fill="url(#ph-steel-dark)" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
+  <rect x="7" y="12.4" width="34" height="25.8" rx="2.8" fill="url(#ph-steel)" stroke="${INK}" stroke-width="1.7" stroke-linejoin="round"/>
+  <rect x="7" y="12.4" width="34" height="5.2" rx="2.8" fill="url(#ph-steel-dark)" stroke="${INK}" stroke-width="1.5"/>
+  <path d="M13.4 20.6 V35.6 M18.2 20.6 V35.6 M29.8 20.6 V35.6 M34.6 20.6 V35.6" stroke="${INK}" stroke-opacity="0.42" stroke-width="1.4" stroke-linecap="round"/>
+  <rect x="20.4" y="20.2" width="7.2" height="15.4" rx="1.4" fill="#1b2a36" stroke="${INK}" stroke-width="1.3"/>
+  <rect x="21.8" y="22" width="4.4" height="2.4" rx="1" fill="url(#ph-core)"/>
+  <rect x="22.2" y="29" width="3.6" height="1.8" rx="0.9" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="0.8"/>
+  <rect x="8.4" y="32.6" width="3.8" height="3.8" rx="0.8" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="1"/>
+  <rect x="35.8" y="32.6" width="3.8" height="3.8" rx="0.8" fill="url(#ph-bronze)" stroke="${INK}" stroke-width="1"/>
+  <path d="M10.6 15.2 H21" stroke="#f6faff" stroke-opacity="0.7" stroke-width="1" stroke-linecap="round"/>
 </symbol>
 ${BLOCK_SYMBOLS}
 ${SHAPE_SYMBOLS}

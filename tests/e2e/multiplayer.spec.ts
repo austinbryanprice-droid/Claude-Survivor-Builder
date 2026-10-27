@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { MATERIAL, MODULE, MODULES, SHAPE, moduleShape, packState } from '../../src/shared/blocks';
 import { CYCLE_SECONDS, DAY_SECONDS } from '../../src/shared/daycycle';
+import { poolSlot } from '../../src/shared/economy';
 import { DEBRIS, POOL, RESEARCH } from '../../src/systems/economy/balance';
 import { needsResearch, notEnough, pieceCost } from '../../src/systems/economy/build-rules';
 import { NO_PLAYER } from '../../src/shared/protocol';
@@ -42,8 +43,11 @@ const TURRET_PRICE = MODULES.find((module) => module.id === MODULE.turret)!.cost
 const GENERATOR_NAME = MODULES.find((module) => module.id === MODULE.generator)!.name;
 const GENERATOR_STATE = packState(moduleShape(MODULE.generator, 0), 1);
 const NODE_STATE = packState(moduleShape(MODULE.node, 0), 1);
+const STORAGE_STATE = packState(moduleShape(MODULE.storage, 0), 1);
 /** The points that open the Power row of the ladder, which opens the Generator and the Power Node. */
 const POWER_AT = RESEARCH.groups[0].points;
+/** The points that open the Camp row, which opens the Storage. */
+const CAMP_AT = RESEARCH.groups.find((group) => group.id === 'camp')!.points;
 const SMALL = { width: 480, height: 270 };
 const FRAME_GAP_MS = 1500;
 
@@ -259,6 +263,18 @@ async function expectSeeEachOther(players: readonly Player[]): Promise<void> {
       .toEqual(names.filter((n) => n !== p.name).sort());
   }
 }
+
+/** Waits until this screen shows another player's avatar within two blocks of a spot. */
+const expectSeen = (viewer: Player, name: string, at: { x: number; z: number }) =>
+  expect
+    .poll(
+      async () => {
+        const seen = (await remotes(viewer)).find((r) => r.name === name);
+        return !!seen && Math.hypot(seen.x - at.x, seen.z - at.z) < 2;
+      },
+      { timeout: 60_000, message: `${viewer.name} sees ${name} in place` },
+    )
+    .toBe(true);
 
 async function closeAll(players: readonly Player[]): Promise<void> {
   await Promise.all(players.map((p) => p.context.close().catch(() => undefined)));
@@ -2189,17 +2205,6 @@ test.describe('multiplayer', () => {
           .toBe(lit);
       }
     };
-    /** Waits until this screen shows another player's avatar within two blocks of a spot. */
-    const expectSeen = (viewer: Player, name: string, at: { x: number; z: number }) =>
-      expect
-        .poll(
-          async () => {
-            const seen = (await remotes(viewer)).find((r) => r.name === name);
-            return !!seen && Math.hypot(seen.x - at.x, seen.z - at.z) < 2;
-          },
-          { ...slow, message: `${viewer.name} sees ${name} in place` },
-        )
-        .toBe(true);
     try {
       const code = await hostRoom(host);
       await joinRoom(ada, code);
@@ -2247,6 +2252,117 @@ test.describe('multiplayer', () => {
       await expectSameWorld(everyone, 2);
       await expectEverywhere(node, 'off', false, 'the Node');
       await expectEverywhere(turret, 'off', false, 'the turret');
+      expect(await rejectionsOf(host)).toEqual([]);
+      expect(await rejectionsOf(ada)).toEqual([]);
+      expectNoProblems(everyone);
+    } finally {
+      await closeAll(everyone);
+    }
+  });
+
+  test("a Storage lets the whole crew's pool hold more: a guest's build raises the ceiling on every screen, each says so and turns its count amber at the new ceiling, and the host breaking it takes the room back and leaves the stock", async ({
+    browser,
+    baseURL,
+  }) => {
+    // The crew's pool is the host's, and opens with plenty of every material.
+    const host = await openPlayer(browser, baseURL, 'Host', { stock: 200 });
+    const ada = await openPlayer(browser, baseURL, 'Ada');
+    const everyone: Player[] = [host, ada];
+    // A page draws a frame every 1.5 seconds here, and the screen only changes when one is drawn.
+    const slow = { timeout: 60_000 };
+    const ceilingWith = (storages: number) => POOL.cap + storages * POOL.perStorage;
+    const built = (storages: number) =>
+      `Storage built · the pool holds ${ceilingWith(storages)} of each`;
+    const gone = (storages: number) =>
+      `A Storage is gone · the pool holds ${ceilingWith(storages)} of each`;
+    const poolOf = (p: Player) => p.page.evaluate(() => window.__ashbound!.mp!.pool());
+    const rejectionsOf = async (p: Player) =>
+      (await p.page.evaluate(() => window.__ashbound!.mp!.rejections())).map((r) => r.reason);
+    const storageToasts = async (p: Player) =>
+      (await toasts(p.page)).filter((t) => /^Storage built|^A Storage is gone/.test(t));
+    /** The count on this screen's Scrap slot: amber (`data-full`) where the pool holds all it can. */
+    const scrapCount = (p: Player) =>
+      p.page.locator('.ph-slot').nth(poolSlot(MATERIAL.scrap)).locator('.ph-count');
+    /** Waits until every screen's pool holds this much of any material at most. */
+    const expectCeiling = async (storages: number) => {
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await poolOf(p)).cap, {
+            ...slow,
+            message: `${p.name} sees a ceiling of ${ceilingWith(storages)}`,
+          })
+          .toBe(ceilingWith(storages));
+      }
+    };
+    try {
+      const code = await hostRoom(host);
+      await joinRoom(ada, code);
+      await expectSeeEachOther(everyone);
+      for (const p of everyone) await recordToasts(p.page);
+      await expectCeiling(0);
+      await host.page.evaluate((n) => window.__ashbound!.mp!.setResearch(n), CAMP_AT);
+
+      // Ada goes out to a ring thirteen blocks from the Core, where the ground round her is open, and
+      // the host is told where she stands before she builds.
+      const adaAt = await hopFromTheCore(ada.page, 13, 0.9);
+      await expectSeen(host, 'Ada', adaAt);
+
+      // Her Storage stands in every world, and the pool of every screen can hold a Storage's share more.
+      const storage = await ada.page.evaluate(
+        ([state]) => window.__ashbound!.mp!.placeNear(3, 0, state!),
+        [STORAGE_STATE] as const,
+      );
+      await expectSameWorld(everyone, 1);
+      await expectCeiling(1);
+      for (const p of everyone) {
+        await expect
+          .poll(() => storageToasts(p), { ...slow, message: `${p.name} is told` })
+          .toEqual([built(1)]);
+      }
+
+      // The host fills the pool to the new ceiling, which no pool of 400 could hold: the count turns
+      // amber on both screens.
+      await host.page.evaluate(
+        ([material, amount]) => window.__ashbound!.mp!.setPool(material!, amount!),
+        [MATERIAL.scrap, ceilingWith(1)] as const,
+      );
+      for (const p of everyone) {
+        await expect
+          .poll(async () => (await poolOf(p)).stock[poolSlot(MATERIAL.scrap)], {
+            ...slow,
+            message: `${p.name} sees the pool full`,
+          })
+          .toBe(ceilingWith(1));
+        await expect(scrapCount(p), `${p.name}'s count is amber`).toHaveAttribute(
+          'data-full',
+          '',
+          slow,
+        );
+      }
+
+      // The host walks up to the Storage and breaks it: both ceilings fall, both screens say so, and what
+      // the pool holds above the lower ceiling stays, so the count stays amber.
+      const hostAt = { x: storage.x + 0.5 + 2, z: storage.z + 0.5 };
+      await standAt(host.page, hostAt.x, hostAt.z);
+      await expectSeen(ada, 'Host', hostAt);
+      await host.page.evaluate(([x, y, z]) => window.__ashbound!.mp!.breakBlock(x!, y!, z!), [
+        storage.x,
+        storage.y,
+        storage.z,
+      ] as const);
+      await expectSameWorld(everyone, 0);
+      await expectCeiling(0);
+      for (const p of everyone) {
+        await expect
+          .poll(() => storageToasts(p), { ...slow, message: `${p.name} is told it is gone` })
+          .toEqual([built(1), gone(0)]);
+        expect((await poolOf(p)).stock[poolSlot(MATERIAL.scrap)]).toBe(ceilingWith(1));
+        await expect(scrapCount(p), `${p.name}'s count stays amber`).toHaveAttribute(
+          'data-full',
+          '',
+          slow,
+        );
+      }
       expect(await rejectionsOf(host)).toEqual([]);
       expect(await rejectionsOf(ada)).toEqual([]);
       expectNoProblems(everyone);
