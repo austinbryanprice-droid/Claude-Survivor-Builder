@@ -212,15 +212,24 @@ test.describe('the title screen', () => {
     });
     const problems = await open(page, '?title=on&intro=on&debug&quality=low');
     await waitForTheRun(page);
+    // The screen gives up on a film whose code does not come after five seconds, and a slow runner
+    // draws too few frames for a test to see the mouse arrive and then let go inside that time. So
+    // the mouse is let go of in the page, in the task that finds it taken, and what the screen said
+    // at that moment is left for the test to read.
+    await page.evaluate(() => {
+      const letGo = (): void => {
+        if (!document.pointerLockElement) return;
+        document.removeEventListener('pointerlockchange', letGo);
+        const leaving = document.querySelector('.title')?.getAttribute('data-leaving');
+        document.documentElement.dataset.letGo = `${leaving}/${window.__ashbound?.title?.phase}`;
+        document.exitPointerLock();
+      };
+      document.addEventListener('pointerlockchange', letGo);
+    });
     await play(page).click();
-    await page.waitForFunction(
-      () => window.__ashbound?.title?.phase === 'leaving' && window.__ashbound.game.input.captured,
-      null,
-      { timeout: STATE_TIMEOUT },
-    );
-    await expect(page.locator('.title')).toHaveAttribute('data-leaving', 'black');
-
-    await page.evaluate(() => document.exitPointerLock());
+    await expect(page.locator('html')).toHaveAttribute('data-let-go', 'black/leaving', {
+      timeout: STATE_TIMEOUT,
+    });
     await expect(page.locator('.title')).toHaveAttribute('data-leaving', 'no', {
       timeout: STATE_TIMEOUT,
     });
