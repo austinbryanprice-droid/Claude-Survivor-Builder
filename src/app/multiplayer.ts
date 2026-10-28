@@ -35,7 +35,7 @@ import { wildHitboxOf } from '../systems/wildlife/balance';
 import { createRoomPanel } from '../ui/room-panel';
 import { browserStore } from './browser-storage';
 import { PlayerSync, type LocalPlayer } from './player-sync';
-import { createShotEffects, type ShotLogEntry } from './shot-effects';
+import { createShotEffects, type ShotEffects, type ShotLogEntry } from './shot-effects';
 
 /**
  * Multiplayer for the game page. It joins the pieces: the lobby (host, join, leave), the player's
@@ -244,6 +244,8 @@ export interface Multiplayer {
   readonly debug: MultiplayerDebug;
   /** The local player fired from the camera at `origin` along the unit vector `dir`: draws the bolt now, without waiting for the host. */
   predictShot(origin: Vec3, dir: Vec3): void;
+  /** Each bolt as this screen draws it and each machine's end as it is drawn: what the sound of the fight follows. */
+  readonly shots: Pick<ShotEffects, 'onDrawn' | 'onFelled'>;
   /** Call once per rendered frame. `dt` is the frame time in seconds. */
   update(dt: number): void;
   dispose(): void;
@@ -578,6 +580,10 @@ export function createMultiplayer(options: MultiplayerOptions): Multiplayer {
     lobby,
     debug,
     predictShot: (origin, dir) => shots.predict(origin, dir),
+    shots: {
+      onDrawn: (listener) => shots.onDrawn(listener),
+      onFelled: (listener) => shots.onFelled(listener),
+    },
     update(dt) {
       sync.update(dt);
       remotes.update(dt, hub.sampleRemotes());

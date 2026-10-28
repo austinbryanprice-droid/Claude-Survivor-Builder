@@ -223,11 +223,15 @@ const CLANG_RATIOS = [1, 2.17, 3.64, 5.12, 6.97] as const;
 const CLANG_LEVELS = [0.4, 0.26, 0.18, 0.12, 0.08] as const;
 const CLANG_DECAYS = [1.3, 0.8, 0.55, 0.38, 0.26] as const;
 
-/** Metal struck: five partials that are not whole multiples of one another, which is what makes a plate sound like a plate and not a bell. */
+/**
+ * Metal struck: five partials that are not whole multiples of one another, which is what makes a plate sound like a plate and not a bell.
+ * It rings for 1.3 seconds unless the cue says (`seconds`): a short one is a plate that is hit and does not ring.
+ */
 const clang: Voice = (env, when, cue) => {
   const { ctx } = env;
   const out = output(env, cue, 0.3);
   const hz = cue.hz ?? 240;
+  const ring = cue.seconds === undefined ? 1 : cue.seconds / (CLANG_DECAYS[0] as number);
   CLANG_RATIOS.forEach((ratio, i) => {
     const detune = 1 + (chance(cue.seed, i) - 0.5) * 0.008;
     partial(
@@ -237,7 +241,7 @@ const clang: Voice = (env, when, cue) => {
       hz * ratio * detune,
       when,
       CLANG_LEVELS[i] as number,
-      CLANG_DECAYS[i] as number,
+      (CLANG_DECAYS[i] as number) * ring,
       hz * ratio * detune,
       0,
       0.001,
@@ -384,6 +388,28 @@ const servo: Voice = (env, when, cue) => {
   click.connect(clickBand);
   clickBand.connect(clickGain);
   clickGain.connect(out);
+};
+
+/**
+ * A bolt let go: a bright tone that falls fast through its range, another an octave under it for
+ * body, and the crack of the discharge on the front. `hz` is where it starts, `to` where it ends and
+ * `seconds` how long the fall takes (a heavier gun is lower and a little longer).
+ */
+const zap: Voice = (env, when, cue) => {
+  const { ctx } = env;
+  const out = output(env, cue, 0.2);
+  const hz = cue.hz ?? 2400;
+  const to = cue.to ?? hz * 0.14;
+  const seconds = cue.seconds ?? 0.12;
+  partial(ctx, out, 'triangle', hz, when, 0.4, seconds * 1.2, to, seconds, 0.002);
+  partial(ctx, out, 'sine', hz * 0.5, when, 0.3, seconds * 1.4, to * 0.5, seconds, 0.002);
+  const crack = hiss(env, 'white', when, 0.04, cue.seed);
+  const bright = filter(ctx, 'highpass', 2200);
+  const gain = ctx.createGain();
+  shape(gain.gain, when, 0.14, 0.001, 0, 0.03);
+  crack.connect(bright);
+  bright.connect(gain);
+  gain.connect(out);
 };
 
 /** A machine's eye lighting: a short rising beep. */
@@ -567,6 +593,7 @@ export const VOICES: Readonly<Record<VoiceName, Voice>> = {
   ping,
   whoom,
   servo,
+  zap,
   blip,
   rumble,
   step,

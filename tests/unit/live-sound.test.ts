@@ -5,6 +5,7 @@ import {
   BUDGET,
   EARSHOT,
   KINDS,
+  NEAR,
   dropFor,
   effectForEdit,
   effectForHarvest,
@@ -378,6 +379,27 @@ describe('the sound of what people do, in Web Audio', () => {
     // The sounds die away, and the room is free again.
     ctx.currentTime += 2;
     expect(sound.effect(knock({ key: 2000 }))).toBe(true);
+  });
+
+  it('holds a sound close to the listener one step higher, so that a crowd farther off does not drown it', () => {
+    const { sound, play } = setup();
+    play(QUIET_SCENE, 0.1);
+    sound.listen(HERE);
+    const room = Math.floor(BUDGET.voices * BUDGET.share[KINDS.place.priority]);
+    const farOff = (key: number): Effect => knock({ key, at: { x: 40, y: 0, z: 0 } });
+    for (let key = 0; key < room; key++) expect(sound.effect(farOff(key))).toBe(true);
+    expect(sound.effect(farOff(room))).toBe(false);
+    expect(sound.stats.dropped).toBe(1);
+    // The same kind of sound a few blocks from the listener is let in where the far one was not,
+    const near = knock({ key: room + 1, at: { x: NEAR - 1, y: 0, z: 0 } });
+    expect(sound.effect(near)).toBe(true);
+    // but not past the room that the next step up has.
+    const higher = BUDGET.share[KINDS.place.priority + 1] as number;
+    const more = Math.floor(BUDGET.voices * higher) - room - 1;
+    for (let key = 0; key < more; key++) {
+      expect(sound.effect({ ...near, key: 5000 + key })).toBe(true);
+    }
+    expect(sound.effect({ ...near, key: 9000 })).toBe(false);
   });
 
   it('sends an effect through a bus of its own into the same room as the valley’s sound', () => {

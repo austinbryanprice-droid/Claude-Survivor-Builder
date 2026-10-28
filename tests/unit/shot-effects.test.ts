@@ -1,6 +1,12 @@
 import { Group } from 'three';
 import { describe, expect, it } from 'vitest';
-import { createShotEffects, type ShotSession } from '../../src/app/shot-effects';
+import {
+  createShotEffects,
+  type FelledEntry,
+  type ShotEffects,
+  type ShotLogEntry,
+  type ShotSession,
+} from '../../src/app/shot-effects';
 import { FX_COLOR, type ShotFx } from '../../src/engine/shot-fx';
 import { createEnemyPose, type EnemyPose } from '../../src/shared/enemy-state';
 import { WILD_SPECIES, createWildPose, type WildPose } from '../../src/shared/wildlife-state';
@@ -560,5 +566,187 @@ describe('a turret’s shot, drawn when the host reports it', () => {
     expect(player.calls.boltHeft).toEqual([1]);
     expect(player.calls.muzzleHeft).toEqual([1]);
     expect(player.effects.debug().shots[0]).not.toHaveProperty('heft');
+  });
+});
+
+describe('what the shots tell the sound', () => {
+  const CELL = [4, FLOOR, -6] as const;
+  const END = { x: -4.5, y: FLOOR + 0.5, z: -5.5 };
+
+  /** Listens to both observers, keeping what they were told. */
+  function listen(effects: ShotEffects) {
+    const drawn: ShotLogEntry[] = [];
+    const felled: FelledEntry[] = [];
+    const stops = [
+      effects.onDrawn((shot) => drawn.push(shot)),
+      effects.onFelled((end) => felled.push(end)),
+    ];
+    return { drawn, felled, stops };
+  }
+
+  it('tells of the player’s own click at once: from the gun, how long it flies, and the machine it struck', () => {
+    const { effects, calls } = setup({ enemies: [crawler(5, 0, -10)] });
+    const { drawn, felled } = listen(effects);
+    effects.predict(EYE, towardMachine(10));
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]).toMatchObject({
+      by: 1,
+      flags: SHOT_FLAG.enemy,
+      enemy: 5,
+      predicted: true,
+      from: gunAt(0, 0),
+    });
+    expect(drawn[0]?.arrives).toBeCloseTo(
+      flightOf(calls.bolt[0] as (typeof calls.bolt)[number]),
+      6,
+    );
+    expect(felled).toEqual([]);
+  });
+
+  it('names no machine for a click that struck the ground, and none for one that struck nothing', () => {
+    const { effects } = setup();
+    const { drawn } = listen(effects);
+    effects.predict(EYE, { x: 0, y: -1, z: 0 });
+    effects.predict(EYE, AHEAD);
+    expect(drawn.map((shot) => [shot.flags, shot.enemy])).toEqual([
+      [SHOT_FLAG.world, 0],
+      [0, 0],
+    ]);
+  });
+
+  it('tells nothing of the host’s word on the player’s own click, except where a machine falls apart', () => {
+    const { effects } = setup({ enemies: [crawler(5, 0, -10)] });
+    const { drawn, felled } = listen(effects);
+    effects.predict(EYE, towardMachine(10));
+    drawn.length = 0;
+    effects.hear({ by: 1, x: 0, y: 10.5, z: -9.4, flags: SHOT_FLAG.enemy, enemy: 5 });
+    expect(drawn).toEqual([]);
+    expect(felled).toEqual([]);
+    effects.update(0.02);
+    effects.hear({
+      by: 1,
+      x: 0,
+      y: 10.5,
+      z: -9.4,
+      flags: SHOT_FLAG.enemy | SHOT_FLAG.kill,
+      enemy: 5,
+    });
+    expect(drawn).toEqual([]);
+    expect(felled).toHaveLength(1);
+    expect(felled[0]).toMatchObject({ x: 0, y: 10.5, z: -9.4, enemy: 5 });
+    // It falls when the bolt that felled it lands, which is a little after the word.
+    expect(felled[0]?.after).toBeGreaterThan(0);
+    expect(felled[0]?.after).toBeLessThanOrEqual(0.5);
+  });
+
+  it('tells of another player’s shot when it is drawn: from their gun, with the time it takes to land', () => {
+    const { effects, calls } = setup({ remotes: [remote(2, 2, 4, 0)] });
+    const { drawn, felled } = listen(effects);
+    effects.hear({ by: 2, x: 4, y: 11, z: -22, flags: SHOT_FLAG.enemy | SHOT_FLAG.kill, enemy: 9 });
+    const flight = flightOf(calls.bolt[0] as (typeof calls.bolt)[number]);
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]).toMatchObject({
+      by: 2,
+      enemy: 9,
+      predicted: false,
+      from: gunAt(4, 0),
+      x: 4,
+      y: 11,
+      z: -22,
+    });
+    expect(drawn[0]?.arrives).toBeCloseTo(flight, 6);
+    expect(felled).toHaveLength(1);
+    expect(felled[0]).toMatchObject({ x: 4, y: 11, z: -22, enemy: 9 });
+    expect(felled[0]?.after).toBeCloseTo(flight, 6);
+  });
+
+  it('still tells of a shot whose shooter is not on this screen, with no gun and no time to land', () => {
+    const { effects } = setup();
+    const { drawn, felled } = listen(effects);
+    effects.hear({ by: 2, x: 4, y: 10, z: -12, flags: SHOT_FLAG.enemy | SHOT_FLAG.kill, enemy: 9 });
+    expect(drawn[0]).toMatchObject({ from: null, arrives: 0, enemy: 9 });
+    expect(felled[0]).toMatchObject({ after: 0, enemy: 9 });
+  });
+
+  it('tells of a click whose pose cannot be read as having no gun to fire from', () => {
+    const { effects, leave } = setup({ enemies: [crawler(5, 0, -10)] });
+    const { drawn } = listen(effects);
+    leave();
+    effects.predict(EYE, towardMachine(10));
+    expect(drawn[0]).toMatchObject({ from: null, arrives: 0, enemy: 5 });
+  });
+
+  it('tells of a turret’s shot with its cell, the weight of its gun and where the muzzle is', () => {
+    const { effects, calls } = setup({ levelOfTurret: () => 3 });
+    const { drawn, felled } = listen(effects);
+    effects.hear({
+      by: 0,
+      ...END,
+      flags: SHOT_FLAG.enemy | SHOT_FLAG.kill,
+      enemy: 9,
+      turret: CELL,
+    });
+    const flight = flightOf(calls.bolt[0] as (typeof calls.bolt)[number]);
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]).toMatchObject({
+      by: 0,
+      turret: CELL,
+      heft: turretLevel(3).heft,
+      enemy: 9,
+      from: turretMuzzle(...CELL, END.x, END.y, END.z, { x: 0, y: 0, z: 0 }),
+    });
+    expect(drawn[0]?.arrives).toBeCloseTo(flight, 6);
+    expect(felled[0]).toMatchObject({ ...END, enemy: 9 });
+    expect(felled[0]?.after).toBeCloseTo(flight, 6);
+  });
+
+  it('tells of a machine’s end only when one falls, and of a bolt as many times as it is drawn', () => {
+    const { effects } = setup({ remotes: [remote(2, 2, 4, 0)] });
+    const { drawn, felled } = listen(effects);
+    effects.hear({ by: 2, x: 4, y: 11, z: -12, flags: SHOT_FLAG.enemy, enemy: 9 });
+    effects.hear({ by: 2, x: 4, y: 11, z: -12, flags: SHOT_FLAG.world, enemy: 0 });
+    expect(drawn).toHaveLength(2);
+    expect(felled).toEqual([]);
+  });
+
+  it('tells of a bolt that struck a creature as that, and never of a creature as a machine that fell', () => {
+    const { effects } = setup({ wildlife: [stag(5, 0, -10)], remotes: [remote(2, 2, 4, 0)] });
+    const { drawn, felled } = listen(effects);
+    // The player's own click, as this screen sees the stag.
+    effects.predict(EYE, towardMachine(10));
+    // The host's word that it fell draws no second bolt and tells nothing of a machine's end.
+    effects.hear({
+      by: 1,
+      x: 0,
+      y: 10.5,
+      z: -9.4,
+      flags: SHOT_FLAG.wild | SHOT_FLAG.kill,
+      enemy: 5,
+    });
+    // Another player's bolt on a creature, which falls: a creature's id is not a machine's.
+    effects.hear({ by: 2, x: 4, y: 11, z: -12, flags: SHOT_FLAG.wild | SHOT_FLAG.kill, enemy: 9 });
+    expect(drawn.map((shot) => [shot.flags, shot.enemy, shot.predicted])).toEqual([
+      [SHOT_FLAG.wild, 5, true],
+      [SHOT_FLAG.wild | SHOT_FLAG.kill, 9, false],
+    ]);
+    expect(felled).toEqual([]);
+  });
+
+  it('stops telling when a listener lets go, and keeps telling the others', () => {
+    const { effects } = setup({ remotes: [remote(2, 2, 4, 0)] });
+    const first = listen(effects);
+    const second = listen(effects);
+    effects.hear({ by: 2, x: 4, y: 11, z: -22, flags: SHOT_FLAG.enemy | SHOT_FLAG.kill, enemy: 9 });
+    for (const stop of first.stops) stop();
+    effects.hear({ by: 2, x: 4, y: 11, z: -22, flags: SHOT_FLAG.enemy | SHOT_FLAG.kill, enemy: 9 });
+    expect([first.drawn.length, first.felled.length]).toEqual([1, 1]);
+    expect([second.drawn.length, second.felled.length]).toEqual([2, 2]);
+  });
+
+  it('records the same things in the log that it tells', () => {
+    const { effects } = setup({ remotes: [remote(2, 2, 4, 0)] });
+    const { drawn } = listen(effects);
+    effects.hear({ by: 2, x: 4, y: 11, z: -22, flags: SHOT_FLAG.enemy, enemy: 9 });
+    expect(effects.debug().shots).toEqual(drawn);
   });
 });
