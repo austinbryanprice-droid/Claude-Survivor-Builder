@@ -295,6 +295,36 @@ describe('the film’s voices', () => {
   });
 });
 
+describe('the zap', () => {
+  /** The pitch events of each oscillator a zap makes, in the order it makes them. */
+  const pitches = (cue: Partial<Cue>) => {
+    const { ctx, env } = setup();
+    const before = ctx.nodes.length;
+    VOICES.zap(env, 3, { ...bare('zap'), ...cue });
+    return ctx.nodes
+      .slice(before)
+      .filter((node): node is FakeOscillator => node instanceof FakeOscillator)
+      .map((oscillator) => oscillator.frequency.events);
+  };
+
+  it('falls from its pitch to the pitch it is told to fall to, in the time it is told, with a tone an octave under it', () => {
+    const [tone, under] = pitches({ hz: 3000, to: 400, seconds: 0.2 });
+    expect(tone?.[0]).toMatchObject({ type: 'set', value: 3000, time: 3 });
+    expect(tone?.[1]).toMatchObject({ type: 'exponential', value: 400 });
+    expect(tone?.[1]?.time).toBeCloseTo(3.2, 9);
+    expect(under?.[0]?.value).toBeCloseTo(1500, 9);
+    expect(under?.[1]?.value).toBeCloseTo(200, 9);
+    expect(under?.[1]?.time).toBeCloseTo(3.2, 9);
+  });
+
+  it('falls a long way and fast when it is told nothing', () => {
+    const [tone] = pitches({});
+    expect(tone?.[0]?.value).toBe(2400);
+    expect(tone?.[1]?.value).toBeLessThan(2400 / 5);
+    expect((tone?.[1]?.time ?? 0) - 3).toBeLessThan(0.2);
+  });
+});
+
 describe('the film’s beds', () => {
   const NAMES = Object.keys(BEDS) as BedName[];
 

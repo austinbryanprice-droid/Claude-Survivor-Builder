@@ -44,6 +44,7 @@ export type VoiceName =
   | 'ping'
   | 'whoom'
   | 'servo'
+  | 'zap'
   | 'blip'
   | 'rumble'
   | 'step'
@@ -100,6 +101,7 @@ const FADERS: Readonly<Record<VoiceName, number>> = {
   ping: -3,
   whoom: -9,
   servo: 0,
+  zap: 0,
   blip: 0,
   rumble: -4,
   step: 0,
