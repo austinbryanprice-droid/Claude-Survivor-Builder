@@ -270,6 +270,7 @@ export function createApp({ canvas, search, buildId }: AppOptions): App {
               core: () => valley?.voxels.outpost ?? null,
               power: () => valley?.power ?? null,
               hands: building,
+              shots: shooting.shots,
             });
             if (flags.debug && window.__ashbound) window.__ashbound.sound = gameSound.debug;
           })

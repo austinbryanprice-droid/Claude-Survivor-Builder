@@ -7,11 +7,25 @@ import {
   effectForRefusal,
   effectsForPower,
 } from '../shared/effect-sound';
+import { Fall, MachineEdges } from '../shared/fight-edges';
+import {
+  effectForCoreHit,
+  effectForFelled,
+  effectForHurt,
+  effectForMachine,
+  effectsForBolt,
+  effectsForSurvival,
+  type FightPlaces,
+} from '../shared/fight-sound';
 import { QUIET_SCENE, SceneTracker, cuesForEvent, type SoundScene } from '../shared/game-sound';
+import type { Vec3 } from '../shared/look';
 import { PLAYER } from '../shared/movement';
-import { createReading, type SurvivalEvent } from '../shared/survival-state';
+import { createReading, type SurvivalEvent, type SurvivalReading } from '../shared/survival-state';
+import { createVitalsReading } from '../shared/vitals-state';
+import { CORE_HEIGHT } from '../world/outpost';
 import type { BuildControls } from './build-controls';
 import type { PowerWatcher } from './power-watcher';
+import type { ShotEffects } from './shot-effects';
 
 /**
  * The sound of the valley while it is played: the wind, the Core's hum and the low note of the
@@ -21,7 +35,10 @@ import type { PowerWatcher } from './power-watcher';
  * what the host's player hears. What people do in it is heard from where the player stands: every
  * block set down or broken, every piece raised, every module that comes on or goes dark, every
  * heap stripped (anyone's, as the host announces them) and every click of the player's own that
- * is turned away.
+ * is turned away. The fight is heard the same way: every bolt from the gun or turret that fired it
+ * and where it lands, a machine rising, winding up a bite and landing it, the Core and the player
+ * taking blows, a machine falling apart, a breacher going off, a player going down and coming
+ * back, and the run being lost.
  *
  * It loads on its own once the game is up. Browsers keep a page silent until it has been clicked,
  * so the first click or key press on the page unlocks the audio, whatever it was for. The intro
@@ -32,21 +49,35 @@ import type { PowerWatcher } from './power-watcher';
 
 /** Seconds the valley takes to fade out when the intro film begins over it. */
 const HUSH_SECONDS = 0.6;
-/** Events kept for the debug page: enough for a night. */
-const KEPT_EVENTS = 400;
+/** How far above the feet the middle of a player's body is. */
+const BODY_MIDDLE = 1;
+/** Events kept for the debug page: a night of the valley's own sounds and of a fight in it is a good deal under this, so a test can count them from the start. */
+const KEPT_EVENTS = 2000;
 /** What counts as a gesture that lets the page make sound. */
 const GESTURES = ['pointerdown', 'mousedown', 'keydown', 'touchend'] as const;
 
 export interface SoundAttachOptions {
   readonly game: Game;
   /** The run as this peer sees it: the clock, what the host announces, where the machines are, the changes made to the world and the heaps stripped. */
-  readonly session: Pick<GameSession, 'survival' | 'sampleEnemies' | 'onEvent' | 'economy'>;
+  readonly session: Pick<
+    GameSession,
+    | 'survival'
+    | 'vitals'
+    | 'localId'
+    | 'sampleEnemies'
+    | 'sampleRemotes'
+    | 'onEvent'
+    | 'onRun'
+    | 'economy'
+  >;
   /** Where the Core stands in the valley being played, or null where there is none. */
-  readonly core: () => { readonly x: number; readonly z: number } | null;
+  readonly core: () => { readonly x: number; readonly z: number; readonly baseY: number } | null;
   /** The valley's power, which says which modules come on and go dark; null before the first valley. A getter: a joining player's valley replaces the first one. */
   readonly power: () => Pick<PowerWatcher, 'onFlips'> | null;
   /** The player's hands, which say when a click is turned away. */
   readonly hands: Pick<BuildControls, 'onRefused'>;
+  /** The bolts as this screen draws them, and the machines' ends: the fight is heard from what is drawn. */
+  readonly shots: Pick<ShotEffects, 'onDrawn' | 'onFelled'>;
 }
 
 /** What the `?debug` page and the tests can see of the sound. */
@@ -64,10 +95,22 @@ export interface GameSound {
   dispose(): void;
 }
 
-export function attachSound({ game, session, core, power, hands }: SoundAttachOptions): GameSound {
+export function attachSound({
+  game,
+  session,
+  core,
+  power,
+  hands,
+  shots,
+}: SoundAttachOptions): GameSound {
   const { audio } = game;
   const reading = createReading();
   const tracker = new SceneTracker();
+  const vitals = createVitalsReading();
+  /** What the fight did since the last frame: the machines' moments, and the Core's and the player's losses. */
+  const edges = new MachineEdges();
+  const coreFall = new Fall();
+  const hurtFall = new Fall();
   const events: LiveSoundEvent[] = [];
   /** Where the player's head is and which way they face: what everything people do is placed against. */
   const ears: { x: number; y: number; z: number; yaw: number } = { x: 0, y: 0, z: 0, yaw: 0 };
@@ -102,6 +145,51 @@ export function attachSound({ game, session, core, power, hands }: SoundAttachOp
     if (!where) return null;
     const { player } = game;
     return Math.hypot(where.x - player.x, where.z - player.z);
+  };
+
+  /** The middle of the Core, where its blows are heard from. */
+  const coreMiddle = (): Vec3 | null => {
+    const where = core();
+    return where ? { x: where.x, y: where.baseY + CORE_HEIGHT / 2, z: where.z } : null;
+  };
+
+  /** Where the others are, and where the Core is, for the words of the host that are about them. */
+  const places: FightPlaces = {
+    get localId() {
+      return session.localId;
+    },
+    placeOf(id) {
+      for (const remote of session.sampleRemotes()) {
+        if (remote.id === id) return { x: remote.x, y: remote.y + BODY_MIDDLE, z: remote.z };
+      }
+      return null;
+    },
+    get core() {
+      return coreMiddle();
+    },
+  };
+
+  /** Looks at the fight again for what changed in it since the last look, and sounds what it finds. */
+  const hearFight = (sound: LiveSound, clock: SurvivalReading): void => {
+    for (const moment of edges.look(session.sampleEnemies())) {
+      const effect = effectForMachine(moment);
+      if (effect) sound.effect(effect);
+    }
+    const lostCore = coreFall.look(clock.coreMax > 0 ? clock.coreHealth : Number.NaN);
+    if (lostCore > 0) {
+      const at = coreMiddle();
+      if (at) sound.effect(effectForCoreHit(at, lostCore));
+    }
+    session.vitals.read(vitals);
+    const lostHealth = hurtFall.look(vitals.healthMax > 0 ? vitals.health : Number.NaN);
+    if (lostHealth > 0) sound.effect(effectForHurt(lostHealth));
+  };
+
+  /** Forgets how the fight stood, so that the next look only learns: for a new run, and for frames that nobody listens to. */
+  const forget = (): void => {
+    edges.reset();
+    coreFall.reset();
+    hurtFall.reset();
   };
 
   /** Builds the sound once the page has an audio context to make it in. */
@@ -173,10 +261,14 @@ export function attachSound({ game, session, core, power, hands }: SoundAttachOp
         live = open();
         if (live) hear(live);
       }
+      forget();
       return;
     }
     // The film has its own score, and the valley comes up when it is over.
-    if (game.cinematic) return;
+    if (game.cinematic) {
+      forget();
+      return;
+    }
     hear(live);
     const clock = session.survival.read(reading);
     scene = tracker.update(dt, {
@@ -189,6 +281,7 @@ export function attachSound({ game, session, core, power, hands }: SoundAttachOp
       over: clock.over,
     });
     live.update(dt, scene);
+    hearFight(live, clock);
     // Once the page is let make sound there is nothing left to wake.
     if (audio.context?.state === 'running') stopListening();
   });
@@ -199,10 +292,28 @@ export function attachSound({ game, session, core, power, hands }: SoundAttachOp
     if (live.stats.beds > 0 || live.stats.voices > 0) hush(HUSH_SECONDS);
   });
 
-  /** The host's words that have a sound (nightfall, a wave coming, the dawn), played when they come. */
+  /** The host's words that have a sound (nightfall, a wave coming, the dawn; a player down or back, a breacher gone off, the run lost), played when they come. */
   const stopEvents = session.survival.onEvent((event: SurvivalEvent) => {
     if (!live || game.cinematic) return;
     live.playAll(cuesForEvent(event, game.world.seed));
+    for (const effect of effectsForSurvival(event, places)) live.effect(effect);
+  });
+
+  /** A new run starts the fight over: its machines and meters are not the last run's. */
+  const stopRun = session.onRun(forget);
+
+  /** A bolt, anyone's, as this screen draws it: from the gun that fired it and where it lands, when it lands. */
+  const stopBolts = shots.onDrawn((bolt) => {
+    if (!live || game.cinematic) return;
+    const kind = bolt.enemy > 0 ? edges.kindOf(bolt.enemy) : -1;
+    for (const effect of effectsForBolt(bolt, bolt.by === session.localId, kind))
+      live.effect(effect);
+  });
+
+  /** A machine falling apart, when the bolt that fells it lands. */
+  const stopFelled = shots.onFelled((felled) => {
+    if (!live || game.cinematic) return;
+    live.effect(effectForFelled(felled, edges.kindOf(felled.enemy), felled.after));
   });
 
   /** What people do in the valley, anyone's, as the host's world applies it: placed where it happened. */
@@ -241,6 +352,9 @@ export function attachSound({ game, session, core, power, hands }: SoundAttachOp
       stopFrames();
       stopFilm();
       stopEvents();
+      stopRun();
+      stopBolts();
+      stopFelled();
       stopEdits();
       stopStrips();
       stopRefusals();
