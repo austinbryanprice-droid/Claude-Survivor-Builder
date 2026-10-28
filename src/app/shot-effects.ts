@@ -1,5 +1,6 @@
 import { FX_COLOR, type ShotFx } from '../engine/shot-fx';
-import type { GameSession } from '../net/session';
+import { Emitter } from '../net/emitter';
+import type { GameSession, Unsubscribe } from '../net/session';
 import type { Vec3 } from '../shared/look';
 import { PLAYER } from '../shared/movement';
 import { colorForSlot } from '../shared/player-colors';
@@ -57,6 +58,21 @@ export interface ShotLogEntry {
   readonly turret?: readonly [x: number, y: number, z: number];
   /** How heavy the bolt was drawn, for a turret's shot: the weight of the gun of the level this screen has in that cell. */
   readonly heft?: number;
+  /** The muzzle the bolt was drawn from. Null where the shooter's gun could not be found, and for the host's word on the player's own click, which draws nothing. */
+  readonly from: Vec3 | null;
+  /** Seconds the bolt takes to land, as drawn; 0 where nothing was drawn. */
+  readonly arrives: number;
+  /** The machine it struck, as this screen saw it (a click) or as the host said, or 0. */
+  readonly enemy: number;
+}
+
+/** A machine's end as it was drawn: where, how long from now (the bolt that fells it may still be on its way) and which machine. */
+export interface FelledEntry {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly after: number;
+  readonly enemy: number;
 }
 
 export interface ShotEffects {
@@ -70,6 +86,14 @@ export interface ShotEffects {
   hear(shot: ShotEvent): void;
   /** Lets `dt` seconds pass for the light. */
   update(dt: number): void;
+  /**
+   * Calls `listener` with each bolt as it is drawn, for the sound of it: the local player's click when
+   * it is drawn, everyone else's and the turrets' when the host reports them, and not the host's word
+   * on the click, which draws nothing.
+   */
+  onDrawn(listener: (shot: ShotLogEntry) => void): Unsubscribe;
+  /** Calls `listener` with each machine's end as it is drawn. */
+  onFelled(listener: (felled: FelledEntry) => void): Unsubscribe;
   /** The latest shots drawn, newest last, and the light playing now. */
   debug(): { shots: ShotLogEntry[]; live: ReturnType<ShotFx['live']> };
 }
@@ -97,6 +121,11 @@ export function createShotEffects({
   const trace = createShotTrace();
   const creatureTrace = createShotTrace();
   const shots: ShotLogEntry[] = [];
+  const drawn = new Emitter<ShotLogEntry>();
+  const felled = new Emitter<FelledEntry>();
+  /** Whether the last bolt was drawn from a gun that was found, and how long it takes to land: what the log records of it. */
+  let armedLast = false;
+  let arrivesLast = 0;
   /** The light's own clock, in seconds, so that the host's word can wait for a bolt that is still on its way. */
   let now = 0;
   /** When the player's latest bolt lands, on that clock. */
@@ -155,6 +184,8 @@ export function createShotEffects({
     if (flags & SHOT_FLAG.enemy) fx.impact(mark, way, FX_COLOR.hit, arrives);
     else if (flags & SHOT_FLAG.wild) fx.impact(mark, way, FX_COLOR.wild, arrives);
     else if (flags & SHOT_FLAG.world) fx.impact(mark, way, color, arrives);
+    armedLast = armed;
+    arrivesLast = arrives;
     return arrives;
   };
 
@@ -181,19 +212,33 @@ export function createShotEffects({
     return draw(FX_COLOR.turret, flags, null, true, heft);
   };
 
-  /** A machine falls apart in a burst of fire at the mark; a creature falls in a puff of dust. */
-  const falls = (flags: number, delay: number): void => {
-    if (flags & SHOT_FLAG.wild) fx.puff(mark, delay);
-    else fx.burst(mark, delay);
+  /**
+   * A machine falls apart in a burst of fire at the mark, `after` seconds from now, and its end is told
+   * to the listeners of `onFelled`; a creature falls in a puff of dust, which they are not told of.
+   */
+  const falls = (flags: number, after: number, enemy: number): void => {
+    if (flags & SHOT_FLAG.wild) {
+      fx.puff(mark, after);
+      return;
+    }
+    fx.burst(mark, after);
+    felled.emit({ x: mark.x, y: mark.y, z: mark.z, after, enemy });
   };
 
+  /**
+   * Writes a shot into the log and returns the entry. `enemy` is the machine it struck (or, with
+   * `SHOT_FLAG.wild`, the creature), or 0, and `drawnNow` whether a bolt was drawn for it just now
+   * (the host's word on the player's own click draws none, since the click drew its bolt already).
+   */
   const remember = (
     by: PlayerId,
     flags: number,
     predicted: boolean,
+    enemy: number,
+    drawnNow: boolean,
     turret?: { readonly cell: readonly [number, number, number]; readonly heft: number },
-  ): void => {
-    shots.push({
+  ): ShotLogEntry => {
+    const entry: ShotLogEntry = {
       by,
       flags,
       x: mark.x,
@@ -201,8 +246,13 @@ export function createShotEffects({
       z: mark.z,
       predicted,
       ...(turret ? { turret: turret.cell, heft: turret.heft } : {}),
-    });
+      from: drawnNow && armedLast ? { x: gun.x, y: gun.y, z: gun.z } : null,
+      arrives: drawnNow ? arrivesLast : 0,
+      enemy,
+    };
+    shots.push(entry);
     if (shots.length > REMEMBERED_SHOTS) shots.shift();
+    return entry;
   };
 
   return {
@@ -221,6 +271,7 @@ export function createShotEffects({
       );
       let flags = trace.flags;
       let distance = trace.distance;
+      let struck = flags & SHOT_FLAG.enemy ? (bodies[trace.index]?.id ?? 0) : 0;
       // A creature nearer than whatever the bolt would have stopped at takes it, as the host will judge.
       const creatures = session.sampleWildlife();
       if (creatures.length > 0) {
@@ -238,13 +289,14 @@ export function createShotEffects({
         if (creatureTrace.flags & SHOT_FLAG.enemy) {
           flags = SHOT_FLAG.wild;
           distance = creatureTrace.distance;
+          struck = creatures[creatureTrace.index]?.id ?? 0;
         }
       }
       mark.x = origin.x + dir.x * distance;
       mark.y = origin.y + dir.y * distance;
       mark.z = origin.z + dir.z * distance;
       landing = now + fly(session.localId, flags, dir);
-      remember(session.localId, flags, true);
+      drawn.emit(remember(session.localId, flags, true, struck, true));
     },
 
     hear(shot) {
@@ -254,26 +306,32 @@ export function createShotEffects({
       if (shot.turret) {
         const heft = heftOf(shot.turret);
         const arrives = flyFromTurret(shot.turret, shot.flags, heft);
-        if (shot.flags & SHOT_FLAG.kill) fx.burst(mark, arrives);
-        remember(shot.by, shot.flags, false, { cell: shot.turret, heft });
+        drawn.emit(
+          remember(shot.by, shot.flags, false, shot.enemy, true, { cell: shot.turret, heft }),
+        );
+        if (shot.flags & SHOT_FLAG.kill) falls(shot.flags, arrives, shot.enemy);
         return;
       }
       if (shot.by === session.localId) {
         // The click drew this bolt already. What the host adds is the end of a machine or a creature,
         // which falls when the bolt that felled it lands: on a fast link the word can come back before that.
         if (shot.flags & SHOT_FLAG.kill)
-          falls(shot.flags, Math.min(Math.max(0, landing - now), LONGEST_WAIT));
+          falls(shot.flags, Math.min(Math.max(0, landing - now), LONGEST_WAIT), shot.enemy);
+        remember(shot.by, shot.flags, false, shot.enemy, false);
       } else {
         const arrives = fly(shot.by, shot.flags, null);
-        if (shot.flags & SHOT_FLAG.kill) falls(shot.flags, arrives);
+        drawn.emit(remember(shot.by, shot.flags, false, shot.enemy, true));
+        if (shot.flags & SHOT_FLAG.kill) falls(shot.flags, arrives, shot.enemy);
       }
-      remember(shot.by, shot.flags, false);
     },
 
     update(dt) {
       now += Math.max(0, dt);
       fx.update(dt);
     },
+
+    onDrawn: (listener) => drawn.on(listener),
+    onFelled: (listener) => felled.on(listener),
 
     debug() {
       return { shots: [...shots], live: fx.live() };
