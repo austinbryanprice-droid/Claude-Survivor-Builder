@@ -137,6 +137,23 @@ describe('where a sound is heard from', () => {
     expect(heard.muffle).toBeGreaterThan(ahead);
   });
 
+  it('hears a great sound from twice as far, as if it were half as far, from the side it really is on', () => {
+    const far = EARSHOT + 20;
+    expect(hearAt(HERE, far, 0, 0, heard)).toBe(false);
+    expect(hearAt(HERE, far, 0, 0, heard, 2)).toBe(true);
+    expect(heard.drop).toBeCloseTo(dropFor(far / 2), 9);
+    expect(heard.pan).toBeGreaterThan(0.5);
+    expect(heard.room).toBeCloseTo(
+      SPOT.room * (far / 2 / EARSHOT) ** 2 * (3 - 2 * (far / 2 / EARSHOT)),
+      9,
+    );
+    // But not from beyond twice earshot, and it is no louder near than a knock would be.
+    expect(hearAt(HERE, 2 * EARSHOT + 1, 0, 0, heard, 2)).toBe(false);
+    hearAt(HERE, 6, 0, 0, heard, 2);
+    expect(heard.drop).toBeGreaterThanOrEqual(dropFor(6));
+    expect(heard.drop).toBeCloseTo(dropFor(3), 9);
+  });
+
   it('makes nothing of a sound beyond earshot, or for a listener that is nowhere', () => {
     const untouched = { drop: -1, pan: 0.5, muffle: 0.5, room: 0.5 };
     const out = { ...untouched };
@@ -208,6 +225,27 @@ describe('the governor', () => {
     let more = 0;
     for (let i = 0; i < 20; i++) if (governor.admit('refuse', 1, 101 + i, 0)) more++;
     expect(more).toBe(20);
+  });
+
+  it('holds a sound that is near the listener one step higher than the same sound far off, up to the sounds that answer the hand', () => {
+    const governor = new Governor(10);
+    // Priority 1 may fill 65% of ten, priority 2 80%: a near block set down is priority 2.
+    let far = 0;
+    for (let i = 0; i < 20; i++) if (governor.admit('place', 1, 10 + i * 0.001, i, false)) far++;
+    expect(far).toBe(6);
+    let near = 0;
+    for (let i = 0; i < 20; i++)
+      if (governor.admit('place', 1, 10.1 + i * 0.001, 100 + i, true)) near++;
+    expect(near).toBe(2);
+    // The ceiling of what nearness lifts is priority 3: it never reaches the reserve of the sounds that must always be heard.
+    const crowded = new Governor(10);
+    for (let i = 0; i < 10; i++) crowded.admit('refuse', 1, 5 + i * 0.001, i);
+    expect(crowded.admit('place', 1, 5.02, 77, true)).toBe(false);
+    expect(crowded.admit('hurt', 1, 5.03, 78, true)).toBe(true);
+    // And a sound already as high as that is not held higher.
+    const full = new Governor(10);
+    for (let i = 0; i < 10; i++) full.admit('refuse', 1, 5 + i * 0.001, i);
+    expect(full.admit('refuse', 1, 5.1, 99, true)).toBe(false);
   });
 
   it('counts a voice again only for as long as it sounds', () => {

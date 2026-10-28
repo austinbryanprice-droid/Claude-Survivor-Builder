@@ -100,13 +100,23 @@ export function createHeard(): Heard {
 
 /**
  * How a sound made at (x, y, z) reaches `listener`, written into `out`. False where it is beyond
- * earshot (or the listener is nowhere), in which case `out` is not touched.
+ * earshot (or the listener is nowhere), in which case `out` is not touched. A sound that `carries`
+ * twice as far as a knock does (a great blast) is heard from twice as far: its loss, dullness and
+ * room are those of half the distance, while the side it comes from is where it really is.
  */
-export function hearAt(listener: Listener, x: number, y: number, z: number, out: Heard): boolean {
+export function hearAt(
+  listener: Listener,
+  x: number,
+  y: number,
+  z: number,
+  out: Heard,
+  carries = 1,
+): boolean {
   const dx = x - listener.x;
   const dy = y - listener.y;
   const dz = z - listener.z;
-  const distance = Math.hypot(dx, dy, dz);
+  const there = Math.hypot(dx, dy, dz);
+  const distance = there / carries;
   if (!(distance <= EARSHOT)) return false;
   const flat = Math.hypot(dx, dz);
   let pan = 0;
@@ -123,7 +133,7 @@ export function hearAt(listener: Listener, x: number, y: number, z: number, out:
   out.drop = dropFor(distance);
   out.pan = pan;
   out.muffle = clamp01(
-    far * smooth((distance - from) / (to - from)) + shadow * behind * smooth(distance / SPOT.close),
+    far * smooth((distance - from) / (to - from)) + shadow * behind * smooth(there / SPOT.close),
   );
   out.room = SPOT.room * smooth(distance / EARSHOT);
   return true;
@@ -186,9 +196,36 @@ export const KINDS = {
   refuse: { priority: 3, gap: 0.2, life: 0.3 },
   /** A heap stripped. */
   harvest: { priority: 1, gap: 0.07, life: 0.4 },
+  /** The fight (`fight-sound.ts`). The player's own gun let go and their bolt landing on a machine answer their hand, so they are heard in a crowd; anyone else's and a turret's are not as sure of it. */
+  fire: { priority: 3, gap: 0.05, life: 0.3 },
+  strike: { priority: 3, gap: 0.05, life: 0.3 },
+  shot: { priority: 2, gap: 0.05, life: 0.3 },
+  hit: { priority: 2, gap: 0.05, life: 0.3 },
+  spark: { priority: 1, gap: 0.05, life: 0.2 },
+  /** A machine felled is what the fight is for, so it is among the last to be turned away. */
+  fell: { priority: 3, gap: 0.08, life: 0.8 },
+  /** A machine winding up a bite or a zap, the blow landing, and a breacher charging. */
+  windup: { priority: 2, gap: 0.2, life: 0.5 },
+  bite: { priority: 2, gap: 0.15, life: 0.4 },
+  charge: { priority: 3, gap: 1, life: 1.4 },
+  /** A machine coming out of the ground: a detail the ear will not miss. */
+  rise: { priority: 0, gap: 0.25, life: 0.8 },
+  /** Cells of material a felled machine leaves in the pool. */
+  drop: { priority: 1, gap: 0.1, life: 0.4 },
+  /** What happens to a breacher's blast, to the Core and to the crew. A swarm at the Core is a drumming of blows, so the Core's are held to a few a second. */
+  blast: { priority: 4, gap: 0.3, life: 2.5 },
+  core: { priority: 3, gap: 0.3, life: 0.8 },
+  hurt: { priority: 4, gap: 0.12, life: 0.4 },
+  down: { priority: 4, gap: 0.5, life: 2.5 },
+  back: { priority: 4, gap: 0.5, life: 1.8 },
+  overrun: { priority: 4, gap: 5, life: 4 },
 } as const satisfies Record<string, KindRule>;
 
 export type EffectKind = keyof typeof KINDS;
+
+/** Blocks within which a sound is near, and the highest priority nearness lifts a sound to. */
+export const NEAR = 8;
+const NEAR_PRIORITY = 3;
 
 /** The sounds alive at once the effects may use, and the share of that each priority may fill before it is turned away. */
 export const BUDGET = {
@@ -204,6 +241,7 @@ const WEIGHT: Readonly<Partial<Record<VoiceName, number>>> = {
   tick: 0.4,
   blip: 0.4,
   step: 0.7,
+  zap: 0.6,
 };
 
 /** What a list of cues costs the budget. */
@@ -239,8 +277,12 @@ export class Governor {
     return load;
   }
 
-  /** Whether an effect of `kind` costing `cost` may start at `now`; if so it is counted. */
-  admit(kind: EffectKind, cost: number, now: number, key = 0): boolean {
+  /**
+   * Whether an effect of `kind` costing `cost` may start at `now`; if so it is counted. A sound that
+   * is `near` the listener matters more than the same sound far off: it is held one step higher than
+   * its kind is, up to the sounds that answer the player's hand.
+   */
+  admit(kind: EffectKind, cost: number, now: number, key = 0, near = false): boolean {
     const rule: KindRule = KINDS[kind];
     const slot = KIND_NAMES.indexOf(kind) * KIND_SLOTS + ((key >>> 0) % KIND_SLOTS);
     const before = this.last.get(slot);
@@ -254,8 +296,9 @@ export class Governor {
       load += entry.cost;
     }
     this.busy.length = kept;
-    const share = BUDGET.share[Math.min(rule.priority, BUDGET.share.length - 1)] as number;
-    const room = this.budget * share + (rule.priority >= 4 ? BUDGET.reserve : 0);
+    const priority = near && rule.priority < NEAR_PRIORITY ? rule.priority + 1 : rule.priority;
+    const share = BUDGET.share[Math.min(priority, BUDGET.share.length - 1)] as number;
+    const room = this.budget * share + (priority >= 4 ? BUDGET.reserve : 0);
     if (load + cost > room) return false;
 
     this.busy.push({ until: now + rule.life, cost });
@@ -279,6 +322,8 @@ export interface Effect {
   readonly at?: Vec3;
   /** Tells two sources of one kind apart for the governor, a cell or a turret; 0 where there is one source. */
   readonly key?: number;
+  /** How many times as far as a knock it is heard from: 1 unless it is a great sound (a breacher going off). */
+  readonly carries?: number;
   readonly cues: readonly MusicCue[];
 }
 
@@ -294,7 +339,7 @@ export interface Effect {
  */
 
 /** A list of cues written one at a time, each with a seed of its own so that no two noises in it are the same part of the noise. */
-class Score {
+export class Score {
   readonly cues: MusicCue[] = [];
 
   constructor(private readonly seed: number) {}
@@ -309,7 +354,7 @@ class Score {
 }
 
 /** A pitch moved a little either way by a seed, so that a wall of blocks is not one note. */
-function vary(hz: number, seed: number, spread: number): number {
+export function vary(hz: number, seed: number, spread: number): number {
   return hz * (1 + (unitFloat(hash32(seed ^ 0x76617279)) * 2 - 1) * spread);
 }
 
@@ -529,7 +574,7 @@ export function effectForRefusal(): Effect {
 }
 
 /** The pitch of the tap that tells a heap's material: a better grade rings higher. */
-const GRADE_TAP = [1800, 2200, 2700, 3300] as const;
+export const GRADE_TAP = [1800, 2200, 2700, 3300] as const;
 
 /**
  * A heap stripped: the snap of scrap coming away, a ring of the grade it gave, and when the heap is

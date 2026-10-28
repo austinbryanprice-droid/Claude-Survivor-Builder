@@ -1,7 +1,9 @@
 import {
   Governor,
+  NEAR,
   costOf,
   createHeard,
+  dropFor,
   hearAt,
   placeCues,
   type Effect,
@@ -244,12 +246,14 @@ export function createLiveSound(
     if (live && ctx.state !== 'running') return false;
     let cues = made.cues;
     if (made.at && pose) {
-      if (!hearAt(pose, made.at.x, made.at.y, made.at.z, heard)) return false;
+      if (!hearAt(pose, made.at.x, made.at.y, made.at.z, heard, made.carries)) return false;
       cues = placeCues(cues, heard);
       if (cues.length === 0) return false;
     }
     const now = ctx.currentTime;
-    if (!governor.admit(made.kind, costOf(cues), now, made.key ?? 0)) {
+    // What happens within a few blocks of the player is not to be lost in a crowd of what happens farther off.
+    const near = made.at !== undefined && pose !== null && heard.drop >= dropFor(NEAR);
+    if (!governor.admit(made.kind, costOf(cues), now, made.key ?? 0, near)) {
       stats.dropped++;
       return false;
     }
