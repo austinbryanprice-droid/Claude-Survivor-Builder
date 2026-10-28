@@ -13,9 +13,11 @@ import {
   CRAWLER_RISES,
   DIPS,
   INTRO_SECONDS,
+  INTRO_TITLE,
   REVEAL_AT,
   SCENES,
   SKIP_HINT_FROM,
+  STATION_NAME,
   STOP_AT,
   TITLE_WINDOW,
   TOUCHDOWN_AT,
@@ -35,6 +37,9 @@ import {
 } from '../../src/shared/intro';
 
 const ORDER: SceneName[] = ['skyfall', 'skid', 'crater', 'eyes', 'dawn', 'wake'];
+
+/** What subtitles allow a reader: the characters of a caption per second it is up. */
+const READING_CHARACTERS_PER_SECOND = 18;
 
 describe('the intro script', () => {
   it('runs its scenes back to back, in story order, for a short film', () => {
@@ -75,12 +80,41 @@ describe('the intro script', () => {
     let last = -Infinity;
     for (const caption of CAPTIONS) {
       expect(caption.text.trim().length).toBeGreaterThan(8);
-      expect(caption.to - caption.from).toBeGreaterThan(CAPTION_FADE * 2 + 2);
+      // Its fades, and then the time a subtitle gives its letters.
+      expect(caption.to - caption.from, caption.text).toBeGreaterThanOrEqual(
+        CAPTION_FADE * 2 + caption.text.length / READING_CHARACTERS_PER_SECOND,
+      );
       expect(caption.from).toBeGreaterThanOrEqual(last);
       last = caption.to;
       const scene = sceneAt(caption.from);
       expect(caption.to).toBeLessThanOrEqual(scene.to);
     }
+  });
+
+  it('tells the story in the order the picture shows it, and leaves the crash to the picture and the sound', () => {
+    const scenes = CAPTIONS.map((caption) => sceneAt(caption.from).name);
+    // The scenes never go backward from one line to the next, every one but the skid has a line, and the skid is silent.
+    const places = scenes.map((name) => ORDER.indexOf(name));
+    expect(places).toEqual([...places].sort((a, b) => a - b));
+    expect(scenes).not.toContain('skid');
+    expect(new Set(scenes)).toEqual(new Set(ORDER.filter((name) => name !== 'skid')));
+  });
+
+  it('says the lore plainly: the station, the Core, the machines, the night and the day, and the place', () => {
+    const words = CAPTIONS.map((caption) => caption.text).join(' ');
+    for (const part of [
+      STATION_NAME,
+      'reactor',
+      'Core',
+      'machines',
+      'night',
+      'day',
+      INTRO_TITLE.title,
+    ]) {
+      expect(words, part).toContain(part);
+    }
+    // A trailer's narration, not a story to sit through.
+    expect(words.split(/\s+/).length).toBeLessThanOrEqual(80);
   });
 
   it('keeps the title card inside the dawn', () => {

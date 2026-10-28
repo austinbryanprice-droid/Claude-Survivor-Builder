@@ -10,7 +10,8 @@ import { createTitleRoute } from '../world/terrain/viewpoints';
  * film (or, for a player who has turned the film off, glides the camera into the run). Nothing of
  * the run is touched: the screen is a camera and some words, the run's clock stays stopped, and
  * the mouse is held deaf until the film or the glide has handed it over. When a film follows, Play
- * also unlocks the game's audio, which the browser allows only inside a click, so that it has its sound.
+ * also unlocks the game's audio, which the browser allows only inside a click, so that it has its
+ * sound, and wakes the narrator's voice, so that its first line is not late.
  */
 
 /** Said under Play when the browser would not hand over the mouse. */
@@ -32,6 +33,8 @@ export interface TitleOptions {
   readonly prepareFilm: () => Promise<boolean>;
   /** Starts the film, with the mouse already asked for; false when it would not start. */
   readonly playFilm: () => boolean;
+  /** Wakes the film's narrator, from inside the click that will start the film. */
+  readonly warmVoice?: () => void;
 }
 
 export interface TitleController {
@@ -59,6 +62,7 @@ export function createTitle({
   film,
   prepareFilm,
   playFilm,
+  warmVoice,
 }: TitleOptions): TitleController {
   const { input } = game;
   const screen = createTitleScreen();
@@ -142,7 +146,10 @@ export function createTitle({
     hadMouse = input.captured;
     const withFilm = film();
     // The browser only lets a page make sound from inside a click or a key press, and the film's sound starts later than this one. A glide has none.
-    if (withFilm) game.audio.unlock();
+    if (withFilm) {
+      game.audio.unlock();
+      warmVoice?.();
+    }
     const press = ++presses;
     screen.setHint(null);
     screen.leave(withFilm, TITLE.leadSeconds);

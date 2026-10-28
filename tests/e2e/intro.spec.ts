@@ -292,14 +292,16 @@ test.describe('the intro film', () => {
     const caption = page.locator('.intro-caption');
     const title = page.locator('.intro-name');
 
-    // One moment in each scene, and the end of the film, which is the hand-over to the player's own view.
+    // One moment in each scene, and the end of the film, which is the hand-over to the player's own
+    // view. The moments sit in the middle of a narrated line (the crash itself, the skid, has none),
+    // and the one in the dawn is also where the title card is up, so that the two are seen together.
     const moments = [
-      sceneTime('skyfall', 4),
+      sceneTime('skyfall', 3),
       sceneTime('skid', 2),
       sceneTime('skid', 5),
-      sceneTime('crater', 4),
-      sceneTime('eyes', 4),
-      sceneTime('dawn', 5.2),
+      sceneTime('crater', 2),
+      sceneTime('eyes', 5),
+      sceneTime('dawn', 4.2),
       sceneTime('wake', 2),
       INTRO_SECONDS,
     ];
@@ -321,7 +323,7 @@ test.describe('the intro film', () => {
         expect(seen.caption, `at ${moment}`).toBe(spoken.text);
         expect(seen.captionOpacity).toBeGreaterThan(0.9);
       }
-      if (moment === sceneTime('dawn', 5.2)) {
+      if (moment === sceneTime('dawn', 4.2)) {
         await expect(title).toHaveText(INTRO_TITLE.title);
         expect(seen.titleOpacity).toBeGreaterThan(0.9);
       } else {

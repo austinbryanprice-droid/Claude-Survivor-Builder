@@ -273,6 +273,26 @@
   grid-template-columns: 150px 1fr;
 }
 
+.setting[hidden],
+.hear-voice[hidden] {
+  display: none;
+}
+
+/* A choice with a button beside it, as the narrator's voice has. */
+.setting.choice.has-button {
+  grid-template-columns: 150px 1fr auto;
+}
+
+.hear-voice {
+  padding: 6px 14px;
+  font-size: 12px;
+}
+
+.setting select:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .setting select {
   min-width: 0;
   padding: 6px 10px;
@@ -647,5 +667,9 @@
 
   .setting.choice {
     grid-template-columns: 110px 1fr;
+  }
+
+  .setting.choice.has-button {
+    grid-template-columns: 110px 1fr auto;
   }
 }

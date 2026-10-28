@@ -1,5 +1,8 @@
 import type { Game } from '../engine/game';
+import { createBrowserSpeech, type Speech } from '../engine/speech';
+import { gainOfVolume } from '../shared/audio';
 import { TIME_PRESETS } from '../shared/daycycle';
+import { SAMPLE_LINE, rankVoices } from '../shared/narration';
 import { QUALITY_NAMES, isQualityName } from '../shared/quality';
 import { SETTINGS_LIMITS } from '../shared/settings';
 import { el, keycap } from './dom';
@@ -23,6 +26,8 @@ export interface PausePanelOptions {
   readonly skyPreview?: boolean;
   /** Plays the intro film now (the card offers to, and keeps the choice of playing it on a new game, only when it can). */
   readonly watchIntro?: () => void;
+  /** The browser's speech, for the narrator's choices; the page's own when absent, and none when null (a browser without it, a test). */
+  readonly speech?: Speech | null;
 }
 
 interface Control {
@@ -55,7 +60,7 @@ const capitalized = (text: string): string => text.charAt(0).toUpperCase() + tex
 export function createPausePanel(
   game: Game,
   buildId: string,
-  { skyPreview = false, watchIntro }: PausePanelOptions = {},
+  { skyPreview = false, watchIntro, speech: speechPort }: PausePanelOptions = {},
 ): PausePanel {
   const root = el('section', 'pause');
   root.setAttribute('role', 'dialog');
@@ -143,6 +148,33 @@ export function createPausePanel(
   invert.append(invertBox, el('span', undefined, 'Invert vertical look'));
   settingsBlock.append(invert);
 
+  /** Fills a choice with `options`, in order. */
+  const setOptions = (
+    select: HTMLSelectElement,
+    options: readonly { value: string; label: string }[],
+  ): void => {
+    select.replaceChildren(
+      ...options.map((option) => {
+        const node = el('option', undefined, option.label);
+        node.value = option.value;
+        return node;
+      }),
+    );
+  };
+  const choice = (
+    label: string,
+    options: readonly { value: string; label: string }[],
+    onPick: (value: string) => void,
+  ): HTMLSelectElement => {
+    const row = el('label', 'setting choice');
+    const select = el('select');
+    setOptions(select, options);
+    select.addEventListener('change', () => onPick(select.value));
+    row.append(el('span', undefined, label), select);
+    settingsBlock.append(row);
+    return select;
+  };
+
   if (watchIntro) {
     const intro = el('label', 'setting toggle');
     const introBox = el('input');
@@ -154,25 +186,82 @@ export function createPausePanel(
     });
     intro.append(introBox, el('span', undefined, 'Play the intro when a new game starts'));
     settingsBlock.append(intro);
+
+    // The narrator speaks in the browser's own voice, so the choice is of the voices the browser has: none to offer where it has no speech, and the captions tell the film all the same.
+    const speech = speechPort === undefined ? createBrowserSpeech() : speechPort;
+    if (speech) {
+      const narrate = el('label', 'setting toggle');
+      const narrateBox = el('input');
+      narrateBox.type = 'checkbox';
+      narrateBox.checked = game.settings.narration;
+      narrateBox.addEventListener('change', () => {
+        game.settings.narration = narrateBox.checked;
+        voiceRow.hidden = !narrateBox.checked;
+        saveSettings(game.settings);
+      });
+      narrate.append(
+        narrateBox,
+        el('span', undefined, 'Narrate the intro aloud (captions always show)'),
+      );
+      settingsBlock.append(narrate);
+
+      const voice = choice('Narrator voice', [], (value) => {
+        game.settings.narrator = value;
+        saveSettings(game.settings);
+      });
+      const voiceRow = voice.parentElement as HTMLElement;
+      voiceRow.classList.add('has-button');
+      voiceRow.hidden = !game.settings.narration;
+      const hear = el('button', 'quiet-button hear-voice', 'Hear it');
+      hear.type = 'button';
+      voiceRow.append(hear);
+
+      /** The voices the browser has, best first, after "Automatic", which says which one it would take. */
+      const fillVoices = (): void => {
+        const all = speech.voices();
+        const ranked = rankVoices(all, navigator.language);
+        const best = ranked[0];
+        const kept = ranked.some((entry) => entry.id === game.settings.narrator);
+        // A browser that lists no voices may still speak (some list them late, or never), so it is left to try; one that lists only other languages is not asked to read English.
+        voice.disabled = ranked.length === 0;
+        hear.hidden = all.length > 0 && ranked.length === 0;
+        setOptions(voice, [
+          {
+            value: '',
+            label: best
+              ? `Automatic: ${best.name}`
+              : all.length > 0
+                ? 'No English voice in this browser'
+                : 'Automatic (this browser lists no voices)',
+          },
+          ...ranked.map((entry) => ({ value: entry.id, label: `${entry.name} (${entry.lang})` })),
+        ]);
+        voice.value = kept ? game.settings.narrator : '';
+      };
+      fillVoices();
+      // Some browsers list their voices only a moment after the page has loaded.
+      speech.onVoices(fillVoices);
+
+      hear.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const chosen = speech.voices().find((entry) => entry.id === voice.value);
+        const best = rankVoices(speech.voices(), navigator.language)[0];
+        const using = chosen ?? best;
+        speech.cancel();
+        speech.speak(
+          {
+            text: SAMPLE_LINE,
+            voice: using?.id ?? null,
+            lang: using?.lang ?? 'en-US',
+            rate: 1,
+            volume: gainOfVolume(game.settings.volume),
+          },
+          { start: () => undefined, end: () => undefined, error: () => undefined },
+        );
+      });
+    }
   }
 
-  const choice = (
-    label: string,
-    options: readonly { value: string; label: string }[],
-    onPick: (value: string) => void,
-  ): HTMLSelectElement => {
-    const row = el('label', 'setting choice');
-    const select = el('select');
-    for (const option of options) {
-      const node = el('option', undefined, option.label);
-      node.value = option.value;
-      select.append(node);
-    }
-    select.addEventListener('change', () => onPick(select.value));
-    row.append(el('span', undefined, label), select);
-    settingsBlock.append(row);
-    return select;
-  };
   const graphics = choice(
     'Graphics',
     QUALITY_NAMES.map((name) => ({ value: name, label: capitalized(name) })),
